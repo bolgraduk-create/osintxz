@@ -1,0 +1,89 @@
+version: "3.9"
+
+name: intelligence-platform
+
+services:
+
+  postgres:
+    image: pgvector/pgvector:pg17
+    container_name: intelligence-postgres
+
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_DB: intelligence
+      POSTGRES_USER: intelligence
+      POSTGRES_PASSWORD: intelligence
+
+    ports:
+      - "5432:5432"
+
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U intelligence -d intelligence"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+    networks:
+      - intelligence-network
+
+
+  redis:
+    image: redis:7-alpine
+
+    container_name: intelligence-redis
+
+    restart: unless-stopped
+
+    command: redis-server --appendonly yes
+
+    ports:
+      - "6379:6379"
+
+    volumes:
+      - redis_data:/data
+
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+    networks:
+      - intelligence-network
+
+
+  adminer:
+    image: adminer:latest
+
+    container_name: intelligence-adminer
+
+    restart: unless-stopped
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    ports:
+      - "8080:8080"
+
+    networks:
+      - intelligence-network
+
+
+
+volumes:
+
+  postgres_data:
+
+  redis_data:
+
+
+
+networks:
+
+  intelligence-network:
+    driver: bridge

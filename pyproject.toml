@@ -1,0 +1,205 @@
+[build-system]
+requires = [
+    "setuptools>=80.0",
+    "wheel",
+]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "intelligence-platform"
+version = "0.1.0"
+description = "Professional OSINT Intelligence Platform"
+readme = "README.md"
+requires-python = ">=3.13"
+
+authors = [
+    { name = "Mark" }
+]
+
+license = { text = "Proprietary" }
+
+dependencies = [
+
+    # ------------------------
+    # API
+    # ------------------------
+
+    "fastapi>=0.116.1",
+    "uvicorn[standard]>=0.35.0",
+
+    # ------------------------
+    # Database
+    # ------------------------
+
+    "sqlalchemy>=2.0.43",
+    "alembic>=1.16.5",
+    "psycopg[binary]>=3.2.10",
+
+    # ------------------------
+    # Config
+    # ------------------------
+
+    "pydantic>=2.11.7",
+    "pydantic-settings>=2.11.0",
+    "python-dotenv>=1.1.1",
+
+    # ------------------------
+    # Security
+    # ------------------------
+
+    "python-jose[cryptography]>=3.5.0",
+    "passlib[bcrypt]>=1.7.4",
+
+    # ------------------------
+    # AI
+    # ------------------------
+
+    "ollama>=0.5.3",
+
+    # ------------------------
+    # Dashboard
+    # ------------------------
+
+    "streamlit>=1.49.0",
+    "plotly>=6.3.0",
+    "networkx>=3.5",
+    "pyvis>=0.3.2",
+
+    # ------------------------
+    # Utilities
+    # ------------------------
+
+    "httpx>=0.28.1",
+    "requests>=2.32.5",
+    "rich>=14.1.0",
+
+    # ------------------------
+    # Queue
+    # ------------------------
+
+    "celery>=5.5.3",
+    "redis>=6.4.0",
+
+    # ------------------------
+    # Vector DB
+    # ------------------------
+
+    "pgvector>=0.4.1",
+]
+
+[project.optional-dependencies]
+
+dev = [
+
+    "black>=25.1.0",
+
+    "ruff>=0.12.12",
+
+    "mypy>=1.17.1",
+
+    "pytest>=8.4.2",
+
+    "pytest-cov>=7.0.0",
+]
+
+media = [
+
+    "opencv-python",
+
+    "easyocr",
+
+    "pillow",
+
+    "moviepy",
+
+    "openai-whisper",
+]
+
+osint = [
+
+    "dnspython",
+
+    "python-whois",
+]
+
+[tool.setuptools]
+
+include-package-data = true
+
+[tool.setuptools.packages.find]
+
+where = ["."]
+
+include = [
+
+    "app",
+
+    "app.*",
+]
+
+exclude = [
+
+    "tests*",
+
+    "docs*",
+
+    "storage*",
+
+    "cache*",
+
+    "exports*",
+
+    "migrations*",
+
+    "scripts*",
+]
+
+[tool.black]
+
+line-length = 88
+
+target-version = ["py312"]
+
+[tool.ruff]
+
+line-length = 88
+
+target-version = "py312"
+
+[tool.ruff.lint]
+
+select = [
+
+    "E",
+
+    "F",
+
+    "W",
+
+    "I",
+
+    "UP",
+
+    "B",
+]
+
+[tool.mypy]
+
+python_version = "3.12"
+
+disallow_untyped_defs = true
+
+ignore_missing_imports = true
+
+warn_return_any = true
+
+warn_unused_configs = true
+
+[tool.pytest.ini_options]
+
+pythonpath = ["."]
+
+testpaths = [
+
+    "tests",
+]
