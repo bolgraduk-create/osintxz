@@ -1,12 +1,14 @@
 """
 Project domain model.
 
-A Project groups multiple investigation cases inside a Workspace.
+A Project groups multiple investigation Cases
+inside a Workspace.
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
+from uuid import UUID
 
 from sqlalchemy import ForeignKey
 from sqlalchemy import String
@@ -37,9 +39,9 @@ class Project(
     """
     Investigation project.
 
-    Every project belongs to exactly one Workspace.
+    Every project belongs to one Workspace.
 
-    A project may contain many investigation cases.
+    A project may contain many investigation Cases.
     """
 
     __tablename__ = "projects"
@@ -57,6 +59,7 @@ class Project(
     slug: Mapped[str] = mapped_column(
         String(200),
         nullable=False,
+        unique=True,
         index=True,
     )
 
@@ -64,7 +67,7 @@ class Project(
     # Foreign Keys
     # ==========================================================
 
-    workspace_id: Mapped = mapped_column(
+    workspace_id: Mapped[UUID] = mapped_column(
         ForeignKey(
             "workspaces.id",
             ondelete="CASCADE",
@@ -92,8 +95,8 @@ class Project(
 
     def __repr__(self) -> str:
         return (
-            "Project("
+            f"Project("
             f"id={self.id}, "
             f"name={self.name!r}"
-            ")"
+            f")"
         )

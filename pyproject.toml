@@ -10,7 +10,7 @@ name = "intelligence-platform"
 version = "0.1.0"
 description = "Professional OSINT Intelligence Platform"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.12"
 
 authors = [
     { name = "Mark" }
@@ -64,6 +64,13 @@ dependencies = [
     "plotly>=6.3.0",
     "networkx>=3.5",
     "pyvis>=0.3.2",
+
+
+    # ------------------------
+    # Desktop Interface
+    # ------------------------
+
+    "PySide6>=6.8.0",
 
     # ------------------------
     # Utilities

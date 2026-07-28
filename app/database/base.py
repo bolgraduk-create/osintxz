@@ -40,7 +40,6 @@ NAMING_CONVENTION = {
     "pk": "pk_%(table_name)s",
 }
 
-
 metadata = MetaData(
     naming_convention=NAMING_CONVENTION,
 )
@@ -65,7 +64,6 @@ class BaseModel(Base):
     __abstract__ = True
 
     @declared_attr.directive
-    @classmethod
     def __tablename__(cls) -> str:
         """
         Automatic table name.
@@ -73,9 +71,7 @@ class BaseModel(Base):
         Example:
 
             User -> users
-
             Project -> projects
-
             Case -> cases
         """
 

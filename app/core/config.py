@@ -95,6 +95,28 @@ class Settings(BaseSettings):
 
     postgres_password: SecretStr
 
+
+
+    # ======================================================
+    # OSINT API Keys
+    # ======================================================
+
+    abuseipdb_api_key: str | None = None
+
+    otx_api_key: str | None = None
+
+    greynoise_api_key: str | None = None
+
+    haveibeenpwned_api_key: str | None = None
+
+    hybrid_analysis_api_key: str | None = None
+
+    intelligencex_api_key: str | None = None
+
+    urlscan_api_key: str | None = None
+
+    virustotal_api_key: str | None = None
+
     # ======================================================
     # Redis
     # ======================================================

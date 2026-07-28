@@ -4,7 +4,7 @@ Version: 0.1.0
 Summary: Professional OSINT Intelligence Platform
 Author: Mark
 License: Proprietary
-Requires-Python: >=3.13
+Requires-Python: >=3.12
 Description-Content-Type: text/markdown
 Requires-Dist: fastapi>=0.116.1
 Requires-Dist: uvicorn[standard]>=0.35.0
@@ -21,6 +21,7 @@ Requires-Dist: streamlit>=1.49.0
 Requires-Dist: plotly>=6.3.0
 Requires-Dist: networkx>=3.5
 Requires-Dist: pyvis>=0.3.2
+Requires-Dist: PySide6>=6.8.0
 Requires-Dist: httpx>=0.28.1
 Requires-Dist: requests>=2.32.5
 Requires-Dist: rich>=14.1.0
