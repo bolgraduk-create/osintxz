@@ -126,3 +126,27 @@ class CaseService:
         return self.repository.delete_by_id(
             case_id
         )
+
+    def rename_case(
+        self,
+        case_id: UUID,
+        new_title: str,
+    ) -> bool:
+        """
+        Rename investigation.
+        """
+
+        normalized_title = (
+            new_title.strip()
+        )
+
+        if not normalized_title:
+
+            raise ValueError(
+                "Case title cannot be empty."
+            )
+
+        return self.repository.rename(
+            case_id,
+            normalized_title,
+        )

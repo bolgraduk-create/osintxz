@@ -102,3 +102,26 @@ class CaseRepository(
         self.session.flush()
 
         return True
+
+    def rename(
+        self,
+        case_id: UUID,
+        new_title: str,
+    ) -> bool:
+        """
+        Rename investigation.
+        """
+
+        case = self.get(
+            case_id
+        )
+
+        if case is None:
+
+            return False
+
+        case.title = new_title.strip()
+
+        self.session.flush()
+
+        return True

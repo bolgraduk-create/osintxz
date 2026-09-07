@@ -79,4 +79,5 @@ Index(
     "ix_evidence_entities_unique",
     EvidenceEntity.evidence_id,
     EvidenceEntity.entity_id,
+    unique=True,
 )

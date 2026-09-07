@@ -21,6 +21,9 @@ from app.osint.connectors.holehe_connector import (
     HoleheConnector,
 )
 
+from app.osint.connectors.local_phone_connector import (
+    LocalPhoneConnector,
+)
 from app.osint.connectors.phoneinfoga_connector import (
     PhoneInfogaConnector,
 )
@@ -247,6 +250,7 @@ __all__ = [
     "SherlockConnector",
     "MaigretConnector",
     "HoleheConnector",
+    "LocalPhoneConnector",
     "PhoneInfogaConnector",
     "GHuntConnector",
     "SocialScanConnector",

@@ -1,93 +1,22 @@
 """
-Desktop application bootstrap.
+Legacy desktop application import compatibility.
 
-Responsible for:
+The canonical implementation lives in:
 
-- creating Qt application
-- initializing application dependencies
-- starting main window
-- loading desktop theme
+    app.interface.desktop.desktop_app.DesktopApplication
 
-Does NOT:
-
-- contain business logic
-- access database directly
-- perform analysis
+This module must not create QApplication, containers, sessions, themes,
+or windows independently. It exists only for compatibility with older
+imports.
 """
 
 from __future__ import annotations
 
-
-import sys
-
-
-from PySide6.QtWidgets import (
-    QApplication,
+from app.interface.desktop.desktop_app import (
+    DesktopApplication,
 )
 
 
-from app.interface.desktop.main_window import (
-    MainWindow,
-)
-
-
-from app.interface.desktop.bootstrap.container import (
-    DesktopContainer,
-)
-
-
-from app.interface.desktop.styles.theme import (
-    APPLICATION_STYLE,
-)
-
-
-
-class DesktopApplication:
-    """
-    Main desktop application wrapper.
-    """
-
-
-
-    def __init__(
-        self,
-    ):
-
-        self.qt_app = QApplication(
-            sys.argv
-        )
-
-
-        self.qt_app.setStyleSheet(
-            APPLICATION_STYLE
-        )
-
-
-        self.container = (
-            DesktopContainer()
-        )
-
-
-        self.window = MainWindow(
-            self.container
-        )
-
-
-
-    # ==========================================================
-    # Execution
-    # ==========================================================
-
-    def run(
-        self,
-    ) -> int:
-        """
-        Start desktop application.
-        """
-
-        self.window.show()
-
-        try:
-            return self.qt_app.exec()
-        finally:
-            self.container.close()
+__all__ = [
+    "DesktopApplication",
+]

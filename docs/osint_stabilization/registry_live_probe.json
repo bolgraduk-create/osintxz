@@ -1,0 +1,18 @@
+{
+  "provider": "gleif",
+  "status": "success",
+  "error": null,
+  "metadata": {
+    "records_found": 1,
+    "public_data_only": true,
+    "credentials_required": false,
+    "global_scope": true
+  },
+  "records": [
+    {
+      "lei": "506700GE1G29325QX363",
+      "name": "Global Legal Entity Identifier Foundation",
+      "source_url": "https://api.gleif.org/api/v1/lei-records/506700GE1G29325QX363"
+    }
+  ]
+}

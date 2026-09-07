@@ -38,10 +38,15 @@ class SourceService:
     def __init__(
         self,
         session: Session,
-    ):
+    ) -> None:
+
         self.repository = SourceRepository(
             session
         )
+
+    # ==========================================================
+    # Creation
+    # ==========================================================
 
     def create_source(
         self,
@@ -52,27 +57,32 @@ class SourceService:
         description: str | None = None,
     ) -> Source:
         """
-        Create new data source.
+        Create a new pending data source.
         """
 
         source = Source(
             case_id=case_id,
             name=name,
             source_type=source_type,
+            status=SourceStatus.PENDING,
             original_path=path,
             description=description,
-       )
+        )
 
         return self.repository.create(
             source
         )
+
+    # ==========================================================
+    # Reading
+    # ==========================================================
 
     def get_source(
         self,
         source_id: UUID,
     ) -> Source | None:
         """
-        Get source by id.
+        Get source by ID.
         """
 
         return self.repository.get(
@@ -84,55 +94,58 @@ class SourceService:
         case_id: UUID,
     ) -> list[Source]:
         """
-        Return all sources
-        belonging to a case.
+        Return all sources belonging to a case.
         """
 
         return self.repository.get_by_case(
             case_id
         )
 
-    def mark_processing(
+    # ==========================================================
+    # Status
+    # ==========================================================
+
+    def mark_importing(
         self,
         source_id: UUID,
     ) -> Source | None:
         """
-        Mark source as processing.
+        Mark source as currently importing.
         """
 
-        source = self.repository.get(
-            source_id
+        return self.repository.update_status(
+            source_id,
+            SourceStatus.IMPORTING,
         )
 
-        if source is None:
-            return None
-
-        source.status = SourceStatus.PROCESSING
-
-        self.repository.session.flush()
-
-        return source
-
-    def mark_completed(
+    def mark_imported(
         self,
         source_id: UUID,
     ) -> Source | None:
         """
-        Mark source as completed.
+        Mark source as successfully imported.
+
+        The original material is stored, but further processing
+        may still be required.
         """
 
-        source = self.repository.get(
-            source_id
+        return self.repository.update_status(
+            source_id,
+            SourceStatus.IMPORTED,
         )
 
-        if source is None:
-            return None
+    def mark_ready(
+        self,
+        source_id: UUID,
+    ) -> Source | None:
+        """
+        Mark source as fully processed and ready.
+        """
 
-        source.status = SourceStatus.COMPLETED
-
-        self.repository.session.flush()
-
-        return source
+        return self.repository.update_status(
+            source_id,
+            SourceStatus.READY,
+        )
 
     def mark_failed(
         self,
@@ -142,25 +155,55 @@ class SourceService:
         Mark source as failed.
         """
 
-        source = self.repository.get(
+        return self.repository.update_status(
+            source_id,
+            SourceStatus.FAILED,
+        )
+
+    # ==========================================================
+    # Compatibility methods
+    # ==========================================================
+
+    def mark_processing(
+        self,
+        source_id: UUID,
+    ) -> Source | None:
+        """
+        Compatibility alias for older callers.
+
+        PROCESSING is represented by IMPORTING
+        in the current database schema.
+        """
+
+        return self.mark_importing(
             source_id
         )
 
-        if source is None:
-            return None
+    def mark_completed(
+        self,
+        source_id: UUID,
+    ) -> Source | None:
+        """
+        Compatibility alias for older callers.
 
-        source.status = SourceStatus.FAILED
+        COMPLETED is represented by IMPORTED
+        until all processing stages finish.
+        """
 
-        self.repository.session.flush()
+        return self.mark_imported(
+            source_id
+        )
 
-        return source
+    # ==========================================================
+    # Deletion
+    # ==========================================================
 
     def delete_source(
         self,
         source_id: UUID,
     ) -> bool:
         """
-        Soft delete source.
+        Soft-delete source.
         """
 
         source = self.repository.get(
@@ -168,6 +211,7 @@ class SourceService:
         )
 
         if source is None:
+
             return False
 
         source.soft_delete()

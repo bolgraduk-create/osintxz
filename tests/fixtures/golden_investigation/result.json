@@ -1,0 +1,57 @@
+{
+  "about": "Telegram Desktop",
+  "chats": {
+    "list": [
+      {
+        "name": "Golden Investigation",
+        "type": "private",
+        "id": 9001,
+        "messages": [
+          {
+            "id": 1,
+            "type": "message",
+            "date": "2026-08-30T12:00:00",
+            "from": "Alice",
+            "from_id": "user1",
+            "text": [
+              "Phone: ",
+              {"type": "phone", "text": "+380 (67) 123-45-67"}
+            ]
+          },
+          {
+            "id": 2,
+            "type": "message",
+            "date": "2026-08-30T12:01:00",
+            "from": "Alice",
+            "from_id": "user1",
+            "text": "Same phone again: 380671234567"
+          },
+          {
+            "id": 3,
+            "type": "message",
+            "date": "2026-08-30T12:02:00",
+            "from": "Bob",
+            "from_id": "user2",
+            "text": "Card number: 1234 5678 9012 3452"
+          },
+          {
+            "id": 4,
+            "type": "message",
+            "date": "2026-08-30T12:03:00",
+            "from": "Bob",
+            "from_id": "user2",
+            "text": "Contact: alice@example.com and @Alice_01"
+          },
+          {
+            "id": 5,
+            "type": "message",
+            "date": "2026-08-30T12:04:00",
+            "from": "Alice",
+            "from_id": "user1",
+            "text": "Profile: https://example.com/alice"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -90,16 +90,26 @@ class SourceType(str, Enum):
 
 class SourceStatus(str, Enum):
     """
-    Source processing status.
+    Source import and processing status.
+
+    PostgreSQL enum values:
+
+    - PENDING
+    - IMPORTING
+    - READY
+    - FAILED
+    - IMPORTED
     """
 
     PENDING = "pending"
 
-    PROCESSING = "processing"
+    IMPORTING = "importing"
 
-    COMPLETED = "completed"
+    READY = "ready"
 
     FAILED = "failed"
+
+    IMPORTED = "imported"
 
 
 class Source(

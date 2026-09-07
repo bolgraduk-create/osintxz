@@ -3,22 +3,42 @@ Application Service Container.
 
 Responsible for:
 
+- creating all domain services
 - creating application services
 - creating AI layer
+- creating OSINT layer
 - creating controllers
 - dependency injection
 
-This is the single composition root
-for the whole application.
+This is the single Composition Root
+for the entire application.
 """
 
 from __future__ import annotations
 
+from app.application.investigation_target_enrichment_service import (
+    InvestigationTargetEnrichmentService,
+)
+
+from app.application.registry_intelligence_service import RegistryIntelligenceService
+from app.application.registry_persistence_service import RegistryPersistenceService
+from app.infrastructure.registries.gleif_client import GleifRegistryHttpClient
+from app.registry_intelligence.providers.gleif import GleifRegistryProvider
+from app.registry_intelligence.registry import RegistryProviderRegistry
+
 from sqlalchemy.orm import Session
 
+# ==========================================================
+# AI
+# ==========================================================
+
 from app.core.ai_factory import (
-    create_ai_analyzer,
+    create_ai_stack,
 )
+
+# ==========================================================
+# Domain Services
+# ==========================================================
 
 from app.services.case_service import (
     CaseService,
@@ -32,6 +52,10 @@ from app.services.evidence_service import (
     EvidenceService,
 )
 
+from app.evidence.source_reliability import (
+    SourceReliabilityScoringService,
+)
+
 from app.services.entity_service import (
     EntityService,
 )
@@ -40,38 +64,381 @@ from app.services.relationship_service import (
     RelationshipService,
 )
 
+from app.services.timeline_service import (
+    TimelineService,
+)
+
 from app.services.report_service import (
     ReportService,
 )
 
+from app.services.message_service import (
+    MessageService,
+)
+
+from app.services.document_service import (
+    DocumentService,
+)
+
+from app.services.artifact_service import (
+    ArtifactService,
+)
+
+from app.services.entity_graph_service import (
+    EntityGraphService,
+)
+
+from app.analysis.unified_graph_analysis import (
+    UnifiedGraphAnalysisService,
+)
+
+from app.analysis.graph_explainability import (
+    GraphExplainabilityService,
+)
+
+from app.analysis.unified_temporal_analysis import (
+    UnifiedTemporalAnalysisService,
+)
+
+from app.analysis.unified_anomaly_analysis import (
+    UnifiedAnomalyAnalysisService,
+)
+
+from app.services.file_import_service import (
+    FileImportService,
+)
+
+from app.services.image_analysis_service import (
+    ImageAnalysisService,
+)
+
+from app.controllers.file_import_controller import (
+    FileImportController,
+)
+
+from app.processing.file_processing_router import (
+    FileProcessingRouter,
+)
+
+from app.services.image_comparison_service import (
+    ImageComparisonService,
+)
+
+from app.services.image_similarity_search_service import (
+    ImageSimilaritySearchService,
+)
+
+from app.repositories.search_index_repository import (
+    SearchIndexRepository,
+)
+
+from app.repositories.search_embedding_repository import (
+    SearchEmbeddingRepository,
+)
+
+from app.services.search_index_builder import (
+    SearchIndexBuilder,
+)
+
+from app.services.lexical_search_retriever import (
+    LexicalSearchRetriever,
+)
+
+from app.services.structured_search_retriever import (
+    StructuredSearchRetriever,
+)
+
+from app.services.fuzzy_search_service import (
+    FuzzySearchService,
+)
+
+from app.services.fuzzy_search_retriever import (
+    FuzzySearchRetriever,
+)
+
+from app.services.ollama_embedding_service import (
+    OllamaEmbeddingService,
+)
+
+from app.services.search_embedding_indexer import (
+    SearchEmbeddingIndexer,
+)
+
+from app.services.semantic_search_retriever import (
+    SemanticSearchRetriever,
+)
+
+from app.services.unified_search_service import (
+    UnifiedSearchService,
+)
+
+from app.services.search_confidence_service import (
+    SearchConfidenceService,
+)
+
+from app.services.search_explanation_service import (
+    SearchExplanationService,
+)
+
+from app.services.investigation_rag_retrieval_service import (
+    InvestigationRAGRetrievalService,
+)
+
+from app.services.investigation_rag_context_builder import (
+    InvestigationRAGContextBuilder,
+)
+
+from app.services.investigation_rag_prompt_service import (
+    InvestigationRAGPromptService,
+)
+
+from app.services.investigation_rag_summary_service import (
+    InvestigationRAGSummaryService,
+)
+
+from app.services.investigation_rag_conclusions_service import (
+    InvestigationRAGConclusionsService,
+)
+
+from app.services.investigation_rag_grounded_citation_service import (
+    InvestigationRAGGroundedCitationService,
+)
+
+from app.services.investigation_unified_analytical_context_service import (
+    InvestigationUnifiedAnalyticalContextService,
+)
+
+from app.repositories.face_profile_repository import (
+    FaceProfileRepository,
+)
+
+from app.repositories.face_embedding_repository import (
+    FaceEmbeddingRepository,
+)
+
+from app.services.face_memory_service import (
+    FaceMemoryService,
+)
+
+from app.services.face_analysis_service import (
+    FaceAnalysisService,
+)
+
+from app.services.image_gps_location_service import (
+    ImageGpsLocationService,
+)
+
+from app.services.evidence_link_service import (
+    EvidenceLinkService,
+)
+
+from app.services.search_indexing_service import (
+    SearchIndexingService,
+)
+
+from app.repositories.search_semantic_chunk_repository import (
+    SearchSemanticChunkRepository,
+)
+
+from app.repositories.search_semantic_chunk_embedding_repository import (
+    SearchSemanticChunkEmbeddingRepository,
+)
+
+from app.services.search_semantic_chunk_embedding_indexer import (
+    SearchSemanticChunkEmbeddingIndexer,
+)
+
+from app.services.composite_semantic_retriever import (
+    CompositeSemanticRetriever,
+)
+
+# ==========================================================
+# Import Pipeline
+# ==========================================================
+
+from app.collectors.telegram.telegram_collector import (
+    TelegramCollector,
+)
 
 from app.services.collection_service import (
     CollectionService,
 )
 
-from app.services.evidence_processing_service import (
-    EvidenceProcessingService,
+from app.services.unified_extraction_service import (
+    UnifiedExtractionService,
+)
+
+from app.services.entity_resolution_pipeline import (
+    EntityResolutionPipeline,
+)
+
+from app.services.telegram_entity_mapper_service import (
+    TelegramEntityMapperService,
+)
+
+from app.services.telegram_entity_import_service import (
+    TelegramEntityImportService,
+)
+
+from app.services.telegram_interaction_service import (
+    TelegramInteractionService,
+)
+
+from app.services.telegram_relationship_import_service import (
+    TelegramRelationshipImportService,
+)
+
+from app.services.telegram_timeline_mapper_service import (
+    TelegramTimelineMapperService,
+)
+
+from app.services.telegram_timeline_import_service import (
+    TelegramTimelineImportService,
+)
+
+from app.services.investigation_summary_builder import (
+    InvestigationSummaryBuilder,
+)
+
+from app.services.telegram_report_import_service import (
+    TelegramReportImportService,
 )
 
 from app.services.telegram_import_service import (
     TelegramImportService,
 )
 
-from app.collectors.telegram.telegram_collector import (
-    TelegramCollector,
+from app.application.investigation_ai_service import (
+    InvestigationAIService,
+)
+
+from app.ai.providers.ai_investigation_service import (
+    AIInvestigationService as AIExecutionService,
+)
+
+from app.services.message_semantic_chunk_builder import (
+    MessageSemanticChunkBuilder,
+)
+
+from app.services.message_semantic_chunk_service import (
+    MessageSemanticChunkService,
+)
+
+from app.services.semantic_chunk_retriever import (
+    SemanticChunkRetriever,
+)
+
+# ==========================================================
+# OSINT
+# ==========================================================
+
+from app.osint.manager import (
+    OsintManager,
+)
+
+from app.osint.pipeline import (
+    OsintPipeline,
+)
+
+from app.osint.enrichment_execution import (
+    OsintEnrichmentExecutionService,
+)
+
+from app.osint.finding_persistence import (
+    OsintFindingPersistenceService,
+)
+
+from app.osint.target_builder import (
+    OsintTargetBuilder,
+)
+
+# ==========================================================
+# Application Services
+# ==========================================================
+
+from app.application.workflow import (
+    InvestigationWorkflow,
 )
 
 from app.application.case_workspace_service import (
     CaseWorkspaceService,
 )
 
+from app.application.investigation_graph_analysis_service import (
+    InvestigationGraphAnalysisService,
+)
+
+from app.application.investigation_temporal_analysis_service import (
+    InvestigationTemporalAnalysisService,
+)
+
+from app.application.investigation_entity_feature_extraction_service import (
+    InvestigationEntityFeatureExtractionService,
+)
+
+from app.application.investigation_anomaly_analysis_service import (
+    InvestigationAnomalyAnalysisService,
+)
+
+from app.application.investigation_entity_clustering_service import (
+    InvestigationEntityClusteringService,
+)
+
+from app.application.investigation_entity_resolution_analysis_service import (
+    InvestigationEntityResolutionAnalysisService,
+)
+
+from app.application.investigation_evidence_analysis_service import (
+    InvestigationEvidenceAnalysisService,
+)
+
+from app.application.investigation_multimodal_analysis_service import (
+    InvestigationMultimodalAnalysisService,
+)
+
+from app.analysis.multimodal_image_aggregation import (
+    MultimodalImageAggregationService,
+)
+
+from app.application.investigation_analysis_orchestrator import (
+    InvestigationAnalysisOrchestrator,
+)
+
+from app.application.investigation_analysis_runner import (
+    InvestigationAnalysisRunner,
+)
+
 from app.application.ai_workspace_service import (
     AIWorkspaceService,
 )
 
-from app.application.investigation_ai_service import (
-    InvestigationAIService,
+from app.application.import_workspace_service import (
+    ImportWorkspaceService,
 )
+
+from app.application.osint_workspace_service import (
+    OsintWorkspaceService,
+)
+
+from app.application.osint_enrichment_service import (
+    OsintEnrichmentService,
+)
+
+from app.application.osint_recursive_enrichment_service import (
+    OsintRecursiveEnrichmentService,
+)
+
+from app.application.workspaces import (
+    ApplicationWorkspaces,
+)
+
+from app.application.services import (
+    InvestigationApplicationService,
+)
+
+# ==========================================================
+# Controllers
+# ==========================================================
 
 from app.controllers.case_controller import (
     CaseController,
@@ -85,14 +452,79 @@ from app.controllers.ai_analysis_controller import (
     AIAnalysisController,
 )
 
-from app.application.import_workspace_service import (
-    ImportWorkspaceService,
+from app.controllers.import_controller import (
+    ImportController,
+)
+
+from app.controllers.osint_controller import (
+    OsintController,
+)
+
+from app.localization import (
+    TranslationManager,
+    configure_translator,
 )
 
 
+
+from app.application.open_web_enrichment_service import (
+    OpenWebEnrichmentService,
+)
+from app.osint.open_web.extraction_bridge import (
+    OpenWebIdentifierExtractionBridge,
+)
+from app.osint.open_web.registry import (
+    OpenWebProviderRegistry,
+)
+from app.osint.open_web.service import (
+    OpenWebDiscoveryService,
+)
+
+
+from app.infrastructure.open_web.common_crawl_client import (
+    CommonCrawlHttpClient,
+)
+from app.osint.open_web.providers.common_crawl import (
+    CommonCrawlOpenWebProvider,
+)
+from app.osint.open_web.providers.gdelt_phone_exact import (
+    GdeltPhoneExactOpenWebProvider,
+)
+from app.osint.open_web.providers.searxng_phone_exact import (
+    SearxngPhoneExactOpenWebProvider,
+)
+from app.osint.open_web.providers.targeted_phone_public_sources import (
+    TargetedPhonePublicSourcesProvider,
+)
+from app.osint.open_web.providers.live_web import (
+    LiveWebOpenWebProvider,
+)
+
+from app.infrastructure.open_web.common_crawl_warc_client import (
+    CommonCrawlWarcContentClient,
+)
+from app.osint.open_web.content_hydration import (
+    CommonCrawlContentHydrator,
+)
+
+
+from app.infrastructure.open_web.common_crawl_metadata_client import (
+    CommonCrawlMetadataClient,
+)
+from app.infrastructure.open_web.common_crawl_raw_index import (
+    CommonCrawlRawIndexClient,
+)
+
+from app.application.open_web_recursive_pivot_service import (
+    OpenWebRecursivePivotService,
+)
+
 class ServiceContainer:
     """
-    Central application container.
+    Central dependency injection container.
+
+    This is the only Composition Root
+    of the application.
     """
 
     def __init__(
@@ -102,17 +534,30 @@ class ServiceContainer:
 
         self.session = session
 
-        # ======================================================
-        # AI
-        # ======================================================
+        # ==================================================
+        # Localization
+        # ==================================================
 
-        self.ai_analyzer = (
-            create_ai_analyzer()
+        self.translation_manager = (
+            TranslationManager()
         )
 
-        # ======================================================
-        # Domain services
-        # ======================================================
+        configure_translator(
+            self.translation_manager
+        )
+
+        # ==================================================
+        # AI
+        # ==================================================
+
+        (
+            self.ai_manager,
+            self.ai_analyzer,
+        ) = create_ai_stack()
+
+        # ==================================================
+        # Core Domain Services
+        # ==================================================
 
         self.case_service = CaseService(
             session
@@ -122,15 +567,279 @@ class ServiceContainer:
             session
         )
 
+        # ==================================================
+        # Unified Search
+        # ==================================================
+
+        # --------------------------------------------------
+        # Search persistence
+        # --------------------------------------------------
+
+        self.search_index_repository = (
+            SearchIndexRepository(
+                session
+            )
+        )
+
+        self.search_embedding_repository = (
+            SearchEmbeddingRepository(
+                session
+            )
+        )
+
+        self.search_semantic_chunk_repository = (
+            SearchSemanticChunkRepository(
+                self.session
+            )
+        )
+
+        self.search_semantic_chunk_embedding_repository = (
+            SearchSemanticChunkEmbeddingRepository(
+                self.session
+            )
+        )
+
+        self.message_semantic_chunk_builder = (
+            MessageSemanticChunkBuilder()
+        )
+
+
+        # --------------------------------------------------
+        # Search index construction
+        # --------------------------------------------------
+
+        self.search_index_builder = (
+            SearchIndexBuilder(
+                session=session,
+                repository=(
+                    self.search_index_repository
+                ),
+            )
+        )
+
+        self.message_semantic_chunk_builder = (
+            MessageSemanticChunkBuilder()
+        )
+
+        # --------------------------------------------------
+        # Embedding provider
+        # --------------------------------------------------
+
+        self.embedding_service = (
+            OllamaEmbeddingService()
+        )
+
+        self.search_embedding_indexer = (
+            SearchEmbeddingIndexer(
+                search_index_repository=(
+                    self.search_index_repository
+                ),
+                search_embedding_repository=(
+                    self.search_embedding_repository
+                ),
+                embedding_service=(
+                    self.embedding_service
+                ),
+            )
+        )
+
+        self.search_indexing_service = (
+            SearchIndexingService(
+                search_index_builder=(
+                    self.search_index_builder
+                ),
+                search_index_repository=(
+                    self.search_index_repository
+                ),
+                search_embedding_repository=(
+                    self.search_embedding_repository
+                ),
+                search_embedding_indexer=(
+                    self.search_embedding_indexer
+                ),
+            )
+        )
+
+        self.search_semantic_chunk_embedding_indexer = (
+            SearchSemanticChunkEmbeddingIndexer(
+                chunk_repository=(
+                    self.search_semantic_chunk_repository
+                ),
+                embedding_repository=(
+                    self.search_semantic_chunk_embedding_repository
+                ),
+                embedding_service=(
+                    self.embedding_service
+                ),
+            )
+        )
+
+        # --------------------------------------------------
+        # Lexical / BM25
+        # --------------------------------------------------
+
+        self.lexical_search_retriever = (
+            LexicalSearchRetriever(
+                repository=(
+                    self.search_index_repository
+                ),
+            )
+        )
+
+        # --------------------------------------------------
+        # Fuzzy
+        # --------------------------------------------------
+
+        self.fuzzy_search_service = (
+            FuzzySearchService()
+        )
+
+        self.fuzzy_search_retriever = (
+            FuzzySearchRetriever(
+                repository=(
+                    self.search_index_repository
+                ),
+                fuzzy_search_service=(
+                    self.fuzzy_search_service
+                ),
+            )
+        )
+
+        # --------------------------------------------------
+        # Semantic / pgvector
+        # --------------------------------------------------
+
+        self.semantic_search_retriever = (
+            SemanticSearchRetriever(
+                repository=(
+                    self.search_embedding_repository
+                ),
+                embedding_service=(
+                    self.embedding_service
+                ),
+            )
+        )
+
+
+
+
+        # ==================================================
+        # Search-aware Domain Services
+        # ==================================================
+
         self.evidence_service = EvidenceService(
-            session
+            session,
+            search_indexing_service=(
+                self.search_indexing_service
+            ),
+        )
+
+        self.evidence_link_service = (
+            EvidenceLinkService(
+                session
+            )
+        )
+
+        # ==================================================
+        # Image Services
+        # ==================================================
+
+        self.image_analysis_service = (
+            ImageAnalysisService(
+                evidence_service=(
+                    self.evidence_service
+                ),
+            )
+        )
+
+        self.image_comparison_service = (
+            ImageComparisonService(
+                evidence_service=(
+                    self.evidence_service
+                ),
+                image_analysis_service=(
+                    self.image_analysis_service
+                ),
+            )
+        )
+
+        self.image_similarity_search_service = (
+            ImageSimilaritySearchService(
+                evidence_service=(
+                    self.evidence_service
+                ),
+                image_comparison_service=(
+                    self.image_comparison_service
+                ),
+            )
+        )
+
+        self.face_profile_repository = (
+            FaceProfileRepository(
+                session
+            )
+        )
+
+        self.face_embedding_repository = (
+            FaceEmbeddingRepository(
+                session
+            )
+        )
+
+        self.face_memory_service = (
+            FaceMemoryService(
+                profile_repository=(
+                    self.face_profile_repository
+                ),
+                embedding_repository=(
+                    self.face_embedding_repository
+                ),
+            )
+        )
+
+        self.face_analysis_service = (
+            FaceAnalysisService(
+                image_analysis_service=(
+                    self.image_analysis_service
+                ),
+                face_memory_service=(
+                    self.face_memory_service
+                ),
+            )
         )
 
         self.entity_service = EntityService(
             session
         )
 
-        self.relationship_service = RelationshipService(
+        self.unified_extraction_service = (
+            UnifiedExtractionService(
+                session=session,
+                entity_service=(
+                    self.entity_service
+                ),
+                evidence_service=(
+                    self.evidence_service
+                ),
+                evidence_link_service=(
+                    self.evidence_link_service
+                ),
+            )
+        )
+
+        self.relationship_service = (
+            RelationshipService(
+                session
+            )
+        )
+
+        self.entity_graph_service = (
+            EntityGraphService(
+                session
+            )
+        )
+
+        self.timeline_service = TimelineService(
             session
         )
 
@@ -138,95 +847,1129 @@ class ServiceContainer:
             session
         )
 
+        self.message_service = MessageService(
+            session,
+            search_indexing_service=(
+                self.search_indexing_service
+            ),
+        )
 
+        self.message_semantic_chunk_service = (
+            MessageSemanticChunkService(
+                message_repository=(
+                    self.message_service.repository
+                ),
+                chunk_repository=(
+                    self.search_semantic_chunk_repository
+                ),
+                chunk_builder=(
+                    self.message_semantic_chunk_builder
+                ),
+            )
+        )
 
-        # ======================================================
-        # Import pipeline
-        # ======================================================
+        self.document_service = DocumentService(
+            session,
+            search_indexing_service=(
+                self.search_indexing_service
+            ),
+        )
+
+        self.artifact_service = ArtifactService(
+            session,
+            search_indexing_service=(
+                self.search_indexing_service
+            ),
+        )
+
+        self.file_processing_router = (
+            FileProcessingRouter()
+        )
+
+        self.semantic_chunk_retriever = (
+            SemanticChunkRetriever(
+                repository=(
+                    self.search_semantic_chunk_embedding_repository
+                ),
+                message_repository=(
+                    self.message_service.repository
+                ),
+                embedding_service=(
+                    self.embedding_service
+                ),
+            )
+        )
+
+        # --------------------------------------------------
+        # Structured Entity / Evidence retrieval
+        # --------------------------------------------------
+
+        self.structured_search_retriever = (
+            StructuredSearchRetriever(
+                entity_repository=(
+                    self.entity_service.repository
+                ),
+                evidence_repository=(
+                    self.evidence_service.repository
+                ),
+            )
+        )
+
+        # --------------------------------------------------
+        # Composite Semantic
+        # --------------------------------------------------
+
+        self.composite_semantic_retriever = (
+            CompositeSemanticRetriever(
+                embedding_service=(
+                    self.embedding_service
+                ),
+                message_retriever=(
+                    self.semantic_chunk_retriever
+                ),
+                object_retriever=(
+                    self.semantic_search_retriever
+                ),
+            )
+        )
+
+        # --------------------------------------------------
+        # Unified orchestration + RRF + explanations
+        # --------------------------------------------------
+
+        self.search_confidence_service = (
+            SearchConfidenceService()
+        )
+
+        self.search_explanation_service = (
+            SearchExplanationService()
+        )
+
+        self.unified_search_service = (
+            UnifiedSearchService(
+                retrievers=[
+                    self.structured_search_retriever,
+                    self.lexical_search_retriever,
+                    self.fuzzy_search_retriever,
+                    self.composite_semantic_retriever,
+                ],
+                search_confidence_service=(
+                    self.search_confidence_service
+                ),
+                search_explanation_service=(
+                    self.search_explanation_service
+                ),
+            )
+        )
+
+        # ==================================================
+        # AI / RAG Retrieval
+        # ==================================================
+
+        self.investigation_rag_retrieval_service = (
+            InvestigationRAGRetrievalService(
+                unified_search_service=(
+                    self.unified_search_service
+                ),
+            )
+        )
+
+        self.investigation_rag_context_builder = (
+            InvestigationRAGContextBuilder()
+        )
+
+        # ==================================================
+        # Collector
+        # ==================================================
 
         self.telegram_collector = (
             TelegramCollector()
         )
 
+        # ==================================================
+        # Collection
+        # ==================================================
+
         self.collection_service = (
             CollectionService(
-                evidence_repository=self.evidence_service.repository,
+                source_service=(
+                    self.source_service
+                ),
+                evidence_service=(
+                    self.evidence_service
+                ),
+                message_service=(
+                    self.message_service
+                ),
+                document_service=(
+                    self.document_service
+                ),
+                artifact_service=(
+                    self.artifact_service
+                ),
             )
         )
 
-        self.evidence_processing_service = (
-            EvidenceProcessingService(
-                entity_service=self.entity_service,
-                relationship_service=self.relationship_service,
-                timeline_service=self.timeline_service,
-                report_service=self.report_service,
-                ai_service=self.investigation_ai_service,
+
+
+        self.file_import_service = (
+            FileImportService(
+                collection_service=(
+                    self.collection_service
+                ),
+                evidence_service=(
+                    self.evidence_service
+                ),
+                file_processing_router=(
+                    self.file_processing_router
+                ),
+                search_indexing_service=(
+                    self.search_indexing_service
+                ),
             )
         )
 
-        self.telegram_import_service = (
-            TelegramImportService(
-                collector=self.telegram_collector,
-                collection_service=self.collection_service,
-                processing_service=self.evidence_processing_service,
+
+
+        self.file_import_controller = (
+            FileImportController(
+                container=self,
+                file_import_service=(
+                    self.file_import_service
+                ),
             )
         )
 
-        # ======================================================
-        # Application services
-        # ======================================================
-
-        self.case_workspace_service = (
-            CaseWorkspaceService(
-                case_service=self.case_service,
-                evidence_service=self.evidence_service,
-                entity_service=self.entity_service,
-                relationship_service=self.relationship_service,
-                report_service=self.report_service,
-            )
-        )
+        # ==================================================
+        # AI Workspace and validation
+        # ==================================================
 
         self.ai_workspace_service = (
             AIWorkspaceService(
-                case_service=self.case_service,
-            )
-        )
-
-        self.import_workspace_service = (
-            ImportWorkspaceService(
-                case_service=self.case_service,
-                telegram_import_service=self.telegram_import_service,
+                case_service=(
+                    self.case_service
+                ),
             )
         )
 
         self.investigation_ai_service = (
             InvestigationAIService(
-                workspace_service=self.ai_workspace_service,
+                workspace_service=(
+                    self.ai_workspace_service
+                ),
             )
         )
 
-        # ======================================================
+        # ==================================================
+        # AI Investigation execution
+        # ==================================================
+
+        self.ai_execution_service = (
+            AIExecutionService(
+                session=session,
+                ai_manager=(
+                    self.ai_manager
+                ),
+            )
+        )
+
+        # ==================================================
+        # AI / RAG Prompt Layer
+        # ==================================================
+
+        # Reuse the exact PromptManager instance already
+        # owned by the existing AI execution service.
+        self.prompt_manager = (
+            self.ai_execution_service.prompt_manager
+        )
+
+        self.investigation_rag_prompt_service = (
+            InvestigationRAGPromptService(
+                prompt_manager=(
+                    self.prompt_manager
+                ),
+            )
+        )
+
+        # ==================================================
+        # AI / RAG Investigation Summary
+        # ==================================================
+
+        self.investigation_rag_summary_service = (
+            InvestigationRAGSummaryService(
+                retrieval_service=(
+                    self.investigation_rag_retrieval_service
+                ),
+                context_builder=(
+                    self.investigation_rag_context_builder
+                ),
+                prompt_service=(
+                    self.investigation_rag_prompt_service
+                ),
+                ai_execution_service=(
+                    self.ai_execution_service
+                ),
+            )
+        )
+
+        # ==================================================
+        # AI / RAG Conclusions
+        # ==================================================
+
+        self.investigation_rag_conclusions_service = (
+            InvestigationRAGConclusionsService(
+                retrieval_service=(
+                    self.investigation_rag_retrieval_service
+                ),
+                context_builder=(
+                    self.investigation_rag_context_builder
+                ),
+                prompt_manager=(
+                    self.prompt_manager
+                ),
+                ai_execution_service=(
+                    self.ai_execution_service
+                ),
+            )
+        )
+
+        # ==================================================
+        # AI / RAG Grounded Evidence Citations
+        # ==================================================
+
+        self.investigation_rag_grounded_citation_service = (
+            InvestigationRAGGroundedCitationService()
+        )
+
+        # ==================================================
+        # Unified Analytical Context
+        # ==================================================
+
+        self.investigation_unified_analytical_context_service = (
+            InvestigationUnifiedAnalyticalContextService()
+        )
+
+        # ==================================================
+        # Telegram Entity Import
+        # ==================================================
+
+        self.telegram_entity_mapper_service = (
+            TelegramEntityMapperService()
+        )
+
+        self.telegram_entity_import_service = (
+            TelegramEntityImportService(
+                entity_service=(
+                    self.entity_service
+                ),
+                mapper=(
+                    self.telegram_entity_mapper_service
+                ),
+            )
+        )
+
+
+        # ==================================================
+        # Telegram Relationship Import
+        # ==================================================
+
+        self.telegram_interaction_service = (
+            TelegramInteractionService()
+        )
+
+        self.telegram_relationship_import_service = (
+            TelegramRelationshipImportService(
+                relationship_service=(
+                    self.relationship_service
+                ),
+                interaction_service=(
+                    self.telegram_interaction_service
+                ),
+                entity_service=(
+                    self.entity_service
+                ),
+            )
+        )
+
+        # ==================================================
+        # Telegram Timeline Import
+        # ==================================================
+
+        self.telegram_timeline_mapper_service = (
+            TelegramTimelineMapperService()
+        )
+
+        self.telegram_timeline_import_service = (
+            TelegramTimelineImportService(
+                mapper=(
+                    self.telegram_timeline_mapper_service
+                ),
+                timeline_service=(
+                    self.timeline_service
+                ),
+                entity_service=(
+                    self.entity_service
+                ),
+            )
+        )
+
+        # ==================================================
+        # Investigation Summary
+        # ==================================================
+
+        self.investigation_summary_builder = (
+            InvestigationSummaryBuilder(
+                message_service=(
+                    self.message_service
+                ),
+                entity_service=(
+                    self.entity_service
+                ),
+                relationship_service=(
+                    self.relationship_service
+                ),
+                timeline_service=(
+                    self.timeline_service
+                ),
+            )
+        )
+
+        self.telegram_report_import_service = (
+            TelegramReportImportService(
+                summary_builder=(
+                    self.investigation_summary_builder
+                ),
+                report_service=(
+                    self.report_service
+                ),
+            )
+        )
+
+        # ==================================================
+        # Telegram Import
+        # ==================================================
+
+        self.telegram_import_service = (
+            TelegramImportService(
+                collector=(
+                    self.telegram_collector
+                ),
+                extraction_service=(
+                    self.unified_extraction_service
+                ),
+                collection_service=(
+                    self.collection_service
+                ),
+                source_service=(
+                    self.source_service
+                ),
+                entity_import_service=(
+                    self.telegram_entity_import_service
+                ),
+                relationship_import_service=(
+                    self.telegram_relationship_import_service
+                ),
+                timeline_import_service=(
+                    self.telegram_timeline_import_service
+                ),
+                report_import_service=(
+                    self.telegram_report_import_service
+                ),
+                search_indexing_service=(
+                    self.search_indexing_service
+                ),
+            )
+        )
+
+        # ==================================================
+        # OSINT Infrastructure
+        # ==================================================
+
+        self.osint_manager = (
+            OsintManager()
+        )
+
+        # M021.16.5.2C1 User Scanner runtime registration
+        from app.osint.connectors.user_scanner_connector import (
+            UserScannerConnector,
+        )
+
+        self.osint_manager.registry.register(
+            UserScannerConnector()
+        )
+
+        # M021.16.5.1 Gravatar runtime registration
+        from app.osint.connectors.gravatar_connector import (
+            GravatarConnector,
+        )
+
+        self.osint_manager.registry.register(
+            GravatarConnector()
+        )
+
+        self.osint_pipeline = (
+            OsintPipeline(
+                manager=(
+                    self.osint_manager
+                ),
+            )
+        )
+
+        self.osint_target_builder = (
+            OsintTargetBuilder()
+        )
+
+        self.osint_enrichment_execution_service = (
+            OsintEnrichmentExecutionService(
+                pipeline=(
+                    self.osint_pipeline
+                ),
+            )
+        )
+
+        self.osint_finding_persistence_service = (
+            OsintFindingPersistenceService(
+                source_service=(
+                    self.source_service
+                ),
+                evidence_service=(
+                    self.evidence_service
+                ),
+                entity_service=(
+                    self.entity_service
+                ),
+                evidence_link_service=(
+                    self.evidence_link_service
+                ),
+            )
+        )
+
+        # ==================================================
+        # M022 Registry Intelligence
+        # ==================================================
+
+        self.registry_provider_registry = RegistryProviderRegistry()
+        self.gleif_registry_http_client = GleifRegistryHttpClient()
+        self.gleif_registry_provider = GleifRegistryProvider(
+            client=self.gleif_registry_http_client
+        )
+        self.registry_provider_registry.register(
+            self.gleif_registry_provider
+        )
+        self.registry_persistence_service = RegistryPersistenceService(
+            source_service=self.source_service,
+            evidence_service=self.evidence_service,
+            entity_service=self.entity_service,
+            evidence_link_service=self.evidence_link_service,
+            search_indexing_service=self.search_indexing_service,
+        )
+        self.registry_intelligence_service = RegistryIntelligenceService(
+            registry=self.registry_provider_registry,
+            persistence_service=self.registry_persistence_service,
+        )
+
+        # ==================================================
+        # Open-Web Discovery / Enrichment
+        # M021.10
+        # ==================================================
+
+        self.open_web_provider_registry = (
+            OpenWebProviderRegistry()
+        )
+
+
+        self.common_crawl_http_client = (
+            CommonCrawlHttpClient()
+        )
+
+
+        self.common_crawl_raw_index_client = (
+            CommonCrawlRawIndexClient()
+        )
+        self.common_crawl_metadata_client = (
+            CommonCrawlMetadataClient(
+                primary=self.common_crawl_http_client,
+                raw_index=self.common_crawl_raw_index_client,
+            )
+        )
+
+        self.common_crawl_open_web_provider = (
+            CommonCrawlOpenWebProvider(
+                client=(
+                    self.common_crawl_metadata_client
+                ),
+            )
+        )
+
+        self.open_web_provider_registry.register(
+            self.common_crawl_open_web_provider
+        )
+
+        # M021.16.7.3 — exact PHONE Open-Web discovery.
+        # GDELT only discovers candidate public news URLs; every candidate is
+        # re-fetched through bounded Live Web and exact-phone verified before
+        # it can enter extraction/persistence.
+        self.gdelt_phone_exact_open_web_provider = (
+            GdeltPhoneExactOpenWebProvider()
+        )
+        self.open_web_provider_registry.register(
+            self.gdelt_phone_exact_open_web_provider
+        )
+
+        self.searxng_phone_exact_open_web_provider = (
+            SearxngPhoneExactOpenWebProvider()
+        )
+        self.open_web_provider_registry.register(
+            self.searxng_phone_exact_open_web_provider
+        )
+
+        self.targeted_phone_public_sources_provider = (
+            TargetedPhonePublicSourcesProvider()
+        )
+        self.open_web_provider_registry.register(
+            self.targeted_phone_public_sources_provider
+        )
+
+        self.live_web_open_web_provider = (
+            LiveWebOpenWebProvider()
+        )
+
+        self.open_web_provider_registry.register(
+            self.live_web_open_web_provider
+        )
+
+        # M021.16.5.2A GDELT exact-email Open-Web registration
+        from app.osint.open_web.providers.gdelt_exact_email import (
+            GdeltExactEmailOpenWebProvider,
+        )
+
+        self.gdelt_exact_email_open_web_provider = (
+            GdeltExactEmailOpenWebProvider(
+                live_web_provider=self.live_web_open_web_provider,
+            )
+        )
+
+        self.open_web_provider_registry.register(
+            self.gdelt_exact_email_open_web_provider
+        )
+
+        # M021.16.5.2B Brave exact-email Open-Web registration
+        from app.osint.open_web.providers.brave_exact_email import (
+            BraveExactEmailOpenWebProvider,
+        )
+
+        self.brave_exact_email_open_web_provider = (
+            BraveExactEmailOpenWebProvider(
+                live_web_provider=self.live_web_open_web_provider,
+            )
+        )
+
+        self.open_web_provider_registry.register(
+            self.brave_exact_email_open_web_provider
+        )
+
+        self.open_web_discovery_service = (
+            OpenWebDiscoveryService(
+                registry=(
+                    self.open_web_provider_registry
+                ),
+            )
+        )
+
+        self.open_web_identifier_extraction_bridge = (
+            OpenWebIdentifierExtractionBridge(
+                extraction_service=(
+                    self.unified_extraction_service
+                ),
+            )
+        )
+
+        self.common_crawl_warc_content_client = (
+            CommonCrawlWarcContentClient()
+        )
+
+        self.common_crawl_content_hydrator = (
+            CommonCrawlContentHydrator(
+                client=self.common_crawl_warc_content_client,
+                max_documents=3,
+                timeout=20,
+            )
+        )
+
+        self.open_web_enrichment_service = (
+            OpenWebEnrichmentService(
+                discovery_service=(
+                    self.open_web_discovery_service
+                ),
+                extraction_bridge=(
+                    self.open_web_identifier_extraction_bridge
+                ),
+                persistence_service=(
+                    self.osint_finding_persistence_service
+                ),
+                content_hydrator=(
+                    self.common_crawl_content_hydrator
+                ),
+            )
+        )
+
+        self.osint_enrichment_service = (
+            OsintEnrichmentService(
+                execution_service=(
+                    self.osint_enrichment_execution_service
+                ),
+                persistence_service=(
+                    self.osint_finding_persistence_service
+                ),
+            )
+        )
+
+        self.investigation_target_enrichment_service = (
+            InvestigationTargetEnrichmentService(
+                execution_service=(
+                    self.osint_enrichment_execution_service
+                ),
+                persistence_service=(
+                    self.osint_finding_persistence_service
+                ),
+            )
+        )
+
+        self.osint_recursive_enrichment_service = (
+            OsintRecursiveEnrichmentService(
+                enrichment_service=(
+                    self.osint_enrichment_service
+                ),
+            )
+        )
+
+
+        self.open_web_recursive_pivot_service = (
+            OpenWebRecursivePivotService(
+                recursive_service=(
+                    self.osint_recursive_enrichment_service
+                ),
+            )
+        )
+
+        # ==================================================
+        # Workflow
+        # ==================================================
+
+        self.workflow = (
+            InvestigationWorkflow()
+        )
+
+        # ==================================================
+        # Investigation Entity Resolution / Evidence Analysis
+        # ==================================================
+
+        self.entity_resolution_pipeline = (
+            EntityResolutionPipeline(
+                session
+            )
+        )
+
+        self.investigation_entity_resolution_analysis_service = (
+            InvestigationEntityResolutionAnalysisService(
+                entity_service=(
+                    self.entity_service
+                ),
+                entity_resolution_pipeline=(
+                    self.entity_resolution_pipeline
+                ),
+            )
+        )
+
+        self.evidence_source_reliability_scoring_service = (
+            SourceReliabilityScoringService()
+        )
+
+        self.investigation_evidence_analysis_service = (
+            InvestigationEvidenceAnalysisService(
+                evidence_service=(
+                    self.evidence_service
+                ),
+                source_reliability_scoring_service=(
+                    self.evidence_source_reliability_scoring_service
+                ),
+            )
+        )
+
+        # ==================================================
+        # Investigation Graph Analysis
+        # ==================================================
+
+        self.unified_graph_analysis_service = (
+            UnifiedGraphAnalysisService()
+        )
+
+        self.graph_explainability_service = (
+            GraphExplainabilityService()
+        )
+
+        self.investigation_graph_analysis_service = (
+            InvestigationGraphAnalysisService(
+                entity_graph_service=(
+                    self.entity_graph_service
+                ),
+                unified_graph_analysis_service=(
+                    self.unified_graph_analysis_service
+                ),
+                graph_explainability_service=(
+                    self.graph_explainability_service
+                ),
+            )
+        )
+
+        # ==================================================
+        # Investigation Temporal Analysis
+        # ==================================================
+
+        self.unified_temporal_analysis_service = (
+            UnifiedTemporalAnalysisService()
+        )
+
+        self.investigation_temporal_analysis_service = (
+            InvestigationTemporalAnalysisService(
+                timeline_service=(
+                    self.timeline_service
+                ),
+                unified_temporal_analysis_service=(
+                    self.unified_temporal_analysis_service
+                ),
+            )
+        )
+
+        # ==================================================
+        # Investigation Anomaly Analysis
+        # ==================================================
+
+        self.investigation_entity_feature_extraction_service = (
+            InvestigationEntityFeatureExtractionService()
+        )
+
+        self.unified_anomaly_analysis_service = (
+            UnifiedAnomalyAnalysisService()
+        )
+
+        self.investigation_anomaly_analysis_service = (
+            InvestigationAnomalyAnalysisService(
+                investigation_graph_analysis_service=(
+                    self.investigation_graph_analysis_service
+                ),
+                investigation_temporal_analysis_service=(
+                    self.investigation_temporal_analysis_service
+                ),
+                entity_feature_extraction_service=(
+                    self.investigation_entity_feature_extraction_service
+                ),
+                unified_anomaly_analysis_service=(
+                    self.unified_anomaly_analysis_service
+                ),
+            )
+        )
+
+        # ==================================================
+        # Investigation Entity Clustering
+        # ==================================================
+
+        self.investigation_entity_clustering_service = (
+            InvestigationEntityClusteringService(
+                investigation_graph_analysis_service=(
+                    self.investigation_graph_analysis_service
+                ),
+                investigation_temporal_analysis_service=(
+                    self.investigation_temporal_analysis_service
+                ),
+                entity_feature_extraction_service=(
+                    self.investigation_entity_feature_extraction_service
+                ),
+            )
+        )
+
+        # ==================================================
+        # Investigation Multimodal Analysis
+        # ==================================================
+
+        self.multimodal_image_aggregation_service = (
+            MultimodalImageAggregationService()
+        )
+
+        self.investigation_multimodal_analysis_service = (
+            InvestigationMultimodalAnalysisService(
+                evidence_service=(
+                    self.evidence_service
+                ),
+                image_aggregation_service=(
+                    self.multimodal_image_aggregation_service
+                ),
+                audio_transcription_service=(
+                    self.file_processing_router
+                    .audio_processor
+                    .transcription_service
+                ),
+                video_transcription_service=(
+                    self.file_processing_router
+                    .video_processor
+                    .transcription_service
+                ),
+                video_frame_analysis_service=(
+                    self.file_processing_router
+                    .video_processor
+                    .frame_analysis_service
+                ),
+            )
+        )
+
+        # ==================================================
+        # Investigation Analysis Orchestrator
+        # ==================================================
+
+        self.investigation_analysis_orchestrator = (
+            InvestigationAnalysisOrchestrator(
+                case_service=(
+                    self.case_service
+                ),
+                investigation_entity_resolution_analysis_service=(
+                    self.investigation_entity_resolution_analysis_service
+                ),
+                investigation_evidence_analysis_service=(
+                    self.investigation_evidence_analysis_service
+                ),
+                investigation_graph_analysis_service=(
+                    self.investigation_graph_analysis_service
+                ),
+                investigation_temporal_analysis_service=(
+                    self.investigation_temporal_analysis_service
+                ),
+                investigation_anomaly_analysis_service=(
+                    self.investigation_anomaly_analysis_service
+                ),
+                investigation_entity_clustering_service=(
+                    self.investigation_entity_clustering_service
+                ),
+                investigation_multimodal_analysis_service=(
+                    self.investigation_multimodal_analysis_service
+                ),
+                investigation_rag_retrieval_service=(
+                    self.investigation_rag_retrieval_service
+                ),
+                investigation_rag_context_builder=(
+                    self.investigation_rag_context_builder
+                ),
+                investigation_rag_summary_service=(
+                    self.investigation_rag_summary_service
+                ),
+                investigation_rag_conclusions_service=(
+                    self.investigation_rag_conclusions_service
+                ),
+                investigation_rag_grounded_citation_service=(
+                    self.investigation_rag_grounded_citation_service
+                ),
+                investigation_unified_analytical_context_service=(
+                    self.investigation_unified_analytical_context_service
+                ),
+            )
+        )
+
+        # ==================================================
+        # Investigation Analysis Runner
+        # ==================================================
+
+        self.investigation_analysis_runner = (
+            InvestigationAnalysisRunner(
+                orchestrator=(
+                    self.investigation_analysis_orchestrator
+                ),
+            )
+        )
+
+        # ==================================================
+        # Workspace Services
+        # ==================================================
+
+        self.case_workspace_service = (
+            CaseWorkspaceService(
+                case_service=(
+                    self.case_service
+                ),
+                evidence_service=(
+                    self.evidence_service
+                ),
+                entity_service=(
+                    self.entity_service
+                ),
+                entity_graph_service=(
+                    self.entity_graph_service
+                ),
+                message_service=(
+                    self.message_service
+                ),
+                relationship_service=(
+                    self.relationship_service
+                ),
+                timeline_service=(
+                    self.timeline_service
+                ),
+                report_service=(
+                    self.report_service
+                ),
+            )
+        )
+
+
+        self.import_workspace_service = (
+            ImportWorkspaceService(
+                case_service=(
+                    self.case_service
+                ),
+                telegram_import_service=(
+                    self.telegram_import_service
+                ),
+            )
+        )
+
+        self.osint_workspace_service = (
+            OsintWorkspaceService(
+                pipeline=(
+                    self.osint_pipeline
+                ),
+                target_builder=(
+                    self.osint_target_builder
+                ),
+            )
+        )
+
+        # ==================================================
+        # Workspace Container
+        # ==================================================
+
+        self.workspaces = (
+            ApplicationWorkspaces(
+                case_workspace=(
+                    self.case_workspace_service
+                ),
+                ai_workspace=(
+                    self.ai_workspace_service
+                ),
+                import_workspace=(
+                    self.import_workspace_service
+                ),
+                osint_workspace=(
+                    self.osint_workspace_service
+                ),
+            )
+        )
+
+        # ==================================================
+        # Application Service
+        # ==================================================
+
+        self.application_service = (
+            InvestigationApplicationService(
+                workflow=(
+                    self.workflow
+                ),
+                workspaces=(
+                    self.workspaces
+                ),
+                investigation_ai_service=(
+                    self.investigation_ai_service
+                ),
+            )
+        )
+
+        # ==================================================
         # Controllers
-        # ======================================================
+        # ==================================================
 
         self.case_controller = (
             CaseController(
                 container=self,
-                case_service=self.case_service,
-                workspace_service=self.case_workspace_service,
+                case_service=(
+                    self.case_service
+                ),
+                workspace_service=(
+                    self.case_workspace_service
+                ),
             )
         )
 
         self.workspace_controller = (
             WorkspaceController(
                 container=self,
-                workspace_service=self.case_workspace_service,
+                workspace_service=(
+                    self.case_workspace_service
+                ),
             )
         )
 
         self.ai_controller = (
             AIAnalysisController(
-                investigation_service=self.investigation_ai_service,
-                analyzer=self.ai_analyzer,
+                investigation_service=(
+                    self.investigation_ai_service
+                ),
+                execution_service=(
+                    self.ai_execution_service
+                ),
+                analyzer=(
+                    self.ai_analyzer
+                ),
             )
         )
+
+        self.import_controller = (
+            ImportController(
+                import_service=(
+                    self.import_workspace_service
+                ),
+            )
+        )
+
+        self.osint_controller = (
+            OsintController(
+                osint_service=(
+                    self.osint_workspace_service
+                ),
+            )
+        )
+
+        self.image_gps_location_service = (
+            ImageGpsLocationService(
+                evidence_service=self.evidence_service,
+                entity_service=self.entity_service,
+                evidence_link_service=self.evidence_link_service,
+            )
+        )
+
+    # ======================================================
+    # Helpers
+    # ======================================================
+
+    def commit(
+        self,
+    ) -> None:
+        """
+        Commit current transaction.
+        """
+
+        self.session.commit()
+
+    def rollback(
+        self,
+    ) -> None:
+        """
+        Rollback current transaction.
+        """
+
+        self.session.rollback()
+
+    def close(
+        self,
+    ) -> None:
+        """
+        Close database session.
+        """
+
+        self.session.close()

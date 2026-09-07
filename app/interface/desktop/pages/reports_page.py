@@ -3,22 +3,19 @@ Reports page.
 
 Responsible for:
 
-- displaying investigation reports
-- requesting reports from controller
+- displaying reports workspace
+- embedding report view
 
 Does NOT:
 
-- generate reports
-- export files
+- execute business logic
 - access database
+- call services directly
 """
 
 from __future__ import annotations
 
 from PySide6.QtWidgets import (
-    QLabel,
-    QListWidget,
-    QPushButton,
     QVBoxLayout,
 )
 
@@ -26,10 +23,14 @@ from app.interface.desktop.pages.base_page import (
     BasePage,
 )
 
+from app.interface.desktop.views.report_workspace_view import (
+    ReportWorkspaceView,
+)
+
 
 class ReportsPage(BasePage):
     """
-    Investigation reports page.
+    Reports page.
     """
 
     def __init__(
@@ -40,7 +41,7 @@ class ReportsPage(BasePage):
         self.container = container
 
         super().__init__(
-            "Reports"
+            "Reports",
         )
 
     # ==========================================================
@@ -50,56 +51,31 @@ class ReportsPage(BasePage):
     def _setup_ui(
         self,
     ) -> None:
-        """
-        Create reports page UI.
-        """
 
         layout = QVBoxLayout(
-            self
+            self,
         )
 
-        title = QLabel(
-            "Investigation Reports"
-        )
-
-        layout.addWidget(
-            title
-        )
-
-        self.report_list = QListWidget()
-
-        layout.addWidget(
-            self.report_list
-        )
-
-        self.refresh_button = QPushButton(
-            "Refresh"
-        )
-
-        self.refresh_button.clicked.connect(
-            self.refresh
+        self.workspace = (
+            ReportWorkspaceView()
         )
 
         layout.addWidget(
-            self.refresh_button
+            self.workspace,
         )
 
     # ==========================================================
-    # Refresh
+    # Public API
     # ==========================================================
 
-    def refresh(
+    def set_reports(
         self,
+        reports: list,
     ) -> None:
         """
-        Refresh reports.
-
-        Report integration will be
-        implemented later.
+        Display reports.
         """
 
-        self.report_list.clear()
-
-        self.report_list.addItem(
-            "No reports available."
+        self.workspace.set_reports(
+            reports,
         )

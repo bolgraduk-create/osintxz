@@ -3,13 +3,6 @@ Relationship service.
 
 Contains business logic related
 to relationships between entities.
-
-Examples:
-
-- Person knows Person
-- Account belongs to Person
-- Phone connected to Account
-- Organization related to Person
 """
 
 from __future__ import annotations
@@ -41,6 +34,10 @@ class RelationshipService:
             session
         )
 
+    # ==========================================================
+    # CRUD
+    # ==========================================================
+
     def create_relationship(
         self,
         case_id: UUID,
@@ -51,9 +48,6 @@ class RelationshipService:
         metadata_json: str | None = None,
         description: str | None = None,
     ) -> Relationship:
-        """
-        Create entity relationship.
-        """
 
         relationship = Relationship(
             case_id=case_id,
@@ -73,9 +67,6 @@ class RelationshipService:
         self,
         relationship_id: UUID,
     ) -> Relationship | None:
-        """
-        Get relationship by id.
-        """
 
         return self.repository.get(
             relationship_id
@@ -85,10 +76,6 @@ class RelationshipService:
         self,
         case_id: UUID,
     ) -> list[Relationship]:
-        """
-        Return relationships
-        belonging to a case.
-        """
 
         return self.repository.get_by_case(
             case_id
@@ -98,10 +85,6 @@ class RelationshipService:
         self,
         entity_id: UUID,
     ) -> list[Relationship]:
-        """
-        Return all relationships
-        where entity participates.
-        """
 
         return self.repository.get_entity_connections(
             entity_id
@@ -112,9 +95,6 @@ class RelationshipService:
         relationship_id: UUID,
         confidence: float,
     ) -> Relationship | None:
-        """
-        Update confidence score.
-        """
 
         relationship = self.repository.get(
             relationship_id
@@ -133,9 +113,6 @@ class RelationshipService:
         self,
         relationship_id: UUID,
     ) -> bool:
-        """
-        Soft delete relationship.
-        """
 
         relationship = self.repository.get(
             relationship_id
@@ -149,3 +126,21 @@ class RelationshipService:
         self.repository.session.flush()
 
         return True
+
+    # ==========================================================
+    # Processing
+    # ==========================================================
+
+    def process_case(
+        self,
+        case_id: UUID,
+    ) -> None:
+        """
+        Execute relationship extraction pipeline.
+
+        Future implementation will build
+        links between entities extracted
+        during investigation.
+        """
+
+        return None

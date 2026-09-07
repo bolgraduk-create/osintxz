@@ -39,8 +39,12 @@ class AIPage(BasePage):
 
         self.container = container
 
+        self.current_case: dict | None = None
+
+        self.current_case_id: str | None = None
+
         super().__init__(
-            "AI Assistant"
+            "AI Assistant",
         )
 
     # ==========================================================
@@ -50,52 +54,86 @@ class AIPage(BasePage):
     def _setup_ui(
         self,
     ) -> None:
-        """
-        Create AI page UI.
-        """
 
         layout = QVBoxLayout(
-            self
+            self,
         )
 
         title = QLabel(
-            "AI Assistant Workspace"
+            "AI Assistant"
         )
 
         layout.addWidget(
-            title
+            title,
         )
 
         self.question = QTextEdit()
 
         self.question.setPlaceholderText(
-            "Ask AI about the investigation..."
+            "Ask AI about the current investigation..."
         )
 
         layout.addWidget(
-            self.question
+            self.question,
         )
 
         self.ask_button = QPushButton(
-            "Ask AI"
+            "Ask AI",
         )
 
         self.ask_button.clicked.connect(
-            self._ask_ai
+            self._ask_ai,
         )
 
         layout.addWidget(
-            self.ask_button
+            self.ask_button,
         )
 
         self.answer = QTextEdit()
 
         self.answer.setReadOnly(
-            True
+            True,
         )
 
         layout.addWidget(
-            self.answer
+            self.answer,
+        )
+
+    # ==========================================================
+    # Investigation
+    # ==========================================================
+
+    def load_case(
+        self,
+        case: dict,
+    ) -> None:
+        """
+        Store currently opened investigation.
+        """
+
+        if not isinstance(
+            case,
+            dict,
+        ):
+
+            self.current_case = None
+
+            self.current_case_id = None
+
+            return
+
+        self.current_case = case
+
+        self.current_case_id = str(
+            case.get(
+                "id",
+                "",
+            )
+        )
+
+        self.answer.append(
+            f"Opened investigation: "
+            f"{case.get('title', 'Unknown')}"
         )
 
     # ==========================================================
@@ -116,17 +154,16 @@ class AIPage(BasePage):
         )
 
         if not question:
-
             return
 
-        result = (
+        response = (
             self.container
             .ai_controller
             .ask(
-                question
+                question,
             )
         )
 
         self.answer.setPlainText(
-            result
+            response,
         )

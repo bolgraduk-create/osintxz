@@ -38,7 +38,38 @@ TEMP_DIR = BASE_DIR / "storage" / "temp"
 
 MEDIA_DIR = BASE_DIR / "storage" / "media"
 
+THUMBNAILS_DIR = (
+    BASE_DIR
+    / "storage"
+    / "media"
+    / "thumbnails"
+)
+
+PREVIEWS_DIR = (
+    BASE_DIR
+    / "storage"
+    / "media"
+    / "previews"
+)
+
 DOCUMENTS_DIR = BASE_DIR / "storage" / "documents"
+
+
+# ==========================================================
+# Bundled tools
+# ==========================================================
+
+TOOLS_DIR = BASE_DIR / "tools"
+
+EXIFTOOL_DIR = (
+    TOOLS_DIR
+    / "exiftool"
+)
+
+EXIFTOOL_EXECUTABLE = (
+    EXIFTOOL_DIR
+    / "exiftool.exe"
+)
 
 
 class Settings(BaseSettings):
@@ -57,13 +88,21 @@ class Settings(BaseSettings):
     # Application
     # ======================================================
 
-    app_name: str = Field(default="Intelligence Platform")
+    app_name: str = Field(
+        default="Intelligence Platform"
+    )
 
-    app_version: str = Field(default="0.1.0")
+    app_version: str = Field(
+        default="0.1.0"
+    )
 
-    environment: str = Field(default="development")
+    environment: str = Field(
+        default="development"
+    )
 
-    debug: bool = Field(default=True)
+    debug: bool = Field(
+        default=True
+    )
 
     # ======================================================
     # Security
@@ -95,8 +134,6 @@ class Settings(BaseSettings):
 
     postgres_password: SecretStr
 
-
-
     # ======================================================
     # OSINT API Keys
     # ======================================================
@@ -116,6 +153,9 @@ class Settings(BaseSettings):
     urlscan_api_key: str | None = None
 
     virustotal_api_key: str | None = None
+
+    # M021.16.5.2B — Brave Search API
+    brave_search_api_key: SecretStr | None = None
 
     # ======================================================
     # Redis
@@ -148,7 +188,13 @@ class Settings(BaseSettings):
     # ======================================================
 
     @property
-    def database_url(self) -> str:
+    def database_url(
+        self,
+    ) -> str:
+        """
+        Return SQLAlchemy PostgreSQL connection URL.
+        """
+
         return (
             "postgresql+psycopg://"
             f"{self.postgres_user}:"
@@ -159,20 +205,41 @@ class Settings(BaseSettings):
         )
 
     @property
-    def redis_url(self) -> str:
-        return f"redis://{self.redis_host}:{self.redis_port}"
+    def redis_url(
+        self,
+    ) -> str:
+        """
+        Return Redis connection URL.
+        """
+
+        return (
+            f"redis://"
+            f"{self.redis_host}:"
+            f"{self.redis_port}"
+        )
 
     @property
-    def ollama_url(self) -> str:
-        return self.ollama_host.rstrip("/")
+    def ollama_url(
+        self,
+    ) -> str:
+        """
+        Return normalized Ollama URL.
+        """
+
+        return self.ollama_host.rstrip(
+            "/"
+        )
 
     # ======================================================
     # Directories
     # ======================================================
 
-    def create_directories(self) -> None:
+    def create_directories(
+        self,
+    ) -> None:
         """
-        Creates every required directory for the application.
+        Create every required application directory.
+
         Safe to call multiple times.
         """
 
@@ -183,24 +250,35 @@ class Settings(BaseSettings):
             LOG_DIR,
             TEMP_DIR,
             MEDIA_DIR,
+            THUMBNAILS_DIR,
+            PREVIEWS_DIR,
             DOCUMENTS_DIR,
+            TOOLS_DIR,
+            EXIFTOOL_DIR,
         ]
 
         for directory in directories:
-            directory.mkdir(parents=True, exist_ok=True)
+
+            directory.mkdir(
+                parents=True,
+                exist_ok=True,
+            )
 
 
-@lru_cache(maxsize=1)
-def get_settings() -> Settings:
+@lru_cache(
+    maxsize=1
+)
+def get_settings(
+) -> Settings:
     """
-    Returns singleton application settings.
+    Return singleton application settings.
     """
 
-    settings = Settings()
+    application_settings = Settings()
 
-    settings.create_directories()
+    application_settings.create_directories()
 
-    return settings
+    return application_settings
 
 
 settings = get_settings()

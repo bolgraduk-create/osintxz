@@ -59,6 +59,7 @@ class EntityType(str, Enum):
     DOCUMENT = "document"
     ACCOUNT = "account"
     OTHER = "other"
+    BANK_CARD = "bank_card"
 
 
 class Entity(

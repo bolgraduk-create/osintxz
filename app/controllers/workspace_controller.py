@@ -39,9 +39,13 @@ class WorkspaceController(BaseController):
         workspace_service: CaseWorkspaceService,
     ) -> None:
 
-        super().__init__(container)
+        super().__init__(
+            container
+        )
 
-        self.workspace_service = workspace_service
+        self.workspace_service = (
+            workspace_service
+        )
 
     # ==========================================================
     # Workspace
@@ -55,8 +59,13 @@ class WorkspaceController(BaseController):
         Load workspace information.
         """
 
-        return self.workspace_service.get_workspace(
-            str(case_id)
+        return (
+            self.workspace_service
+            .get_workspace(
+                str(
+                    case_id
+                )
+            )
         )
 
     def refresh_workspace(
@@ -69,4 +78,63 @@ class WorkspaceController(BaseController):
 
         return self.load_workspace(
             case_id
+        )
+
+    # ==========================================================
+    # Workspace actions
+    # ==========================================================
+
+    def create_evidence_from_message(
+        self,
+        case_id,
+        message_data,
+    ):
+        """
+        Create evidence from a workspace message.
+        """
+
+        return (
+            self.workspace_service
+            .create_evidence_from_message(
+                case_id=case_id,
+                message_data=message_data,
+            )
+        )
+
+    def create_entity_from_message(
+        self,
+        case_id,
+        message_data,
+        field_name,
+        entity_type,
+    ):
+        """
+        Create or reuse an entity from one message field.
+        """
+
+        return (
+            self.workspace_service
+            .create_entity_from_message(
+                case_id=case_id,
+                message_data=message_data,
+                field_name=field_name,
+                entity_type=entity_type,
+            )
+        )
+
+    def create_timeline_from_message(
+        self,
+        case_id,
+        message_data,
+    ):
+        """
+        Create timeline event from a message.
+        """
+
+        return (
+            self.workspace_service
+            .create_timeline_from_message(
+                case_id=case_id,
+                message_data=message_data,
+            )
         )

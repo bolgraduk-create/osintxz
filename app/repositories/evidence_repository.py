@@ -113,3 +113,71 @@ class EvidenceRepository(
         )
 
         return result.scalar_one_or_none()
+
+    def find_by_case_and_hash(
+        self,
+        case_id: UUID,
+        sha256: str,
+    ) -> Evidence | None:
+        """
+        Find active evidence by SHA256 inside one case.
+        """
+
+        normalized_hash = str(
+            sha256
+            or ""
+        ).strip().lower()
+
+        if not normalized_hash:
+
+            return None
+
+        result = self.session.execute(
+            select(Evidence)
+            .where(
+                Evidence.case_id == case_id,
+                Evidence.sha256 == normalized_hash,
+                Evidence.deleted_at.is_(None),
+            )
+            .limit(1)
+        )
+
+        return result.scalar_one_or_none()
+
+    def search_case_structured(
+        self,
+        case_id: UUID,
+        *,
+        evidence_types: tuple[EvidenceType, ...] = (),
+        object_ids: tuple[UUID, ...] = (),
+        source_ids: tuple[UUID, ...] = (),
+        values: tuple[str, ...] = (),
+        include_deleted: bool = False,
+        limit: int = 200,
+    ) -> list[Evidence]:
+        """Return Evidence rows matching explicit structured filters."""
+
+        statement = select(Evidence).where(Evidence.case_id == case_id)
+
+        if not include_deleted:
+            statement = statement.where(Evidence.deleted_at.is_(None))
+
+        if evidence_types:
+            statement = statement.where(Evidence.evidence_type.in_(evidence_types))
+
+        if object_ids:
+            statement = statement.where(Evidence.id.in_(object_ids))
+
+        if source_ids:
+            statement = statement.where(Evidence.source_id.in_(source_ids))
+
+        if values:
+            statement = statement.where(Evidence.value.in_(values))
+
+        statement = statement.order_by(
+            Evidence.created_at.desc(),
+            Evidence.id,
+        ).limit(max(1, int(limit)))
+
+        result = self.session.execute(statement)
+        return list(result.scalars().all())

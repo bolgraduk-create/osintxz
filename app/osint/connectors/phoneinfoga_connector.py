@@ -1,25 +1,8 @@
-"""
-PhoneInfoga connector.
-
-Searches information about
-phone numbers using PhoneInfoga.
-
-Responsibilities:
-
-- execute PhoneInfoga
-- parse JSON output
-- convert results to OsintResult
-
-Does NOT:
-
-- store database objects
-- call AI
-"""
-
 from __future__ import annotations
 
-import json
+import re
 import shutil
+from typing import Any
 
 from app.osint.base_connector import BaseConnector
 from app.osint.models import (
@@ -33,10 +16,23 @@ from app.osint.result import (
 )
 from app.osint.runner import ToolRunner
 
+from app.osint.tool_runtime import (
+    build_tool_command,
+    tool_available,
+)
+
 
 class PhoneInfogaConnector(BaseConnector):
     """
     PhoneInfoga connector.
+
+    PhoneInfoga 2.11.x no longer provides the old
+    --output json contract used by earlier versions.
+
+    Production integration parses the stable CLI
+    stdout sections produced by:
+
+        phoneinfoga scan -n <number>
     """
 
     @property
@@ -74,30 +70,179 @@ class PhoneInfogaConnector(BaseConnector):
     def is_available(
         self,
     ) -> bool:
-        """
-        Check whether PhoneInfoga
-        is installed.
-        """
 
-        return (
-            shutil.which(
-                "phoneinfoga",
-            )
-            is not None
+        return tool_available(
+            "phoneinfoga"
         )
+
+    @staticmethod
+    def _parse_output(
+        stdout: str,
+    ) -> dict[str, Any]:
+
+        result: dict[str, Any] = {
+            "local": {},
+            "search_queries": [],
+            "scanner_success_count": None,
+        }
+
+        current_scanner: str | None = None
+        current_category: str | None = None
+
+        for raw_line in stdout.splitlines():
+
+            line = raw_line.strip()
+
+            if not line:
+                continue
+
+            # --------------------------------------------------
+            # Scanner section
+            # --------------------------------------------------
+
+            if line.startswith(
+                "Results for "
+            ):
+
+                current_scanner = (
+                    line.removeprefix(
+                        "Results for "
+                    )
+                    .strip()
+                )
+
+                current_category = None
+                continue
+
+            # --------------------------------------------------
+            # Google-search categories
+            # --------------------------------------------------
+
+            if (
+                line.endswith(":")
+                and current_scanner
+                == "googlesearch"
+            ):
+
+                category = (
+                    line[:-1]
+                    .strip()
+                )
+
+                if category:
+
+                    current_category = (
+                        category
+                    )
+
+                continue
+
+            # --------------------------------------------------
+            # URL entries
+            # --------------------------------------------------
+
+            if (
+                line.startswith("URL:")
+                and current_scanner
+                == "googlesearch"
+            ):
+
+                url = (
+                    line.removeprefix(
+                        "URL:"
+                    )
+                    .strip()
+                )
+
+                if url:
+
+                    result[
+                        "search_queries"
+                    ].append(
+                        {
+                            "scanner": (
+                                current_scanner
+                            ),
+                            "category": (
+                                current_category
+                            ),
+                            "url": url,
+                        }
+                    )
+
+                continue
+
+            # --------------------------------------------------
+            # Local metadata
+            # --------------------------------------------------
+
+            if current_scanner == "local":
+
+                local_fields = {
+                    "Raw local": "raw_local",
+                    "Local": "local",
+                    "E164": "e164",
+                    "International": (
+                        "international"
+                    ),
+                    "Country": "country",
+                }
+
+                for prefix, key in (
+                    local_fields.items()
+                ):
+
+                    marker = (
+                        prefix + ":"
+                    )
+
+                    if line.startswith(
+                        marker
+                    ):
+
+                        value = (
+                            line[
+                                len(marker):
+                            ]
+                            .strip()
+                        )
+
+                        result[
+                            "local"
+                        ][key] = value
+
+                        break
+
+            # --------------------------------------------------
+            # Scanner summary
+            # --------------------------------------------------
+
+            match = re.match(
+                r"^(\d+)\s+scanner\(s\)\s+succeeded$",
+                line,
+                flags=re.IGNORECASE,
+            )
+
+            if match:
+
+                result[
+                    "scanner_success_count"
+                ] = int(
+                    match.group(1)
+                )
+
+        return result
 
     def execute(
         self,
         request: ConnectorRequest,
     ) -> OsintResult:
-        """
-        Execute PhoneInfoga.
-        """
 
         if (
             request.target.target_type
             not in self.supported_targets
         ):
+
             return OsintResult(
                 connector=self.name,
                 status=ResultStatus.NOT_SUPPORTED,
@@ -113,101 +258,157 @@ class PhoneInfogaConnector(BaseConnector):
             )
 
         execution = self.runner.run(
-
-            [
+            command=build_tool_command(
                 "phoneinfoga",
                 "scan",
                 "-n",
                 request.target.value,
-                "--output",
-                "json",
-            ],
-
+            ),
             timeout=request.timeout,
-
+            env={
+                "PYTHONIOENCODING": "utf-8",
+                "PYTHONUTF8": "1",
+            },
         )
 
         if not execution.success:
 
             return OsintResult(
-
                 connector=self.name,
-
                 status=ResultStatus.FAILED,
-
-                execution_time=execution.execution_time,
-
-                error=execution.stderr,
-
+                execution_time=(
+                    execution.execution_time
+                ),
+                error=(
+                    execution.stderr
+                    or execution.stdout
+                    or (
+                        "PhoneInfoga "
+                        "execution failed."
+                    )
+                ),
             )
 
-        try:
-
-            data = json.loads(
-                execution.stdout,
-            )
-
-        except Exception:
-
-            return OsintResult(
-
-                connector=self.name,
-
-                status=ResultStatus.PARTIAL,
-
-                execution_time=execution.execution_time,
-
-                raw_data=execution.stdout,
-
-                error="Unable to parse PhoneInfoga output.",
-
-            )
+        data = self._parse_output(
+            execution.stdout
+        )
 
         result = OsintResult(
-
             connector=self.name,
-
             status=ResultStatus.SUCCESS,
-
-            execution_time=execution.execution_time,
-
+            execution_time=(
+                execution.execution_time
+            ),
             raw_data=(
-                execution.stdout
+                {
+                    "parsed": data,
+                    "stdout": (
+                        execution.stdout
+                    ),
+                }
                 if request.save_raw_output
                 else None
             ),
-
         )
 
-        if isinstance(
-            data,
-            dict,
-        ):
+        # ======================================================
+        # Local phone metadata
+        # ======================================================
+
+        local = data.get(
+            "local",
+            {},
+        )
+
+        if local:
 
             result.add_finding(
-
                 OsintFinding(
-
-                    category="phone",
-
-                    value=request.target.value,
-
-                    source="PhoneInfoga",
-
+                    category="phone_metadata",
+                    value=(
+                        local.get("e164")
+                        or request.target.value
+                    ),
+                    source="PhoneInfoga/local",
                     confidence=1.0,
-
                     reliability=1.0,
-
-                    metadata=data,
-
+                    metadata=local,
                 )
+            )
 
+        # ======================================================
+        # Search-query findings
+        #
+        # These are discovery/search leads, not confirmed
+        # accounts or confirmed ownership records.
+        # ======================================================
+
+        for item in data.get(
+            "search_queries",
+            [],
+        ):
+
+            url = item.get(
+                "url"
+            )
+
+            category = (
+                item.get("category")
+                or "General"
+            )
+
+            if not url:
+                continue
+
+            result.add_finding(
+                OsintFinding(
+                    category="search_query",
+                    value=request.target.value,
+                    source=(
+                        "PhoneInfoga/"
+                        f"{category}"
+                    ),
+                    url=url,
+                    confidence=0.5,
+                    reliability=0.5,
+                    metadata={
+                        "lead_only": True,
+                        "scanner": (
+                            item.get(
+                                "scanner"
+                            )
+                        ),
+                        "category": (
+                            category
+                        ),
+                    },
+                )
             )
 
         result.metadata = {
-
-            "records_found": result.total_findings,
-
+            "records_found": (
+                result.total_findings
+            ),
+            "phone_metadata_found": (
+                bool(local)
+            ),
+            "search_queries_found": (
+                len(
+                    data.get(
+                        "search_queries",
+                        [],
+                    )
+                )
+            ),
+            "scanner_success_count": (
+                data.get(
+                    "scanner_success_count"
+                )
+            ),
+            "output_format": "stdout",
+            "phoneinfoga_cli": (
+                "2.11-compatible"
+            ),
         }
 
         return result

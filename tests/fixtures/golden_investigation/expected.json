@@ -1,0 +1,23 @@
+{
+  "items_imported": 5,
+  "identifiers_found": 7,
+  "identifiers_created": 6,
+  "identifiers_existing": 1,
+  "provenance_evidence_created": 5,
+  "evidence_links_created": 7,
+  "entities": {
+    "phone": ["380671234567"],
+    "bank_card": ["1234567890123452"],
+    "email": ["alice@example.com"],
+    "username": ["alice_01"],
+    "url": ["https://example.com/alice"],
+    "domain": ["example.com"]
+  },
+  "golden_search": {
+    "entity_type": "bank_card",
+    "normalized_value": "1234567890123452",
+    "required_methods": ["structured", "lexical", "fuzzy", "semantic"],
+    "requires_confidence": true,
+    "requires_explanation": true
+  }
+}

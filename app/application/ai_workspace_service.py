@@ -4,8 +4,8 @@ AI workspace application service.
 Responsible for:
 
 - coordinating AI features inside workspace
-- providing AI operations for a Case
-- delegating work to AI layer
+- validating investigation state
+- exposing AI operations to application layer
 
 Does NOT:
 
@@ -23,7 +23,8 @@ from app.services.case_service import CaseService
 
 class AIWorkspaceService:
     """
-    Coordinates AI operations for a case workspace.
+    Coordinates AI operations for
+    a case workspace.
     """
 
     def __init__(
@@ -33,20 +34,28 @@ class AIWorkspaceService:
 
         self.case_service = case_service
 
+    # ==========================================================
+    # Validation
+    # ==========================================================
+
     def validate_case(
         self,
         case_id: UUID,
     ) -> bool:
         """
-        Ensure that a case exists before
-        running AI operations.
+        Ensure the case exists.
         """
 
-        case = self.case_service.get_case(
-            case_id
+        return (
+            self.case_service.get_case(
+                case_id
+            )
+            is not None
         )
 
-        return case is not None
+    # ==========================================================
+    # Case
+    # ==========================================================
 
     def get_case(
         self,
@@ -59,3 +68,33 @@ class AIWorkspaceService:
         return self.case_service.get_case(
             case_id
         )
+
+    # ==========================================================
+    # Workspace state
+    # ==========================================================
+
+    def is_ready(
+        self,
+        case_id: UUID,
+    ) -> bool:
+        """
+        Returns True if the workspace
+        is ready for AI analysis.
+        """
+
+        return self.validate_case(
+            case_id
+        )
+
+    # ==========================================================
+    # Metadata
+    # ==========================================================
+
+    def metadata(
+        self,
+    ) -> dict:
+
+        return {
+            "type": "ai_workspace_service",
+            "version": "1.0",
+        }

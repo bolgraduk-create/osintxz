@@ -1,0 +1,110 @@
+# ============================================================
+# Python
+# ============================================================
+
+__pycache__/
+*.py[cod]
+*$py.class
+
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+.pytype/
+.hypothesis/
+
+# ============================================================
+# Virtual environments
+# ============================================================
+
+.venv/
+venv/
+env/
+
+# ============================================================
+# Packaging / build output
+# ============================================================
+
+build/
+dist/
+.eggs/
+*.egg-info/
+
+# ============================================================
+# Local secrets and machine-specific environment
+# ============================================================
+
+.env
+.env.*
+!.env.example
+
+# ============================================================
+# IDE / editor
+# ============================================================
+
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ============================================================
+# OS-generated files
+# ============================================================
+
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ============================================================
+# Runtime / generated output
+# ============================================================
+
+logs/
+*.log
+
+storage/cache/
+storage/exports/
+storage/tmp/
+
+# ============================================================
+# Local development backups
+# Keep them on disk if useful, but never commit them.
+# ============================================================
+
+backups/
+*.bak
+*.backup
+*.pre_*
+*_backup
+*_backup.*
+*.identifier-production-backup
+
+# ============================================================
+# Local audit / review artifacts
+# ============================================================
+
+review_*.diff
+full_project_changes.diff
+full_project_status.txt
+codex_changes.diff
+compatibility_test_fixes.diff
+before_review_*.diff
+before_review_*.txt
+
+pytest_*.txt
+status_*.txt
+alembic_*.txt
+*_usage.txt
+db_schema_check.txt
+/storage/
+/tools/exiftool/
+/tools/exiftool-*/
+/tools/phoneinfoga/
+/baseline_status.txt
+/git_status_after_cleanup.txt
+/STABILIZATION_*.txt
+/docs/osint_stabilization/baseline_status.txt
+/docs/osint_stabilization/baseline_tests.xml
+/docs/osint_stabilization/diffs/

@@ -6,6 +6,7 @@ Responsible for:
 - coordinating import workflows
 - validating investigation case
 - delegating import operations
+- returning import statistics to controllers and UI
 
 Does NOT:
 
@@ -17,6 +18,7 @@ Does NOT:
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 from uuid import UUID
 
 from app.services.case_service import (
@@ -30,7 +32,7 @@ from app.services.telegram_import_service import (
 
 class ImportWorkspaceService:
     """
-    Coordinates import workflows for investigations.
+    Coordinates import workflows.
     """
 
     def __init__(
@@ -39,32 +41,104 @@ class ImportWorkspaceService:
         telegram_import_service: TelegramImportService,
     ) -> None:
 
-        self.case_service = case_service
+        self.case_service = (
+            case_service
+        )
 
         self.telegram_import_service = (
             telegram_import_service
         )
 
+    # ==========================================================
+    # Validation
+    # ==========================================================
+
+    def validate_case(
+        self,
+        case_id: UUID,
+    ) -> bool:
+        """
+        Ensure that the investigation case exists.
+        """
+
+        return (
+            self.case_service.get_case(
+                case_id
+            )
+            is not None
+        )
+
+    # ==========================================================
+    # Telegram
+    # ==========================================================
+
     def import_telegram(
         self,
         case_id: UUID,
         export_path: str | Path,
-    ) -> None:
+    ) -> dict[str, Any]:
         """
-        Import Telegram export into an existing case.
+        Import Telegram export and return import statistics.
         """
 
-        case = self.case_service.get_case(
+        if not self.validate_case(
             case_id
-        )
-
-        if case is None:
+        ):
 
             raise ValueError(
                 "Case not found."
             )
 
-        self.telegram_import_service.import_export(
-            case_id=case_id,
-            path=export_path,
+        return (
+            self.telegram_import_service
+            .import_export(
+                case_id=case_id,
+                export_path=export_path,
+            )
         )
+
+    # ==========================================================
+    # Generic directory
+    # ==========================================================
+
+    def import_directory(
+        self,
+        case_id: UUID,
+        directory: str | Path,
+    ) -> dict[str, Any]:
+        """
+        Generic directory import.
+
+        Will be connected when additional
+        collectors are implemented.
+        """
+
+        if not self.validate_case(
+            case_id
+        ):
+
+            raise ValueError(
+                "Case not found."
+            )
+
+        raise NotImplementedError(
+            "Directory import is not implemented yet."
+        )
+
+    # ==========================================================
+    # Metadata
+    # ==========================================================
+
+    def metadata(
+        self,
+    ) -> dict[str, str]:
+        """
+        Return service metadata.
+        """
+
+        return {
+            "type": (
+                "import_workspace_service"
+            ),
+            "version": "2.0",
+        }

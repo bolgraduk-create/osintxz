@@ -21,6 +21,11 @@ from app.repositories.base_repository import (
     BaseRepository,
 )
 
+from sqlalchemy import (
+    delete,
+    select,
+)
+
 
 
 class SearchIndexRepository(
@@ -123,3 +128,45 @@ class SearchIndexRepository(
 
 
         return result.scalar_one_or_none()
+
+        # ==========================================================
+    # Delete
+    # ==========================================================
+
+    def delete_by_object(
+        self,
+        *,
+        object_type: SearchObjectType,
+        object_id: UUID,
+    ) -> int:
+        """
+        Delete SearchIndex belonging to one domain object.
+
+        Related semantic embeddings should be removed
+        before calling this method.
+        """
+
+        statement = (
+            delete(
+                SearchIndex
+            )
+            .where(
+                SearchIndex.object_type
+                == object_type
+            )
+            .where(
+                SearchIndex.object_id
+                == object_id
+            )
+        )
+
+        result = (
+            self.session.execute(
+                statement
+            )
+        )
+
+        return int(
+            result.rowcount
+            or 0
+        )

@@ -5,6 +5,7 @@ requires = [
 ]
 build-backend = "setuptools.build_meta"
 
+
 [project]
 name = "intelligence-platform"
 version = "0.1.0"
@@ -65,7 +66,6 @@ dependencies = [
     "networkx>=3.5",
     "pyvis>=0.3.2",
 
-
     # ------------------------
     # Desktop Interface
     # ------------------------
@@ -94,6 +94,7 @@ dependencies = [
     "pgvector>=0.4.1",
 ]
 
+
 [project.optional-dependencies]
 
 dev = [
@@ -109,18 +110,50 @@ dev = [
     "pytest-cov>=7.0.0",
 ]
 
+
 media = [
 
-    "opencv-python",
-
-    "easyocr",
+    # ------------------------
+    # Core image processing
+    # ------------------------
 
     "pillow",
 
+    "opencv-python",
+
     "moviepy",
 
-    "openai-whisper",
+    # ------------------------
+    # Image hashes
+    # ------------------------
+
+    "ImageHash",
+
+    # ------------------------
+    # Image embeddings
+    # ------------------------
+
+    "fastembed==0.8.0",
+
+    "onnxruntime==1.29.0",
+
+    # ------------------------
+    # OCR
+    # ------------------------
+
+    "rapidocr==3.9.2",
+
+    # ------------------------
+    # Audio / Video transcription
+    # ------------------------
+
+    "faster-whisper==1.2.1",
+
+    "ctranslate2==4.8.1",
+
+    "av==18.1.0",
 ]
+
 
 osint = [
 
@@ -129,9 +162,11 @@ osint = [
     "python-whois",
 ]
 
+
 [tool.setuptools]
 
 include-package-data = true
+
 
 [tool.setuptools.packages.find]
 
@@ -161,17 +196,20 @@ exclude = [
     "scripts*",
 ]
 
+
 [tool.black]
 
 line-length = 88
 
 target-version = ["py312"]
 
+
 [tool.ruff]
 
 line-length = 88
 
 target-version = "py312"
+
 
 [tool.ruff.lint]
 
@@ -190,6 +228,7 @@ select = [
     "B",
 ]
 
+
 [tool.mypy]
 
 python_version = "3.12"
@@ -201,6 +240,7 @@ ignore_missing_imports = true
 warn_return_any = true
 
 warn_unused_configs = true
+
 
 [tool.pytest.ini_options]
 

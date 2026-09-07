@@ -4,6 +4,7 @@ Entities page.
 Responsible for:
 
 - displaying entity workspace
+- embedding entity view
 
 Does NOT:
 
@@ -14,36 +15,34 @@ Does NOT:
 
 from __future__ import annotations
 
-
 from PySide6.QtWidgets import (
-    QWidget,
-    QLabel,
     QVBoxLayout,
 )
 
+from app.interface.desktop.pages.base_page import (
+    BasePage,
+)
+
+from app.interface.desktop.views.entity_workspace_view import (
+    EntityWorkspaceView,
+)
 
 
-class EntitiesPage(QWidget):
+class EntitiesPage(BasePage):
     """
-    Entities workspace.
+    Entities page.
     """
-
-
 
     def __init__(
         self,
         container,
     ):
 
-        super().__init__()
-
-
         self.container = container
 
-
-        self._setup_ui()
-
-
+        super().__init__(
+            "Entities",
+        )
 
     # ==========================================================
     # UI
@@ -54,15 +53,29 @@ class EntitiesPage(QWidget):
     ) -> None:
 
         layout = QVBoxLayout(
-            self
+            self,
         )
 
-
-        title = QLabel(
-            "Entities Workspace"
+        self.workspace = (
+            EntityWorkspaceView()
         )
-
 
         layout.addWidget(
-            title
+            self.workspace,
+        )
+
+    # ==========================================================
+    # Public API
+    # ==========================================================
+
+    def set_entities(
+        self,
+        entities: list,
+    ) -> None:
+        """
+        Display entities.
+        """
+
+        self.workspace.set_entities(
+            entities,
         )

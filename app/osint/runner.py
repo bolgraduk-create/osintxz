@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import subprocess
 import time
+import os
 
 
 @dataclass(slots=True)
@@ -55,12 +56,26 @@ class ToolRunner:
         timeout: int = 300,
         working_directory: Path | None = None,
         stdin: str | None = None,
+        env: dict[str, str] | None = None,
     ) -> ToolExecutionResult:
         """
         Execute external command.
+
+        Optional ``env`` values are merged with the current
+        process environment instead of replacing it.
         """
 
         start = time.perf_counter()
+
+        process_env = os.environ.copy()
+
+        if env:
+            process_env.update(
+                {
+                    str(key): str(value)
+                    for key, value in env.items()
+                }
+            )
 
         try:
 
@@ -73,6 +88,7 @@ class ToolRunner:
                 cwd=working_directory,
                 encoding="utf-8",
                 errors="replace",
+                env=process_env,
             )
 
             elapsed = (

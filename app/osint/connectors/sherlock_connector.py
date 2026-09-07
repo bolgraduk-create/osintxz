@@ -1,25 +1,6 @@
-"""
-Sherlock connector.
-
-Integrates Sherlock username search
-into the Intelligence Platform.
-
-Responsibilities:
-
-- execute Sherlock
-- parse JSON results
-- convert output to OsintResult
-
-Does NOT:
-
-- store database objects
-- call AI
-- perform workflow logic
-"""
-
 from __future__ import annotations
 
-import json
+import csv
 import shutil
 import tempfile
 from pathlib import Path
@@ -40,20 +21,18 @@ from app.osint.runner import ToolRunner
 class SherlockConnector(BaseConnector):
     """
     Sherlock OSINT connector.
+
+    Sherlock 0.16.x does not use --json as a result
+    export option. Result export is performed through
+    CSV instead.
     """
 
     @property
-    def name(
-        self,
-    ) -> str:
-
+    def name(self) -> str:
         return "Sherlock"
 
     @property
-    def description(
-        self,
-    ) -> str:
-
+    def description(self) -> str:
         return (
             "Username search across "
             "hundreds of websites."
@@ -68,20 +47,10 @@ class SherlockConnector(BaseConnector):
             OsintTargetType.USERNAME,
         }
 
-    def __init__(
-        self,
-    ) -> None:
-
+    def __init__(self) -> None:
         self.runner = ToolRunner()
 
-    def is_available(
-        self,
-    ) -> bool:
-        """
-        Check whether Sherlock
-        is installed.
-        """
-
+    def is_available(self) -> bool:
         return (
             shutil.which("sherlock")
             is not None
@@ -91,14 +60,10 @@ class SherlockConnector(BaseConnector):
         self,
         request: ConnectorRequest,
     ) -> OsintResult:
-        """
-        Execute Sherlock.
-        """
 
         if not self.validate_target(
             request,
         ):
-
             return OsintResult(
                 connector=self.name,
                 status=ResultStatus.NOT_SUPPORTED,
@@ -106,7 +71,6 @@ class SherlockConnector(BaseConnector):
             )
 
         if not self.is_available():
-
             return OsintResult(
                 connector=self.name,
                 status=ResultStatus.NOT_AVAILABLE,
@@ -115,141 +79,143 @@ class SherlockConnector(BaseConnector):
 
         with tempfile.TemporaryDirectory() as temp:
 
-            output = Path(temp)
+            temp_path = Path(temp)
 
             command = [
-
                 "sherlock",
-
                 request.target.value,
-
-                "--json",
-
-                str(output),
-
+                "--csv",
+                "--print-found",
+                "--no-color",
+                "--no-txt",
             ]
 
             execution = self.runner.run(
                 command=command,
                 timeout=request.timeout,
+                working_directory=temp_path,
             )
 
             if not execution.success:
-
                 return OsintResult(
-
                     connector=self.name,
-
                     status=ResultStatus.FAILED,
-
                     execution_time=execution.execution_time,
-
-                    error=execution.stderr,
-
+                    error=(
+                        execution.stderr
+                        or execution.stdout
+                        or "Sherlock execution failed."
+                    ),
                 )
 
-            json_file = (
-                output /
-                f"{request.target.value}.json"
+            csv_files = list(
+                temp_path.glob("*.csv")
             )
 
-            if not json_file.exists():
-
+            if not csv_files:
                 return OsintResult(
-
                     connector=self.name,
-
-                    status=ResultStatus.FAILED,
-
+                    status=ResultStatus.PARTIAL,
                     execution_time=execution.execution_time,
-
-                    error="Sherlock JSON not produced.",
-
+                    raw_data=(
+                        execution.stdout
+                        if request.save_raw_output
+                        else None
+                    ),
+                    error="Sherlock CSV report was not produced.",
                 )
+
+            findings: list[OsintFinding] = []
+            parsed_rows: list[dict[str, str]] = []
 
             try:
 
-                data = json.loads(
-                    json_file.read_text(
-                        encoding="utf-8",
-                    )
-                )
+                for csv_file in csv_files:
+
+                    with csv_file.open(
+                        "r",
+                        encoding="utf-8-sig",
+                        newline="",
+                    ) as handle:
+
+                        reader = csv.DictReader(
+                            handle
+                        )
+
+                        for row in reader:
+
+                            parsed_rows.append(
+                                dict(row)
+                            )
+
+                            exists = str(
+                                row.get(
+                                    "exists",
+                                    "",
+                                )
+                            ).strip().lower()
+
+                            # Sherlock commonly reports
+                            # CLAIMED for discovered profiles.
+                            if (
+                                "claimed"
+                                not in exists
+                                and exists
+                                not in {
+                                    "true",
+                                    "yes",
+                                    "1",
+                                }
+                            ):
+                                continue
+
+                            website = (
+                                row.get("name")
+                                or "Sherlock"
+                            )
+
+                            url = (
+                                row.get("url_user")
+                                or None
+                            )
+
+                            findings.append(
+                                OsintFinding(
+                                    category="account",
+                                    value=request.target.value,
+                                    url=url,
+                                    source=website,
+                                    confidence=1.0,
+                                    reliability=1.0,
+                                    metadata=dict(row),
+                                )
+                            )
 
             except Exception as exc:
-
                 return OsintResult(
-
                     connector=self.name,
-
                     status=ResultStatus.FAILED,
-
                     execution_time=execution.execution_time,
-
-                    error=str(exc),
-
-                )
-
-            findings: list[
-                OsintFinding
-            ] = []
-
-            for website, info in data.items():
-
-                if not isinstance(
-                    info,
-                    dict,
-                ):
-                    continue
-
-                url = info.get(
-                    "url_user",
-                )
-
-                if not url:
-                    continue
-
-                findings.append(
-
-                    OsintFinding(
-
-                        category="account",
-
-                        value=request.target.value,
-
-                        url=url,
-
-                        source=website,
-
-                        confidence=1.0,
-
-                        reliability=1.0,
-
-                        metadata=info,
-
-                    )
-
+                    error=(
+                        "Unable to parse Sherlock CSV: "
+                        f"{exc}"
+                    ),
                 )
 
             return OsintResult(
-
                 connector=self.name,
-
                 status=ResultStatus.SUCCESS,
-
                 findings=findings,
-
                 raw_data=(
-                    data
+                    parsed_rows
                     if request.save_raw_output
                     else None
                 ),
-
                 execution_time=execution.execution_time,
-
                 metadata={
-
-                    "accounts_found": len(findings),
-
+                    "accounts_found": len(
+                        findings
+                    ),
+                    "report_format": "csv",
                 },
-
             )

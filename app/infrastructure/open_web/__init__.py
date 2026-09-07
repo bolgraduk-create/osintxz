@@ -1,0 +1,1 @@
+"""Open-Web infrastructure adapters."""

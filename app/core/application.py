@@ -1,72 +1,29 @@
 """
-Application bootstrap.
+Legacy application import compatibility.
 
-Responsible for:
+The authoritative desktop bootstrap is:
 
-- creating QApplication
-- initializing database
-- creating session
-- creating service container
-- creating main window
-- starting desktop application
+    main.py
+        -> app.interface.desktop.desktop_app.DesktopApplication
 
-This is the desktop entry point.
+This module intentionally contains no QApplication, database-session,
+ServiceContainer, theme, or MainWindow construction.
+
+It remains only so older imports of ``app.core.application.Application``
+do not create a second application bootstrap implementation.
 """
 
 from __future__ import annotations
 
-import sys
-
-from PySide6.QtWidgets import QApplication
-
-from app.database.init_db import init_database
-from app.database.session import create_session
-
-from app.core.service_container import (
-    ServiceContainer,
-)
-
-from app.interface.desktop.main_window import (
-    MainWindow,
+from app.interface.desktop.desktop_app import (
+    DesktopApplication,
 )
 
 
-class Application:
-    """
-    Desktop application bootstrap.
-    """
+Application = DesktopApplication
 
-    def __init__(
-        self,
-    ) -> None:
 
-        init_database()
-
-        self.qt = QApplication(
-            sys.argv
-        )
-
-        self.session = create_session()
-
-        self.container = ServiceContainer(
-            self.session
-        )
-
-        self.window = MainWindow(
-            self.container
-        )
-
-    def run(
-        self,
-    ) -> int:
-        """
-        Start application.
-        """
-
-        self.window.show()
-
-        code = self.qt.exec()
-
-        self.session.close()
-
-        return code
+__all__ = [
+    "Application",
+    "DesktopApplication",
+]

@@ -25,11 +25,9 @@ from app.database.mixins import (
     TimestampMixin,
 )
 
-
 if TYPE_CHECKING:
     from app.models.case import Case
     from app.models.entity import Entity
-
 
 
 class TimelineEventType(str, Enum):
@@ -58,7 +56,6 @@ class TimelineEventType(str, Enum):
     OTHER = "other"
 
 
-
 class TimelineEvent(
     TimestampMixin,
     DescriptionMixin,
@@ -70,8 +67,6 @@ class TimelineEvent(
 
     __tablename__ = "timeline_events"
 
-
-
     case_id: Mapped[UUID] = mapped_column(
         ForeignKey(
             "cases.id",
@@ -80,7 +75,6 @@ class TimelineEvent(
         nullable=False,
         index=True,
     )
-
 
     entity_id: Mapped[UUID | None] = mapped_column(
         ForeignKey(
@@ -91,7 +85,6 @@ class TimelineEvent(
         index=True,
     )
 
-
     event_type: Mapped[TimelineEventType] = mapped_column(
         SqlEnum(
             TimelineEventType,
@@ -101,12 +94,10 @@ class TimelineEvent(
         index=True,
     )
 
-
     title: Mapped[str] = mapped_column(
         String(255),
         nullable=False,
     )
-
 
     event_time: Mapped[str] = mapped_column(
         String(64),
@@ -114,25 +105,20 @@ class TimelineEvent(
         index=True,
     )
 
-
     source_reference: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
     )
-
 
     metadata_json: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
     )
 
-
-
     case: Mapped["Case"] = relationship(
         "Case",
         back_populates="timeline_events",
     )
-
 
     entity: Mapped["Entity | None"] = relationship(
         "Entity",

@@ -1,0 +1,12 @@
+{
+  "case_id": "8d72b3b4-d32c-5a6f-a531-8f52b2fdd600",
+  "seeds": [
+    {
+      "target_type": "username",
+      "value": "golden_alice",
+      "parent_entity_id": null
+    }
+  ],
+  "timeout": 10,
+  "use_cache": false
+}

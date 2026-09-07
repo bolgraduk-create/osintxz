@@ -4,7 +4,7 @@ Evidence page.
 Responsible for:
 
 - displaying evidence workspace
-- requesting evidence from controller
+- embedding evidence view
 
 Does NOT:
 
@@ -16,9 +16,6 @@ Does NOT:
 from __future__ import annotations
 
 from PySide6.QtWidgets import (
-    QLabel,
-    QListWidget,
-    QPushButton,
     QVBoxLayout,
 )
 
@@ -26,10 +23,14 @@ from app.interface.desktop.pages.base_page import (
     BasePage,
 )
 
+from app.interface.desktop.views.evidence_workspace_view import (
+    EvidenceWorkspaceView,
+)
+
 
 class EvidencePage(BasePage):
     """
-    Evidence workspace.
+    Evidence page.
     """
 
     def __init__(
@@ -40,7 +41,7 @@ class EvidencePage(BasePage):
         self.container = container
 
         super().__init__(
-            "Evidence"
+            "Evidence",
         )
 
     # ==========================================================
@@ -52,50 +53,29 @@ class EvidencePage(BasePage):
     ) -> None:
 
         layout = QVBoxLayout(
-            self
+            self,
         )
 
-        title = QLabel(
-            "Evidence Workspace"
-        )
-
-        layout.addWidget(
-            title
-        )
-
-        self.evidence_list = QListWidget()
-
-        layout.addWidget(
-            self.evidence_list
-        )
-
-        self.refresh_button = QPushButton(
-            "Refresh"
-        )
-
-        self.refresh_button.clicked.connect(
-            self.refresh
+        self.workspace = (
+            EvidenceWorkspaceView()
         )
 
         layout.addWidget(
-            self.refresh_button)
+            self.workspace,
+        )
 
     # ==========================================================
-    # Refresh
+    # Public API
     # ==========================================================
 
-    def refresh(
+    def set_evidence(
         self,
+        evidence: list,
     ) -> None:
         """
-        Refresh evidence list.
-
-        Evidence integration will be
-        implemented in the next stage.
+        Display evidence.
         """
 
-        self.evidence_list.clear()
-
-        self.evidence_list.addItem(
-            "No evidence loaded."
+        self.workspace.set_evidence(
+            evidence,
         )

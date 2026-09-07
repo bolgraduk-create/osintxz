@@ -10,6 +10,20 @@ Examples:
 - DOCX files
 - Text documents
 - Imported reports
+
+Search lifecycle:
+
+Document
+    ↓
+DocumentRepository
+    ↓
+SearchIndexingService
+    ↓
+SearchIndex
+
+Semantic embeddings are generated separately so
+high-volume imports do not perform one embedding
+request for every document.
 """
 
 from __future__ import annotations
@@ -27,6 +41,10 @@ from app.repositories.document_repository import (
     DocumentRepository,
 )
 
+from app.services.search_indexing_service import (
+    SearchIndexingService,
+)
+
 
 class DocumentService:
     """
@@ -36,11 +54,26 @@ class DocumentService:
     def __init__(
         self,
         session: Session,
-    ):
-        self.repository = DocumentRepository(
-            session
+        *,
+        search_indexing_service: (
+            SearchIndexingService
+            | None
+        ) = None,
+    ) -> None:
+
+        self.repository = (
+            DocumentRepository(
+                session
+            )
         )
 
+        self.search_indexing_service = (
+            search_indexing_service
+        )
+
+    # ======================================================
+    # Create
+    # ======================================================
 
     def create_document(
         self,
@@ -51,6 +84,8 @@ class DocumentService:
         file_path: str | None = None,
         content: str | None = None,
         description: str | None = None,
+        *,
+        update_search_index: bool = True,
     ) -> Document:
         """
         Create new document.
@@ -66,10 +101,28 @@ class DocumentService:
             description=description,
         )
 
-        return self.repository.create(
-            document
+        document = (
+            self.repository.create(
+                document
+            )
         )
 
+        if (
+            update_search_index
+            and self.search_indexing_service
+            is not None
+        ):
+
+            self.search_indexing_service \
+                .index_object_text_only(
+                    document
+                )
+
+        return document
+
+    # ======================================================
+    # Read
+    # ======================================================
 
     def get_document(
         self,
@@ -79,24 +132,29 @@ class DocumentService:
         Get document by id.
         """
 
-        return self.repository.get(
-            document_id
+        return (
+            self.repository.get(
+                document_id
+            )
         )
-
 
     def get_case_documents(
         self,
         case_id: UUID,
     ) -> list[Document]:
         """
-        Return all documents
-        belonging to a case.
+        Return all documents belonging to a case.
         """
 
-        return self.repository.get_by_case(
-            case_id
+        return (
+            self.repository.get_by_case(
+                case_id
+            )
         )
 
+    # ======================================================
+    # Update
+    # ======================================================
 
     def update_content(
         self,
@@ -104,22 +162,37 @@ class DocumentService:
         content: str,
     ) -> Document | None:
         """
-        Update document text content.
+        Update document text content and refresh
+        its textual search representation.
+
+        Existing semantic embedding is invalidated.
         """
 
-        document = self.repository.get(
-            document_id
+        document = (
+            self.repository.get(
+                document_id
+            )
         )
 
         if document is None:
+
             return None
 
         document.content = content
 
         self.repository.session.flush()
 
-        return document
+        if (
+            self.search_indexing_service
+            is not None
+        ):
 
+            self.search_indexing_service \
+                .index_object_text_only(
+                    document
+                )
+
+        return document
 
     def update_hash(
         self,
@@ -128,13 +201,21 @@ class DocumentService:
     ) -> Document | None:
         """
         Store document hash.
+
+        Hash changes currently remain a persistence
+        operation. Search reindexing is unnecessary
+        unless SearchIndexBuilder includes the hash
+        in the searchable representation.
         """
 
-        document = self.repository.get(
-            document_id
+        document = (
+            self.repository.get(
+                document_id
+            )
         )
 
         if document is None:
+
             return None
 
         document.sha256 = sha256
@@ -143,24 +224,85 @@ class DocumentService:
 
         return document
 
+    # ======================================================
+    # Explicit search refresh
+    # ======================================================
+
+    def refresh_search(
+        self,
+        document_id: UUID,
+        *,
+        include_embedding: bool = True,
+    ) -> bool:
+        """
+        Refresh search representation for one document.
+        """
+
+        if (
+            self.search_indexing_service
+            is None
+        ):
+
+            return False
+
+        document = (
+            self.repository.get(
+                document_id
+            )
+        )
+
+        if document is None:
+
+            return False
+
+        self.search_indexing_service \
+            .index_object(
+                document,
+                include_embedding=(
+                    include_embedding
+                ),
+                force_embedding=(
+                    include_embedding
+                ),
+            )
+
+        return True
+
+    # ======================================================
+    # Delete
+    # ======================================================
 
     def delete_document(
         self,
         document_id: UUID,
     ) -> bool:
         """
-        Soft delete document.
+        Soft delete document and remove its search
+        representations.
         """
 
-        document = self.repository.get(
-            document_id
+        document = (
+            self.repository.get(
+                document_id
+            )
         )
 
         if document is None:
+
             return False
 
         document.soft_delete()
 
         self.repository.session.flush()
+
+        if (
+            self.search_indexing_service
+            is not None
+        ):
+
+            self.search_indexing_service \
+                .remove_object(
+                    document
+                )
 
         return True

@@ -1,0 +1,64 @@
+{
+  "targets_processed": 4,
+  "persisted_findings": 3,
+  "sources_created": 2,
+  "evidences_created": 3,
+  "entities_created": 3,
+  "stop_reason": "queue_exhausted",
+  "candidate_stats": {
+    "discovered": 3,
+    "enqueued": 3,
+    "deduplicated": 0
+  },
+  "executed_connectors": [
+    "Maigret",
+    "Sherlock",
+    "commoncrawl",
+    "GAU",
+    "Waybackurls",
+    "archivetoday",
+    "crtsh",
+    "Subfinder",
+    "commoncrawl",
+    "GAU",
+    "Waybackurls",
+    "archivetoday",
+    "commoncrawl",
+    "GAU",
+    "Waybackurls",
+    "archivetoday"
+  ],
+  "entities": [
+    {
+      "type": "domain",
+      "value": "example.org"
+    },
+    {
+      "type": "url",
+      "value": "https://example.org/about"
+    },
+    {
+      "type": "url",
+      "value": "https://profiles.example/golden_alice"
+    }
+  ],
+  "sources": [
+    "OSINT · Maigret",
+    "OSINT · commoncrawl"
+  ],
+  "evidences": [
+    {
+      "type": "link",
+      "value": "https://example.org/about"
+    },
+    {
+      "type": "link",
+      "value": "https://profiles.example/golden_alice"
+    },
+    {
+      "type": "other",
+      "value": "example.org"
+    }
+  ],
+  "evidence_entity_links": 5
+}

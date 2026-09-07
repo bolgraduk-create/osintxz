@@ -139,3 +139,70 @@ class EntityRepository(
         return list(
             result.scalars().all()
         )
+
+    def find_in_case(
+        self,
+        case_id: UUID,
+        entity_type: EntityType,
+        normalized_value: str,
+    ) -> Entity | None:
+        """
+        Find one entity inside a case by type and normalized value.
+        """
+
+        result = self.session.execute(
+            select(
+                Entity
+            )
+            .where(
+                Entity.case_id == case_id,
+                Entity.entity_type == entity_type,
+                Entity.normalized_value == normalized_value,
+                Entity.deleted_at.is_(None),
+            )
+            .limit(
+                1
+            )
+        )
+
+        return result.scalar_one_or_none()
+
+    def search_case_structured(
+        self,
+        case_id: UUID,
+        *,
+        entity_types: tuple[EntityType, ...] = (),
+        object_ids: tuple[UUID, ...] = (),
+        values: tuple[str, ...] = (),
+        normalized_values: tuple[str, ...] = (),
+        include_deleted: bool = False,
+        limit: int = 200,
+    ) -> list[Entity]:
+        """Return Entity rows matching explicit structured filters."""
+
+        statement = select(Entity).where(Entity.case_id == case_id)
+
+        if not include_deleted:
+            statement = statement.where(Entity.deleted_at.is_(None))
+
+        if entity_types:
+            statement = statement.where(Entity.entity_type.in_(entity_types))
+
+        if object_ids:
+            statement = statement.where(Entity.id.in_(object_ids))
+
+        if values:
+            statement = statement.where(Entity.value.in_(values))
+
+        if normalized_values:
+            statement = statement.where(
+                Entity.normalized_value.in_(normalized_values)
+            )
+
+        statement = statement.order_by(
+            Entity.created_at.desc(),
+            Entity.id,
+        ).limit(max(1, int(limit)))
+
+        result = self.session.execute(statement)
+        return list(result.scalars().all())

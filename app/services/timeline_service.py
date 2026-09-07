@@ -72,6 +72,88 @@ class TimelineService:
             event
         )
 
+    def create_from_message(
+        self,
+        case_id: str | UUID,
+        message_data: dict[str, Any],
+    ) -> TimelineEvent:
+        """
+        Create a timeline event from one message.
+        """
+
+        if not isinstance(
+            message_data,
+            dict,
+        ):
+            raise TypeError(
+                "message_data must be a dictionary."
+            )
+
+        case_uuid = self._normalize_uuid(
+            case_id
+        )
+
+        sent_at = self._normalize_text(
+            message_data.get(
+                "sent_at"
+            )
+        )
+
+        if not sent_at:
+            raise ValueError(
+                "Message does not contain a timestamp."
+            )
+
+        sender = self._normalize_text(
+            message_data.get(
+                "sender"
+            )
+        )
+
+        receiver = self._normalize_text(
+            message_data.get(
+                "receiver"
+            )
+        )
+
+        chat = self._normalize_text(
+            message_data.get(
+                "chat_name"
+            )
+        )
+
+        message_text = self._normalize_text(
+            message_data.get(
+                "text"
+            )
+        )
+
+        title = (
+            f"Message from {sender or 'Unknown'}"
+        )[:255]
+
+        description = (
+            "Timeline event created from message.\n\n"
+            f"Sender: {sender or 'Unavailable'}\n"
+            f"Receiver: {receiver or 'Unavailable'}\n"
+            f"Chat: {chat or 'Unavailable'}\n\n"
+            f"{message_text}"
+        )
+
+        return self.create_event(
+            case_id=case_uuid,
+            event_type=TimelineEventType.MESSAGE,
+            title=title,
+            event_time=sent_at,
+            source_reference=str(
+                message_data.get(
+                    "id"
+                )
+                or ""
+            ),
+            description=description,
+        )
+
 
 
     def get_event(
@@ -168,3 +250,32 @@ class TimelineService:
 
 
         return True
+
+    @staticmethod
+    def _normalize_uuid(
+        value: str | UUID,
+    ) -> UUID:
+
+        if isinstance(
+            value,
+            UUID,
+        ):
+            return value
+
+        return UUID(
+            str(
+                value
+            )
+        )
+
+    @staticmethod
+    def _normalize_text(
+        value: Any,
+    ) -> str:
+
+        if value is None:
+            return ""
+
+        return str(
+            value
+        ).strip()

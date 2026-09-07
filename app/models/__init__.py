@@ -78,6 +78,10 @@ from app.models.search_index import (
     SearchObjectType,
 )
 
+from app.models.search_embedding import (
+    SearchEmbedding,
+)
+
 from app.models.source import (
     Source,
     SourceStatus,
@@ -96,6 +100,22 @@ from app.models.workspace import (
 from app.models.workspace_membership import (
     WorkspaceMembership,
     WorkspaceRole,
+)
+
+from app.models.face_profile import (
+    FaceProfile,
+)
+
+from app.models.face_embedding import (
+    FaceEmbedding,
+)
+
+from app.models.search_semantic_chunk import (
+    SearchSemanticChunk,
+)
+
+from app.models.search_semantic_chunk_embedding import (
+    SearchSemanticChunkEmbedding,
 )
 
 __all__ = [
@@ -141,6 +161,8 @@ __all__ = [
     "SearchIndex",
     "SearchObjectType",
 
+    "SearchEmbedding",
+
     "Source",
     "SourceType",
     "SourceStatus",
@@ -152,4 +174,10 @@ __all__ = [
 
     "WorkspaceMembership",
     "WorkspaceRole",
+
+    "FaceProfile",
+    "FaceEmbedding",
+
+    "SearchSemanticChunk",
+    "SearchSemanticChunkEmbedding",
 ]

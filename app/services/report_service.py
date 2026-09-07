@@ -32,10 +32,14 @@ class ReportService:
     def __init__(
         self,
         session: Session,
-    ):
+    ) -> None:
         self.repository = ReportRepository(
             session
         )
+
+    # ==========================================================
+    # Create
+    # ==========================================================
 
     def create_report(
         self,
@@ -43,10 +47,11 @@ class ReportService:
         title: str,
         content: str,
         report_type: ReportType,
+        metadata_json: str | None = None,
         description: str | None = None,
     ) -> Report:
         """
-        Create new report.
+        Create a new report.
         """
 
         report = Report(
@@ -54,6 +59,7 @@ class ReportService:
             title=title,
             content=content,
             report_type=report_type,
+            metadata_json=metadata_json,
             description=description,
         )
 
@@ -61,12 +67,16 @@ class ReportService:
             report
         )
 
+    # ==========================================================
+    # Read
+    # ==========================================================
+
     def get_report(
         self,
         report_id: UUID,
     ) -> Report | None:
         """
-        Get report by id.
+        Get report by ID.
         """
 
         return self.repository.get(
@@ -78,12 +88,79 @@ class ReportService:
         case_id: UUID,
     ) -> list[Report]:
         """
-        Return reports for case.
+        Return reports belonging to a case.
         """
 
         return self.repository.get_by_case(
             case_id
         )
+
+    def get_case_report_by_type(
+        self,
+        case_id: UUID,
+        report_type: ReportType,
+    ) -> Report | None:
+        """
+        Return the first active report of a given
+        type belonging to the case.
+
+        The current reports architecture keeps
+        one automatically generated report of
+        each type for a case.
+        """
+
+        reports = self.repository.get_by_case(
+            case_id
+        )
+
+        for report in reports:
+            if report.report_type != report_type:
+                continue
+
+            is_deleted = getattr(
+                report,
+                "is_deleted",
+                False,
+            )
+
+            if is_deleted:
+                continue
+
+            return report
+
+        return None
+
+    # ==========================================================
+    # Update
+    # ==========================================================
+
+    def update_report(
+        self,
+        report_id: UUID,
+        title: str,
+        content: str,
+        metadata_json: str | None = None,
+        description: str | None = None,
+    ) -> Report | None:
+        """
+        Update an existing report.
+        """
+
+        report = self.repository.get(
+            report_id
+        )
+
+        if report is None:
+            return None
+
+        report.title = title
+        report.content = content
+        report.metadata_json = metadata_json
+        report.description = description
+
+        self.repository.session.flush()
+
+        return report
 
     def update_content(
         self,
@@ -91,7 +168,7 @@ class ReportService:
         content: str,
     ) -> Report | None:
         """
-        Update report content.
+        Update only report content.
         """
 
         report = self.repository.get(
@@ -107,12 +184,16 @@ class ReportService:
 
         return report
 
+    # ==========================================================
+    # Delete
+    # ==========================================================
+
     def delete_report(
         self,
         report_id: UUID,
     ) -> bool:
         """
-        Soft delete report.
+        Soft-delete a report.
         """
 
         report = self.repository.get(
