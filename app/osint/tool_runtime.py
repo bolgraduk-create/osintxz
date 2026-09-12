@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import shutil
 from pathlib import Path
 
@@ -16,6 +15,13 @@ TOOLS_ROOT = (
 )
 
 
+DISCOVERY_BIN_ROOT = (
+    TOOLS_ROOT
+    / "osint"
+    / "bin"
+)
+
+
 MANAGED_TOOL_PATHS: dict[
     str,
     tuple[Path, ...],
@@ -25,6 +31,41 @@ MANAGED_TOOL_PATHS: dict[
         TOOLS_ROOT
         / "phoneinfoga"
         / "phoneinfoga.exe",
+    ),
+
+    "subfinder": (
+        DISCOVERY_BIN_ROOT
+        / "subfinder.exe",
+    ),
+
+    "dnsx": (
+        DISCOVERY_BIN_ROOT
+        / "dnsx.exe",
+    ),
+
+    "gau": (
+        DISCOVERY_BIN_ROOT
+        / "gau.exe",
+    ),
+
+    "waybackurls": (
+        DISCOVERY_BIN_ROOT
+        / "waybackurls.exe",
+    ),
+
+    "katana": (
+        DISCOVERY_BIN_ROOT
+        / "katana.exe",
+    ),
+
+    "assetfinder": (
+        DISCOVERY_BIN_ROOT
+        / "assetfinder.exe",
+    ),
+
+    "httpx": (
+        DISCOVERY_BIN_ROOT
+        / "httpx.exe",
     ),
 
 }

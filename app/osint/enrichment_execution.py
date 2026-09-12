@@ -39,11 +39,51 @@ class ConnectorExecutionRecord:
 
 
 @dataclass(slots=True)
+class NewEntityBudget:
+    """
+    Shared in-memory creation budget for one enrichment batch.
+
+    Multiple execution results may reference the same instance. Persistence
+    consumes it only when a genuinely new Entity is created, which prevents
+    sibling goals/connectors from independently overshooting max_new_entities.
+    """
+
+    limit: int
+    consumed: int = 0
+
+    def __post_init__(self) -> None:
+        if self.limit < 0:
+            raise ValueError("limit must be >= 0")
+        if self.consumed < 0:
+            raise ValueError("consumed must be >= 0")
+        if self.consumed > self.limit:
+            raise ValueError("consumed must not exceed limit")
+
+    @property
+    def remaining(self) -> int:
+        return max(0, self.limit - self.consumed)
+
+    @property
+    def exhausted(self) -> bool:
+        return self.remaining == 0
+
+    def consume(self, count: int) -> None:
+        if count < 0:
+            raise ValueError("count must be >= 0")
+        if count > self.remaining:
+            raise ValueError(
+                "new-entity budget consumption exceeds remaining budget"
+            )
+        self.consumed += count
+
+
+@dataclass(slots=True)
 class EnrichmentExecutionResult:
     route: PivotRoute
     status: EnrichmentExecutionStatus
     records: list[ConnectorExecutionRecord] = field(default_factory=list)
     error: str | None = None
+    entity_budget: NewEntityBudget | None = None
 
     @property
     def results(self) -> list[OsintResult]:
@@ -101,6 +141,8 @@ class OsintEnrichmentExecutionService:
         save_raw_output: bool = False,
         include_metadata: bool = True,
         include_related: bool = True,
+        entity_budget: NewEntityBudget | None = None,
+        finding_limit: int | None = None,
     ) -> EnrichmentExecutionResult:
         route = self.router.route(
             target_type=target_type,
@@ -125,27 +167,64 @@ class OsintEnrichmentExecutionService:
                 error="Pivot is allowed, but no automatic connector capability is available.",
             )
 
+        limits = self.router.policy.limits
+        shared_entity_budget = (
+            entity_budget
+            if entity_budget is not None
+            else NewEntityBudget(
+                state.remaining_new_entities(limits)
+            )
+        )
+
+        if shared_entity_budget.exhausted:
+            return EnrichmentExecutionResult(
+                route=route,
+                status=EnrichmentExecutionStatus.SKIPPED,
+                error="No remaining new-entity budget is available.",
+                entity_budget=shared_entity_budget,
+            )
+
+        if finding_limit is None:
+            remaining_finding_budget = shared_entity_budget.remaining
+        else:
+            remaining_finding_budget = min(
+                max(0, int(finding_limit)),
+                shared_entity_budget.remaining,
+            )
+
+        if remaining_finding_budget <= 0:
+            return EnrichmentExecutionResult(
+                route=route,
+                status=EnrichmentExecutionStatus.SKIPPED,
+                error="No remaining finding budget is available.",
+                entity_budget=shared_entity_budget,
+            )
+
         state.mark_visited(
             key=PivotKey.build(target_type, value, goal),
             entity_identity=entity_identity,
         )
 
-        request = ConnectorRequest(
-            target=OsintTarget(
-                target_type=target_type,
-                value=value,
-                case_id=case_id,
-            ),
-            timeout=timeout,
-            use_cache=use_cache,
-            save_raw_output=save_raw_output,
-            include_metadata=include_metadata,
-            include_related=include_related,
-        )
-
         records: list[ConnectorExecutionRecord] = []
 
         for capability in route.connectors:
+            if remaining_finding_budget <= 0:
+                break
+
+            request = ConnectorRequest(
+                target=OsintTarget(
+                    target_type=target_type,
+                    value=value,
+                    case_id=case_id,
+                ),
+                timeout=timeout,
+                use_cache=use_cache,
+                save_raw_output=save_raw_output,
+                include_metadata=include_metadata,
+                include_related=include_related,
+                limit=remaining_finding_budget,
+            )
+
             runtime_name = self._resolve_runtime_connector_name(capability)
 
             if runtime_name is None:
@@ -168,6 +247,17 @@ class OsintEnrichmentExecutionService:
                     request=request,
                 )
 
+            result = self._enforce_result_limit(
+                result,
+                remaining_finding_budget,
+            )
+
+            remaining_finding_budget = max(
+                0,
+                remaining_finding_budget
+                - result.total_findings,
+            )
+
             records.append(
                 ConnectorExecutionRecord(
                     capability=capability,
@@ -180,6 +270,7 @@ class OsintEnrichmentExecutionService:
             route=route,
             status=self._aggregate_status(records),
             records=records,
+            entity_budget=shared_entity_budget,
         )
 
     def execute_defaults(
@@ -196,11 +287,40 @@ class OsintEnrichmentExecutionService:
         save_raw_output: bool = False,
         include_metadata: bool = True,
         include_related: bool = True,
+        entity_budget_limit: int | None = None,
     ) -> tuple[EnrichmentExecutionResult, ...]:
         goals = self.router.policy.default_goals(target_type)
+        limits = self.router.policy.limits
 
-        return tuple(
-            self.execute(
+        remaining_global_budget = state.remaining_new_entities(
+            limits
+        )
+
+        if entity_budget_limit is None:
+            target_entity_budget = remaining_global_budget
+        else:
+            target_entity_budget = min(
+                remaining_global_budget,
+                max(
+                    0,
+                    int(entity_budget_limit),
+                ),
+            )
+
+        shared_entity_budget = NewEntityBudget(
+            target_entity_budget
+        )
+
+        remaining_finding_budget = (
+            shared_entity_budget.remaining
+        )
+
+        executions: list[
+            EnrichmentExecutionResult
+        ] = []
+
+        for goal in goals:
+            execution = self.execute(
                 target_type=target_type,
                 value=value,
                 goal=goal,
@@ -213,9 +333,21 @@ class OsintEnrichmentExecutionService:
                 save_raw_output=save_raw_output,
                 include_metadata=include_metadata,
                 include_related=include_related,
+                entity_budget=shared_entity_budget,
+                finding_limit=remaining_finding_budget,
             )
-            for goal in goals
-        )
+
+            executions.append(
+                execution
+            )
+
+            remaining_finding_budget = max(
+                0,
+                remaining_finding_budget
+                - execution.total_findings,
+            )
+
+        return tuple(executions)
 
     def _resolve_runtime_connector_name(
         self,
@@ -262,6 +394,51 @@ class OsintEnrichmentExecutionService:
             "discovery_goals",
             sorted(goal.value for goal in capability.goals),
         )
+        return result
+
+    @staticmethod
+    def _enforce_result_limit(
+        result: OsintResult,
+        limit: int,
+    ) -> OsintResult:
+        """
+        Enforce the application boundary even for legacy connectors that do
+        not yet honor ConnectorRequest.limit themselves.
+        """
+
+        safe_limit = max(
+            0,
+            int(limit),
+        )
+
+        if len(result.findings) <= safe_limit:
+            return result
+
+        trimmed = (
+            len(result.findings)
+            - safe_limit
+        )
+
+        result.findings = (
+            result.findings[
+                :safe_limit
+            ]
+        )
+
+        result.metadata[
+            "execution_boundary_trimmed_findings"
+        ] = (
+            result.metadata.get(
+                "execution_boundary_trimmed_findings",
+                0,
+            )
+            + trimmed
+        )
+
+        result.metadata[
+            "execution_boundary_limit"
+        ] = safe_limit
+
         return result
 
     @staticmethod

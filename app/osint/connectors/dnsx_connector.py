@@ -8,6 +8,7 @@ Responsibilities:
 
 - execute dnsx
 - parse JSON output
+- enforce request result budget
 - convert output to OsintResult
 
 Does NOT:
@@ -19,7 +20,6 @@ Does NOT:
 from __future__ import annotations
 
 import json
-import shutil
 
 from app.osint.base_connector import BaseConnector
 from app.osint.models import (
@@ -32,6 +32,10 @@ from app.osint.result import (
     ResultStatus,
 )
 from app.osint.runner import ToolRunner
+from app.osint.tool_runtime import (
+    build_tool_command,
+    tool_available,
+)
 
 
 class DNSXConnector(BaseConnector):
@@ -75,11 +79,21 @@ class DNSXConnector(BaseConnector):
         self,
     ) -> bool:
 
-        return (
-            shutil.which(
-                "dnsx",
-            )
-            is not None
+        return tool_available(
+            "dnsx",
+        )
+
+    @staticmethod
+    def _result_limit(
+        request: ConnectorRequest,
+    ) -> int | None:
+
+        if request.limit is None:
+            return None
+
+        return max(
+            0,
+            int(request.limit),
         )
 
     def execute(
@@ -106,36 +120,33 @@ class DNSXConnector(BaseConnector):
             )
 
         execution = self.runner.run(
-
-            command=[
+            command=build_tool_command(
                 "dnsx",
                 "-silent",
                 "-json",
-            ],
-
+            ),
             stdin=request.target.value,
-
             timeout=request.timeout,
-
         )
 
         if not execution.success:
 
             return OsintResult(
-
                 connector=self.name,
-
                 status=ResultStatus.FAILED,
-
                 execution_time=execution.execution_time,
-
                 error=execution.stderr,
-
             )
 
         findings: list[
             OsintFinding
         ] = []
+
+        result_limit = self._result_limit(
+            request,
+        )
+
+        limit_reached = False
 
         try:
 
@@ -146,65 +157,53 @@ class DNSXConnector(BaseConnector):
 
                 item = json.loads(line)
 
+                if (
+                    result_limit is not None
+                    and len(findings) >= result_limit
+                ):
+                    limit_reached = True
+                    break
+
                 findings.append(
-
                     OsintFinding(
-
                         category="dns",
-
                         value=item.get(
                             "host",
                             request.target.value,
                         ),
-
                         source="DNSX",
-
                         confidence=1.0,
-
                         reliability=1.0,
-
                         metadata=item,
-
                     )
-
                 )
 
         except Exception as exc:
 
             return OsintResult(
-
                 connector=self.name,
-
                 status=ResultStatus.PARTIAL,
-
                 execution_time=execution.execution_time,
-
+                findings=findings,
                 error=str(exc),
-
             )
 
         result = OsintResult(
-
             connector=self.name,
-
             status=ResultStatus.SUCCESS,
-
             execution_time=execution.execution_time,
-
             findings=findings,
-
             raw_data=(
                 execution.stdout
                 if request.save_raw_output
                 else None
             ),
-
         )
 
         result.metadata = {
-
             "records_found": result.total_findings,
-
+            "result_limit": result_limit,
+            "limit_reached": limit_reached,
         }
 
         return result

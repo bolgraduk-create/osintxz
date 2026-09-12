@@ -182,6 +182,12 @@ class TimelineService:
             case_id
         )
 
+    def get_page(self, *, limit: int = 100, offset: int = 0, case_id: UUID | None = None):
+        return self.repository.get_page(limit=limit, offset=offset, case_id=case_id)
+
+    def count_all(self, *, case_id: UUID | None = None) -> int:
+        return self.repository.count_all(case_id=case_id)
+
 
 
     def get_entity_timeline(

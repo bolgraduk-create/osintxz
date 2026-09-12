@@ -18,7 +18,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from hashlib import sha256
+from ipaddress import ip_address
 import json
+import re
 from typing import Any
 from uuid import UUID
 
@@ -26,7 +28,10 @@ from app.models.entity import Entity, EntityType
 from app.models.evidence import Evidence, EvidenceType
 from app.models.source import Source, SourceType
 from app.osint.capabilities import DiscoveryGoal
-from app.osint.enrichment_execution import EnrichmentExecutionResult
+from app.osint.enrichment_execution import (
+    EnrichmentExecutionResult,
+    NewEntityBudget,
+)
 from app.osint.models import OsintTargetType
 from app.osint.result import OsintFinding, ResultStatus
 from app.osint.username_quality import (
@@ -42,6 +47,12 @@ from app.services.entity_service import EntityService
 from app.services.evidence_link_service import EvidenceLinkService
 from app.services.evidence_service import EvidenceService
 from app.services.source_service import SourceService
+
+
+_CERTIFICATE_EMAIL_LOCAL_RE = re.compile(
+    r"^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+$"
+)
+
 
 
 @dataclass(frozen=True, slots=True)
@@ -162,6 +173,11 @@ class OsintFindingPersistenceService:
                     finding_index=index,
                     parent_entity_id=parent_entity_id,
                     username_profile_fusion=username_profile_fusion,
+                    new_entity_budget=getattr(
+                        execution,
+                        "entity_budget",
+                        None,
+                    ),
                 )
                 result.persisted.append(persisted)
 
@@ -296,6 +312,7 @@ class OsintFindingPersistenceService:
         finding_index: int,
         parent_entity_id: UUID | None,
         username_profile_fusion: dict[str, UsernameProfileFusion] | None = None,
+        new_entity_budget: NewEntityBudget | None = None,
     ) -> PersistedFinding:
         source_key = self._source_key(
             connector=connector,
@@ -391,13 +408,40 @@ class OsintFindingPersistenceService:
                     confidence = profile_fusion.confidence
                     entity_metadata["profile_fusion"] = profile_fusion.metadata()
 
-            entity, created = self._resolve_or_create_entity(
-                case_id=case_id,
-                entity_type=entity_type,
-                value=value,
-                confidence=confidence,
-                metadata=entity_metadata,
-            )
+            existing_entity = None
+
+            if (
+                new_entity_budget is not None
+                and new_entity_budget.exhausted
+            ):
+                existing_entity = (
+                    self._find_existing_entity(
+                        case_id=case_id,
+                        entity_type=entity_type,
+                        value=value,
+                    )
+                )
+
+                if existing_entity is None:
+                    continue
+
+            if existing_entity is not None:
+                entity = existing_entity
+                created = False
+            else:
+                entity, created = self._resolve_or_create_entity(
+                    case_id=case_id,
+                    entity_type=entity_type,
+                    value=value,
+                    confidence=confidence,
+                    metadata=entity_metadata,
+                )
+
+                if (
+                    created
+                    and new_entity_budget is not None
+                ):
+                    new_entity_budget.consume(1)
 
             if (
                 profile_fusion is not None
@@ -555,6 +599,54 @@ class OsintFindingPersistenceService:
             session.flush()
 
         return evidence, True
+
+    def _find_existing_entity(
+        self,
+        *,
+        case_id: UUID,
+        entity_type: EntityType,
+        value: str,
+    ) -> Entity | None:
+        """
+        Resolve an already-persisted Entity without creating anything.
+
+        This is used after the recursive new-entity budget is exhausted so
+        evidence can still be linked to known entities without allowing a new
+        Entity to slip past the hard budget.
+        """
+
+        normalizer = getattr(
+            self.entity_service,
+            "normalizer",
+            None,
+        )
+
+        repository = getattr(
+            self.entity_service,
+            "repository",
+            None,
+        )
+
+        if (
+            normalizer is None
+            or repository is None
+        ):
+            return None
+
+        try:
+            normalized = normalizer.normalize(
+                entity_type,
+                value,
+            )
+
+            return repository.find_in_case(
+                case_id=case_id,
+                entity_type=entity_type,
+                normalized_value=normalized,
+            )
+
+        except Exception:
+            return None
 
     def _resolve_or_create_entity(
         self,
@@ -766,6 +858,257 @@ class OsintFindingPersistenceService:
         return tuple(unique)
 
     @staticmethod
+    def _certificate_domain_candidate(
+        value: str,
+    ) -> str | None:
+        """
+        Return a conservative canonical domain extracted from a certificate
+        subject/SAN value.
+
+        Certificate text is untrusted OSINT evidence. Only a syntactically
+        valid DNS name is allowed to become a DOMAIN Entity. Wildcard SANs are
+        reduced to their base DNS name (``*.example.com`` -> ``example.com``).
+        Arbitrary certificate/common-name text never becomes a pivot.
+        """
+
+        text = str(value or "").strip().rstrip(".")
+
+        if text.startswith("*."):
+            text = text[2:]
+
+        if (
+            not text
+            or len(text) > 253
+            or "." not in text
+            or "@" in text
+            or "://" in text
+            or any(character.isspace() for character in text)
+        ):
+            return None
+
+        try:
+            canonical = (
+                text
+                .encode("idna")
+                .decode("ascii")
+                .casefold()
+            )
+        except UnicodeError:
+            return None
+
+        labels = canonical.split(".")
+
+        if len(labels) < 2:
+            return None
+
+        for label in labels:
+            if (
+                not label
+                or len(label) > 63
+                or label.startswith("-")
+                or label.endswith("-")
+                or not all(
+                    character.isalnum()
+                    or character == "-"
+                    for character in label
+                )
+            ):
+                return None
+
+        # A purely numeric TLD is not a public DNS hostname and is especially
+        # useful to reject accidental certificate text/serial fragments.
+        if labels[-1].isdigit():
+            return None
+
+        return canonical
+
+    @classmethod
+    def _certificate_email_candidate(
+        cls,
+        value: str,
+    ) -> str | None:
+        """
+        Return an email address only when the whole certificate value is a
+        conservative syntactic email identifier.
+        """
+
+        text = str(value or "").strip()
+
+        if (
+            not text
+            or len(text) > 320
+            or text.count("@") != 1
+            or any(character.isspace() for character in text)
+        ):
+            return None
+
+        local, domain = text.rsplit("@", 1)
+
+        if (
+            not local
+            or len(local) > 64
+            or local.startswith(".")
+            or local.endswith(".")
+            or ".." in local
+            or _CERTIFICATE_EMAIL_LOCAL_RE.fullmatch(local)
+            is None
+        ):
+            return None
+
+        canonical_domain = cls._certificate_domain_candidate(
+            domain
+        )
+
+        if canonical_domain is None:
+            return None
+
+        return f"{local}@{canonical_domain}"
+
+    @classmethod
+    def _certificate_identifier_candidates(
+        cls,
+        value: str,
+        confidence: float,
+    ) -> tuple[tuple[EntityType, str, float], ...]:
+        """
+        Convert certificate SAN/common-name findings into first-class
+        identifiers only when the COMPLETE value is syntactically safe.
+
+        Supported:
+        - DNS names / wildcard DNS names -> DOMAIN
+        - email identifiers -> EMAIL
+
+        Unsupported certificate text remains Evidence only.
+        """
+
+        candidates: list[
+            tuple[
+                EntityType,
+                str,
+                float,
+            ]
+        ] = []
+
+        # crt.sh normally emits one SAN per finding, but accepting line-separated
+        # values makes this boundary robust to other certificate connectors.
+        parts = [
+            part.strip()
+            for part in str(value or "").replace(
+                "\r",
+                "\n",
+            ).split("\n")
+            if part.strip()
+        ]
+
+        for part in parts:
+            email = cls._certificate_email_candidate(
+                part
+            )
+
+            if email is not None:
+                candidates.append(
+                    (
+                        EntityType.EMAIL,
+                        email,
+                        confidence,
+                    )
+                )
+                continue
+
+            domain = cls._certificate_domain_candidate(
+                part
+            )
+
+            if domain is not None:
+                candidates.append(
+                    (
+                        EntityType.DOMAIN,
+                        domain,
+                        confidence,
+                    )
+                )
+
+        unique: list[
+            tuple[
+                EntityType,
+                str,
+                float,
+            ]
+        ] = []
+        seen: set[
+            tuple[
+                EntityType,
+                str,
+            ]
+        ] = set()
+
+        for item in candidates:
+            key = (
+                item[0],
+                item[1].casefold(),
+            )
+
+            if key in seen:
+                continue
+
+            seen.add(key)
+            unique.append(item)
+
+        return tuple(unique)
+
+    @staticmethod
+    def _metadata_ip_candidates(
+        metadata: dict[str, Any] | None,
+    ) -> tuple[str, ...]:
+        """
+        Extract canonical IP addresses from discovery-tool metadata.
+
+        Current bounded discovery connectors expose IPs through fields such as
+        ``host_ip``, ``ip``, ``a`` and ``aaaa``. Only syntactically valid IP
+        addresses are accepted, so arbitrary metadata text can never become an
+        IP Entity.
+        """
+
+        if not isinstance(metadata, dict):
+            return ()
+
+        values: list[str] = []
+
+        for key in (
+            "host_ip",
+            "ip",
+            "a",
+            "aaaa",
+        ):
+            raw = metadata.get(key)
+
+            if raw is None:
+                continue
+
+            if isinstance(raw, (list, tuple, set, frozenset)):
+                items = raw
+            else:
+                items = (raw,)
+
+            for item in items:
+                text = str(item).strip()
+
+                if not text:
+                    continue
+
+                try:
+                    canonical = str(
+                        ip_address(text)
+                    )
+                except ValueError:
+                    continue
+
+                if canonical not in values:
+                    values.append(canonical)
+
+        return tuple(values)
+
+    @staticmethod
     def _entity_candidates(
         finding: OsintFinding,
     ) -> tuple[tuple[EntityType, str, float], ...]:
@@ -773,6 +1116,10 @@ class OsintFindingPersistenceService:
         category = (finding.category or "").strip().casefold()
         value = (finding.value or "").strip()
         url = (finding.url or "").strip()
+        metadata = (
+            getattr(finding, "metadata", {})
+            or {}
+        )
 
         if category == "search_query":
             return ()
@@ -784,14 +1131,34 @@ class OsintFindingPersistenceService:
             "domain": EntityType.DOMAIN,
             "hostname": EntityType.DOMAIN,
             "subdomain": EntityType.DOMAIN,
+            # Discovery-chain categories.
+            "dns": EntityType.DOMAIN,
             "ip": EntityType.IP,
             "url": EntityType.URL,
+            "http": EntityType.URL,
+            "endpoint": EntityType.URL,
             "archived_url": EntityType.URL,
+            "historical_url": EntityType.URL,
             "public_url": EntityType.URL,
             "link": EntityType.URL,
             "account": EntityType.ACCOUNT,
             "location": EntityType.LOCATION,
         }
+
+        confidence = (
+            OsintFindingPersistenceService._clamp_confidence(
+                finding.confidence
+            )
+        )
+
+        if category == "certificate" and value:
+            candidates.extend(
+                OsintFindingPersistenceService
+                ._certificate_identifier_candidates(
+                    value,
+                    confidence,
+                )
+            )
 
         mapped = category_map.get(category)
         if mapped is not None and value:
@@ -799,30 +1166,56 @@ class OsintFindingPersistenceService:
                 (
                     mapped,
                     value,
-                    OsintFindingPersistenceService._clamp_confidence(
-                        finding.confidence
-                    ),
+                    confidence,
                 )
             )
+
+        # DNSX and HTTPX expose resolved addresses in structured metadata.
+        # Persist them as first-class IP entities so they can enter the normal
+        # NETWORK_ENRICHMENT pivot path after provenance has been recorded.
+        if category in {
+            "dns",
+            "http",
+        }:
+            for ip_value in (
+                OsintFindingPersistenceService
+                ._metadata_ip_candidates(
+                    metadata
+                )
+            ):
+                candidates.append(
+                    (
+                        EntityType.IP,
+                        ip_value,
+                        confidence,
+                    )
+                )
 
         # URL provenance is independently useful even when the finding category
         # is "account" and value is the original searched username.
         # Search navigation leads remain evidence metadata, not URL entities.
-        if url and not (getattr(finding, "metadata", {}) or {}).get("lead_only", False):
+        if (
+            url
+            and not metadata.get(
+                "lead_only",
+                False,
+            )
+        ):
             candidates.append(
                 (
                     EntityType.URL,
                     url,
-                    OsintFindingPersistenceService._clamp_confidence(
-                        finding.confidence
-                    ),
+                    confidence,
                 )
             )
 
         unique: list[tuple[EntityType, str, float]] = []
         seen: set[tuple[EntityType, str]] = set()
         for item in candidates:
-            key = (item[0], item[1].strip())
+            key = (
+                item[0],
+                item[1].strip(),
+            )
             if not key[1] or key in seen:
                 continue
             seen.add(key)
@@ -840,9 +1233,14 @@ class OsintFindingPersistenceService:
             "username": EvidenceType.USERNAME,
             "account": EvidenceType.LINK if finding.url else EvidenceType.OTHER,
             "url": EvidenceType.LINK,
+            "http": EvidenceType.LINK,
+            "endpoint": EvidenceType.LINK,
             "archived_url": EvidenceType.LINK,
+            "historical_url": EvidenceType.LINK,
             "public_url": EvidenceType.LINK,
             "link": EvidenceType.LINK,
+            "dns": EvidenceType.METADATA,
+            "certificate": EvidenceType.METADATA,
             "location": EvidenceType.LOCATION,
             "hash": EvidenceType.HASH,
             "metadata": EvidenceType.METADATA,

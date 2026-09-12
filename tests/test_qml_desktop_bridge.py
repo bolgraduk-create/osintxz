@@ -1,0 +1,210 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from types import SimpleNamespace
+from uuid import UUID, uuid4
+
+from app.interface.desktop.bridges.desktop_bridge import DesktopBridge
+from app.investigation.search_query import SearchMethod
+
+
+class FakeCaseController:
+    def __init__(self, cases: list[dict]) -> None:
+        self.cases = cases
+        self.created: list[tuple[str, str]] = []
+
+    def get_cases(self) -> list[dict]:
+        return list(self.cases)
+
+    def create_case(self, title: str, description: str = "") -> dict:
+        self.created.append((title, description))
+        case = {"id": str(uuid4()), "title": title, "description": description}
+        self.cases.append(case)
+        return case
+
+    def rename_case(self, case_id: str, title: str) -> bool:
+        for case in self.cases:
+            if case["id"] == case_id:
+                case["title"] = title
+                return True
+        return False
+
+    def delete_case(self, case_id: str) -> bool:
+        before = len(self.cases)
+        self.cases[:] = [case for case in self.cases if case["id"] != case_id]
+        return len(self.cases) != before
+
+
+class FakeWorkspaceController:
+    def __init__(self, workspaces: dict[str, dict]) -> None:
+        self.workspaces = workspaces
+
+    def load_workspace(self, case_id: str) -> dict:
+        return self.workspaces.setdefault(
+            case_id,
+            {
+                "statistics": {},
+                "entities": [],
+                "evidence": [],
+                "reports": [],
+                "timeline": [],
+                "graph": {"nodes": [], "edges": [], "statistics": {}},
+            },
+        )
+
+
+class FakeOsintController:
+    def __init__(self) -> None:
+        self.runs = []
+
+    def get_workspace_state(self) -> dict:
+        return {"connectors": ["existing_connector"], "connector_count": 1}
+
+    def run_investigation(self, form_data, **options) -> dict:
+        self.runs.append((form_data, options))
+        return {"target_count": 1, "finding_count": 2}
+
+
+@dataclass
+class FakeHit:
+    object_id: UUID
+    title: str
+    snippet: str
+    object_type: str
+    final_score: float
+
+
+class FakeUnifiedSearch:
+    def __init__(self) -> None:
+        self.requests = []
+
+    def search(self, request):
+        self.requests.append(request)
+        return SimpleNamespace(
+            hits=[
+                FakeHit(
+                    object_id=uuid4(),
+                    title="Stored result",
+                    snippet="Existing indexed content",
+                    object_type="evidence",
+                    final_score=0.75,
+                )
+            ]
+        )
+
+
+class FakeContainer:
+    def __init__(self, cases: list[dict], workspaces: dict[str, dict]) -> None:
+        self.case_controller = FakeCaseController(cases)
+        self.workspace_controller = FakeWorkspaceController(workspaces)
+        self.osint_controller = FakeOsintController()
+        self.unified_search_service = FakeUnifiedSearch()
+        self.rollback_count = 0
+
+    def rollback(self) -> None:
+        self.rollback_count += 1
+
+
+def _bridge() -> tuple[DesktopBridge, FakeContainer, str]:
+    case_id = str(uuid4())
+    container = FakeContainer(
+        [{"id": case_id, "title": "Real stored case", "description": "From controller"}],
+        {
+            case_id: {
+                "statistics": {"entities": 1, "evidence": 1, "relationships": 0},
+                "entities": [
+                    {
+                        "id": str(uuid4()),
+                        "value": "Stored entity",
+                        "type": "person",
+                        "confidence": 0.9,
+                        "created_at": "2026-09-11T10:00:00",
+                    }
+                ],
+                "evidence": [
+                    {
+                        "id": str(uuid4()),
+                        "title": "Stored evidence",
+                        "type": "document",
+                        "sha256": "a" * 64,
+                        "created_at": "2026-09-11T11:00:00",
+                    }
+                ],
+                "reports": [],
+                "timeline": [],
+                "graph": {"nodes": [], "edges": [], "statistics": {}},
+            }
+        },
+    )
+    return DesktopBridge(container), container, case_id
+
+
+def test_bridge_uses_controller_data_and_neutral_account_state() -> None:
+    bridge, _, _ = _bridge()
+
+    dashboard = bridge.dashboard
+    cases = bridge.pageData("cases", "")["records"]
+
+    assert dashboard["activeCases"] == 1
+    assert dashboard["entities"] == 1
+    assert dashboard["findings"] == 1
+    assert cases[0]["title"] == "Real stored case"
+    assert bridge.accountDisplayName == "Local workspace"
+    assert bridge.accountRole == "No authenticated user"
+
+
+def test_bridge_selects_case_and_exposes_real_case_scoped_records() -> None:
+    bridge, _, case_id = _bridge()
+
+    assert bridge.selectCase(case_id)
+    entities = bridge.pageData("entities", "")["records"]
+
+    assert bridge.currentCaseTitle == "Real stored case"
+    assert entities[0]["title"] == "Stored entity"
+
+
+def test_bridge_only_enables_action_with_recovered_handler() -> None:
+    bridge, _, _ = _bridge()
+
+    assert bridge.pageData("cases", "")["actionEnabled"] is True
+    assert bridge.pageData("osint", "")["actionEnabled"] is True
+    for page in ("entities", "graph", "timeline", "evidence", "reports", "settings"):
+        assert bridge.pageData(page, "")["actionEnabled"] is False
+        assert bridge.pageData(page, "")["actionReason"]
+
+
+def test_bridge_delegates_case_creation_and_internal_search() -> None:
+    bridge, container, _ = _bridge()
+
+    assert bridge.createCase("Created through controller", "Description")
+    assert container.case_controller.created == [
+        ("Created through controller", "Description")
+    ]
+
+    results = bridge.search("stored")
+    request = container.unified_search_service.requests[0]
+
+    assert results[0]["title"] == "Stored result"
+    assert request.query == "stored"
+    assert request.methods == (SearchMethod.STRUCTURED, SearchMethod.LEXICAL)
+
+
+def test_bridge_delegates_case_rename_and_soft_delete() -> None:
+    bridge, _, case_id = _bridge()
+
+    assert bridge.renameCase(case_id, "Renamed through controller")
+    assert bridge.pageData("cases", "")["records"][0]["title"] == "Renamed through controller"
+    assert bridge.deleteCase(case_id)
+    assert bridge.pageData("cases", "")["records"] == []
+
+
+def test_bridge_delegates_osint_collection_to_existing_controller() -> None:
+    bridge, container, case_id = _bridge()
+    bridge.selectCase(case_id)
+
+    assert bridge.runOsint("Domain", "example.org")
+    form_data, options = container.osint_controller.runs[0]
+
+    assert form_data == {"domains": ["example.org"], "case_id": case_id}
+    assert options["timeout"] == 30
+    assert options["use_cache"] is True

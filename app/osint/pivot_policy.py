@@ -96,6 +96,40 @@ class PivotTraversalState:
             raise ValueError("count must be >= 0")
         self.new_entities_count += count
 
+    def remaining_new_entities(
+        self,
+        limits: PivotPolicyLimits,
+    ) -> int:
+        """
+        Return the remaining global new-entity budget.
+
+        This is a read-only projection of traversal state. Persistence is
+        responsible for consuming the budget only when a genuinely new Entity
+        is created.
+        """
+        return max(
+            0,
+            limits.max_new_entities
+            - self.new_entities_count,
+        )
+
+    def remaining_pivots(
+        self,
+        *,
+        entity_identity: str,
+        limits: PivotPolicyLimits,
+    ) -> int:
+        """
+        Return how many automatic pivot operations remain for one entity.
+
+        Pivot count and finding count are deliberately separate budgets.
+        """
+        return max(
+            0,
+            limits.max_pivots_per_entity
+            - self.entity_count(entity_identity),
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class PivotDecision:

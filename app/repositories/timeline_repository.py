@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.timeline_event import (
@@ -69,6 +69,23 @@ class TimelineRepository(
                 statement,
             ).all()
         )
+
+    def get_page(self, *, limit: int = 100, offset: int = 0, case_id: UUID | None = None) -> list[TimelineEvent]:
+        statement = (
+            select(TimelineEvent)
+            .order_by(TimelineEvent.event_time, TimelineEvent.id)
+            .offset(max(0, int(offset)))
+            .limit(max(1, min(int(limit), 500)))
+        )
+        if case_id is not None:
+            statement = statement.where(TimelineEvent.case_id == case_id)
+        return list(self.session.scalars(statement).all())
+
+    def count_all(self, *, case_id: UUID | None = None) -> int:
+        statement = select(func.count(TimelineEvent.id))
+        if case_id is not None:
+            statement = statement.where(TimelineEvent.case_id == case_id)
+        return int(self.session.scalar(statement) or 0)
 
     def get_by_entity(
         self,

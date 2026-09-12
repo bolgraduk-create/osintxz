@@ -1,0 +1,49 @@
+﻿{
+    "bin_dir":  "C:\\osintxz\\tools\\osint\\bin",
+    "tools":  [
+                  {
+                      "asset":  "subfinder_2.16.0_windows_amd64.zip",
+                      "name":  "subfinder",
+                      "repo":  "projectdiscovery/subfinder",
+                      "release":  "v2.16.0",
+                      "executable":  "C:\\osintxz\\tools\\osint\\bin\\subfinder.exe"
+                  },
+                  {
+                      "asset":  "dnsx_1.3.1_windows_amd64.zip",
+                      "name":  "dnsx",
+                      "repo":  "projectdiscovery/dnsx",
+                      "release":  "v1.3.1",
+                      "executable":  "C:\\osintxz\\tools\\osint\\bin\\dnsx.exe"
+                  },
+                  {
+                      "asset":  "gau_2.2.4_windows_amd64.zip",
+                      "name":  "gau",
+                      "repo":  "lc/gau",
+                      "release":  "v2.2.4",
+                      "executable":  "C:\\osintxz\\tools\\osint\\bin\\gau.exe"
+                  },
+                  {
+                      "asset":  "waybackurls-windows-amd64-0.1.0.zip",
+                      "name":  "waybackurls",
+                      "repo":  "tomnomnom/waybackurls",
+                      "release":  "v0.1.0",
+                      "executable":  "C:\\osintxz\\tools\\osint\\bin\\waybackurls.exe"
+                  },
+                  {
+                      "asset":  "katana_1.7.0_windows_amd64.zip",
+                      "name":  "katana",
+                      "repo":  "projectdiscovery/katana",
+                      "release":  "v1.7.0",
+                      "executable":  "C:\\osintxz\\tools\\osint\\bin\\katana.exe"
+                  },
+                  {
+                      "name":  "assetfinder",
+                      "error":  "Удаленный сервер возвратил ошибку: (404) Не найден.",
+                      "repo":  "tomnomnom/assetfinder",
+                      "release":  null,
+                      "asset":  null,
+                      "executable":  null
+                  }
+              ],
+    "installed_at":  "2026-09-07T18:05:29.1078638+03:00"
+}

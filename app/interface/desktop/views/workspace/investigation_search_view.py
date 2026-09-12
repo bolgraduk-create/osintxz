@@ -194,7 +194,10 @@ class InvestigationSearchView(QWidget):
             return
 
         result = payload["open_web"]
-        recursive = payload.get("recursive")
+        recursive = (
+            payload.get("open_web_recursive")
+            or payload.get("recursive")
+        )
         hydration = result.hydration
 
         self.sources_table.setHorizontalHeaderLabels(
@@ -334,6 +337,48 @@ class InvestigationSearchView(QWidget):
             else 0
         )
 
+        root_recursive = payload.get("recursive")
+        open_web_recursive = payload.get("open_web_recursive")
+
+        root_recursive_targets = (
+            getattr(root_recursive, "targets_processed", 0)
+            if root_recursive is not None
+            else 0
+        )
+        root_recursive_candidates = (
+            getattr(root_recursive, "candidates_discovered", 0)
+            if root_recursive is not None
+            else 0
+        )
+        root_recursive_enqueued = (
+            getattr(root_recursive, "candidates_enqueued", 0)
+            if root_recursive is not None
+            else 0
+        )
+        root_recursive_depth = max(
+            (
+                int(getattr(run, "depth", 0))
+                for run in getattr(root_recursive, "runs", ())
+            ),
+            default=0,
+        )
+        root_recursive_stop = getattr(
+            getattr(root_recursive, "stop_reason", None),
+            "value",
+            str(getattr(root_recursive, "stop_reason", "—") or "—"),
+        )
+
+        open_web_recursive_candidates = (
+            getattr(open_web_recursive, "candidates_discovered", 0)
+            if open_web_recursive is not None
+            else 0
+        )
+        open_web_recursive_targets = (
+            getattr(open_web_recursive, "recursive_targets_processed", 0)
+            if open_web_recursive is not None
+            else 0
+        )
+
         def count_status(expected: str) -> int:
             return sum(
                 1
@@ -363,12 +408,54 @@ class InvestigationSearchView(QWidget):
                     f"Новых Entity: {result.entities_created}",
                     f"Новых Links: {result.links_created}",
                     "",
+                    (
+                        f"Recursive targets processed: {root_recursive_targets}"
+                        if root_recursive is not None
+                        else "Recursive mode: выключен"
+                    ),
+                    (
+                        f"Recursive candidates: {root_recursive_candidates}; "
+                        f"enqueued: {root_recursive_enqueued}"
+                        if root_recursive is not None
+                        else ""
+                    ),
+                    (
+                        f"Recursive max depth: {root_recursive_depth}; "
+                        f"stop: {root_recursive_stop}"
+                        if root_recursive is not None
+                        else ""
+                    ),
+                    (
+                        f"Open-Web extra recursive candidates: "
+                        f"{open_web_recursive_candidates}; "
+                        f"targets: {open_web_recursive_targets}"
+                        if open_web_recursive is not None
+                        else ""
+                    ),
+                    "",
                     "Отсутствие одного коннектора не означает отсутствие данных.",
                 ]
             )
         )
 
-        if open_web_result is None:
+        recursive_persistence = []
+
+        if root_recursive is not None:
+            for recursive_run in getattr(root_recursive, "runs", ()):
+                recursive_persistence.extend(
+                    list(getattr(recursive_run, "persistence", ()))
+                )
+
+        if (
+            open_web_recursive is not None
+            and getattr(open_web_recursive, "recursion", None) is not None
+        ):
+            for recursive_run in open_web_recursive.recursion.runs:
+                recursive_persistence.extend(
+                    list(getattr(recursive_run, "persistence", ()))
+                )
+
+        if open_web_result is None and not recursive_persistence:
             self._fill_entities(result)
         else:
             class _CombinedPersistence:
@@ -377,11 +464,28 @@ class InvestigationSearchView(QWidget):
             combined = _CombinedPersistence()
             combined.persistence = (
                 list(result.persistence)
-                + list(open_web_result.persistence)
+                + (
+                    list(open_web_result.persistence)
+                    if open_web_result is not None
+                    else []
+                )
+                + recursive_persistence
             )
             self._fill_entities(combined)
 
         self._fill_osint_sources(result)
+
+        # Add connector rows for actual second/third-level recursive runs.
+        if root_recursive is not None:
+            for recursive_run in getattr(root_recursive, "runs", ())[1:]:
+                self._fill_osint_sources(recursive_run)
+
+        if (
+            open_web_recursive is not None
+            and getattr(open_web_recursive, "recursion", None) is not None
+        ):
+            for recursive_run in open_web_recursive.recursion.runs:
+                self._fill_osint_sources(recursive_run)
 
         if open_web_result is not None:
             self._fill_email_open_web_sources(

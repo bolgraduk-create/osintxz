@@ -9,6 +9,7 @@ from app.application.osint_recursive_enrichment_service import (
     OsintRecursiveEnrichmentService,
     RecursiveEnrichmentResult,
     RecursiveEnrichmentSeed,
+    RecursiveProgressCallback,
 )
 from app.osint.pivot_candidates import (
     OsintPivotCandidatePolicy,
@@ -55,6 +56,10 @@ class OpenWebRecursivePivotService:
         save_raw_output: bool = False,
         include_metadata: bool = True,
         include_related: bool = True,
+        progress_callback: RecursiveProgressCallback | None = None,
+        max_targets: int | None = None,
+        time_budget_seconds: float | None = None,
+        per_target_new_entity_limit: int | None = None,
     ) -> OpenWebRecursivePivotResult:
         next_depth = int(open_web_result.query.depth) + 1
 
@@ -90,6 +95,12 @@ class OpenWebRecursivePivotService:
             save_raw_output=save_raw_output,
             include_metadata=include_metadata,
             include_related=include_related,
+            progress_callback=progress_callback,
+            max_targets=max_targets,
+            time_budget_seconds=time_budget_seconds,
+            per_target_new_entity_limit=(
+                per_target_new_entity_limit
+            ),
         )
 
         return OpenWebRecursivePivotResult(

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.entity import (
@@ -56,6 +56,25 @@ class EntityRepository(
         return list(
             result.scalars().all()
         )
+
+    def get_page(self, *, limit: int = 100, offset: int = 0, case_id: UUID | None = None) -> list[Entity]:
+        statement = (
+            select(Entity)
+            .where(Entity.deleted_at.is_(None))
+            .order_by(Entity.created_at, Entity.id)
+            .offset(max(0, int(offset)))
+            .limit(max(1, min(int(limit), 500)))
+        )
+        if case_id is not None:
+            statement = statement.where(Entity.case_id == case_id)
+        return list(self.session.scalars(statement).all())
+
+    def count_all(self, *, case_id: UUID | None = None) -> int:
+        statement = select(func.count(Entity.id))
+        statement = statement.where(Entity.deleted_at.is_(None))
+        if case_id is not None:
+            statement = statement.where(Entity.case_id == case_id)
+        return int(self.session.scalar(statement) or 0)
 
     def get_by_type(
         self,

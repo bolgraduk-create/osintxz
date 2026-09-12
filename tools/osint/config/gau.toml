@@ -1,0 +1,5 @@
+# osintxz managed GAU configuration.
+#
+# Intentionally minimal. Command-line flags remain authoritative.
+# Keeping a real config path prevents GAU from emitting the normal
+# "config file not found" warning on every managed invocation.

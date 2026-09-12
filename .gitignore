@@ -108,3 +108,5 @@ db_schema_check.txt
 /docs/osint_stabilization/baseline_status.txt
 /docs/osint_stabilization/baseline_tests.xml
 /docs/osint_stabilization/diffs/
+/tools/osint/bin/
+/tools/osint/downloads/

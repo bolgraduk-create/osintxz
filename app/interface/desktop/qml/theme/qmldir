@@ -1,0 +1,5 @@
+module OSINTXZ.Theme
+singleton Theme 1.0 Theme.qml
+singleton Typography 1.0 Typography.qml
+singleton Spacing 1.0 Spacing.qml
+singleton Motion 1.0 Motion.qml

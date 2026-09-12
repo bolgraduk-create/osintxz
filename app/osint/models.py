@@ -214,3 +214,5 @@ class ConnectorRequest:
     include_metadata: bool = True
 
     include_related: bool = True
+
+    limit: int | None = None

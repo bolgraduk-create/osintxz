@@ -129,6 +129,7 @@ class OsintEnrichmentService:
         save_raw_output: bool = False,
         include_metadata: bool = True,
         include_related: bool = True,
+        new_entity_limit: int | None = None,
     ) -> OsintTargetEnrichmentResult:
         """
         Execute and persist every automatic default goal for one target.
@@ -154,6 +155,7 @@ class OsintEnrichmentService:
                 save_raw_output=save_raw_output,
                 include_metadata=include_metadata,
                 include_related=include_related,
+                entity_budget_limit=new_entity_limit,
             )
         )
 
