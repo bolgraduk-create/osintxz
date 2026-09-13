@@ -10,4 +10,8 @@ DataWorkspace {
     searchPlaceholder: "Filter reports..."
     sectionTitle: "Report Library"
     contextTitle: "Report Scope"
+    emptyTitle: desktopBridge.hasCurrentCase ? "No reports for this investigation yet" : "No reports yet"
+    emptyDescription: desktopBridge.hasCurrentCase
+        ? "Reports created through the existing investigation workflow will appear here."
+        : "Reports from stored investigations will appear here."
 }

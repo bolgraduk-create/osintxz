@@ -10,9 +10,17 @@ Rectangle {
 
     implicitHeight: 48
     radius: 8
-    color: selected ? Theme.accentSoft : (mouse.containsMouse ? Theme.surfaceRaised : "transparent")
+    activeFocusOnTab: enabled
+    opacity: enabled ? 1 : 0.44
+    color: selected
+        ? Theme.accentSoft
+        : (mouse.pressed ? "#182e3e" : (mouse.containsMouse ? Theme.surfaceRaised : "transparent"))
+    border.width: activeFocus ? 1 : 0
+    border.color: activeFocus ? Theme.borderHover : "transparent"
 
     Behavior on color { ColorAnimation { duration: Motion.hover } }
+    Keys.onReturnPressed: root.clicked()
+    Keys.onSpacePressed: root.clicked()
 
     Rectangle {
         anchors.left: parent.left
@@ -48,8 +56,10 @@ Rectangle {
     MouseArea {
         id: mouse
         anchors.fill: parent
+        enabled: root.enabled
         hoverEnabled: true
-        cursorShape: Qt.PointingHandCursor
+        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+        onPressed: root.forceActiveFocus()
         onClicked: root.clicked()
     }
 }

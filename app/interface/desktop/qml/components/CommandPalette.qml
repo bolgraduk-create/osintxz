@@ -105,8 +105,24 @@ Popup {
                 required property var modelData
                 width: parent.width
                 height: 52
-                color: rowMouse.containsMouse && rowMouse.enabled ? Theme.surfaceHover : "transparent"
+                activeFocusOnTab: Boolean(resultRow.modelData.enabled)
+                opacity: resultRow.modelData.enabled ? 1 : 0.62
+                color: rowMouse.pressed ? "#183044" : (rowMouse.containsMouse && rowMouse.enabled ? Theme.surfaceHover : "transparent")
+                border.width: activeFocus ? 1 : 0
+                border.color: activeFocus ? Theme.borderHover : "transparent"
                 Behavior on color { ColorAnimation { duration: Motion.hover } }
+                Keys.onReturnPressed: {
+                    if (resultRow.modelData.kind === "CASE" && root.bridge) {
+                        root.bridge.selectCase(String(resultRow.modelData.id || ""))
+                        root.close()
+                    }
+                }
+                Keys.onSpacePressed: {
+                    if (resultRow.modelData.kind === "CASE" && root.bridge) {
+                        root.bridge.selectCase(String(resultRow.modelData.id || ""))
+                        root.close()
+                    }
+                }
                 Rectangle { x: 19; anchors.verticalCenter: parent.verticalCenter; width: 7; height: 7; radius: 4; color: resultRow.modelData.kind === "CASE" ? Theme.accent : Theme.purple }
                 Text { x: 40; y: 9; width: parent.width - 150; elide: Text.ElideRight; text: resultRow.modelData.title; color: Theme.textPrimary; font.pixelSize: 13; font.weight: Font.Medium }
                 Text { x: 40; y: 29; width: parent.width - 150; elide: Text.ElideRight; text: resultRow.modelData.detail; color: Theme.textMuted; font.pixelSize: 10 }
@@ -117,6 +133,7 @@ Popup {
                     enabled: Boolean(resultRow.modelData.enabled)
                     hoverEnabled: true
                     cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                    onPressed: resultRow.forceActiveFocus()
                     onClicked: {
                         if (resultRow.modelData.kind === "CASE" && root.bridge) {
                             root.bridge.selectCase(String(resultRow.modelData.id || ""))

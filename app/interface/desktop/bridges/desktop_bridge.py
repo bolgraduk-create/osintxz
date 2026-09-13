@@ -16,6 +16,7 @@ from uuid import UUID
 from PySide6.QtCore import QObject, Property, Signal, Slot
 
 from app.investigation.search_query import InvestigationSearchQuery, SearchMethod
+from app.osint.models import OsintTargetType
 
 
 LOGGER = logging.getLogger(__name__)
@@ -36,6 +37,7 @@ class DesktopBridge(QObject):
         self._workspaces: dict[str, dict[str, Any]] = {}
         self._current_case_id = ""
         self._search_results: list[dict[str, Any]] = []
+        self._osint_run: dict[str, Any] = {}
         self._page_records: dict[str, list[dict[str, Any]]] = {}
         self._page_offsets: dict[str, int] = {}
         self._page_totals: dict[str, int] = {}
@@ -85,6 +87,14 @@ class DesktopBridge(QObject):
     @Property(bool, notify=changed)
     def hasCurrentCase(self) -> bool:
         return bool(self._current_case_id)
+
+    @Property("QVariantMap", notify=changed)
+    def osintRun(self) -> dict[str, Any]:
+        return dict(self._osint_run)
+
+    @Property(int, notify=changed)
+    def osintConnectorCount(self) -> int:
+        return len(self._connector_records())
 
     @Property("QVariantMap", notify=changed)
     def dashboard(self) -> dict[str, Any]:
@@ -263,6 +273,7 @@ class DesktopBridge(QObject):
             self._page_records.clear()
             self._page_offsets.clear()
             self._page_errors.clear()
+            self._osint_run = {}
         self._current_case_id = normalized
         self._set_message("")
         self._generation += 1
@@ -328,6 +339,7 @@ class DesktopBridge(QObject):
             return False
         if normalized == self._current_case_id:
             self._current_case_id = ""
+            self._osint_run = {}
         self.refresh()
         self._set_message("Investigation deleted.")
         return True
@@ -338,42 +350,88 @@ class DesktopBridge(QObject):
         if not normalized_value:
             self._set_message("OSINT collection requires a target.")
             return False
-        field = {
-            "email": "emails",
-            "username": "usernames",
-            "domain": "domains",
-            "ip": "ip_addresses",
-            "url": "urls",
-            "phone": "phones",
-        }.get(str(target_type or "").strip().lower())
-        if field is None:
+
+        normalized_type = str(target_type or "").strip().lower()
+        target_enum = {
+            "email": OsintTargetType.EMAIL,
+            "username": OsintTargetType.USERNAME,
+            "domain": OsintTargetType.DOMAIN,
+            "ip": OsintTargetType.IP,
+            "url": OsintTargetType.URL,
+            "phone": OsintTargetType.PHONE,
+        }.get(normalized_type)
+        if target_enum is None:
             self._set_message("Unsupported OSINT target type.")
             return False
-        form_data: dict[str, Any] = {field: [normalized_value]}
-        if self._current_case_id:
-            form_data["case_id"] = self._current_case_id
+
+        # Test/adaptor containers can still expose only the older workspace
+        # controller. Production uses the investigation-aware enrichment path.
+        enrichment_service = getattr(
+            self._container,
+            "investigation_target_enrichment_service",
+            None,
+        )
+        if enrichment_service is None:
+            return self._run_osint_workspace_fallback(
+                target_type=target_enum,
+                value=normalized_value,
+            )
+
+        if not self._current_case_id:
+            self._set_message(
+                "Select an investigation before running an OSINT collection."
+            )
+            return False
+
+        started_at = datetime.now()
+        started_perf = perf_counter()
+        case_id = UUID(self._current_case_id)
+
         try:
-            result = self._container.osint_controller.run_investigation(
-                form_data,
+            enrichment = enrichment_service.enrich(
+                case_id=case_id,
+                target_type=target_enum,
+                value=normalized_value,
                 timeout=30,
                 use_cache=True,
-                save_raw_output=False,
-                include_metadata=True,
-                include_related=True,
             )
+            self._container.commit()
         except Exception as exc:
             LOGGER.exception("OSINT collection failed")
+            try:
+                self._container.rollback()
+            except Exception:
+                LOGGER.debug("Rollback after OSINT collection failed", exc_info=True)
+
+            duration = perf_counter() - started_perf
+            self._osint_run = self._failed_osint_run_payload(
+                target_type=target_enum,
+                value=normalized_value,
+                started_at=started_at,
+                duration=duration,
+                error=str(exc),
+            )
             self._set_message(f"OSINT collection failed: {exc}")
+            self._generation += 1
+            self.changed.emit()
             return False
-        target_count = int((result or {}).get("target_count") or 1)
-        finding_count = int(
-            (result or {}).get("finding_count")
-            or (result or {}).get("total_findings")
-            or 0
+
+        duration = perf_counter() - started_perf
+        self._osint_run = self._build_enrichment_run_payload(
+            enrichment=enrichment,
+            target_type=target_enum,
+            value=normalized_value,
+            started_at=started_at,
+            duration=duration,
         )
+        self._invalidate_after_osint()
+
+        summary = self._osint_run.get("summary", {})
         self._set_message(
-            f"OSINT collection completed for {target_count} target(s); "
-            f"{finding_count} finding(s) returned."
+            "OSINT collection completed; "
+            f"{int(summary.get('findings') or 0)} finding(s), "
+            f"{int(summary.get('leads') or 0)} lead(s), "
+            f"{int(summary.get('evidenceCreated') or 0)} evidence item(s) created."
         )
         self._generation += 1
         self.changed.emit()
@@ -561,6 +619,614 @@ class DesktopBridge(QObject):
             "color": "#68a4ff",
             "tint": "#142b47",
         }
+
+    def _run_osint_workspace_fallback(
+        self,
+        *,
+        target_type: OsintTargetType,
+        value: str,
+    ) -> bool:
+        """Compatibility path for light-weight test/adaptor containers."""
+        field = {
+            OsintTargetType.EMAIL: "emails",
+            OsintTargetType.USERNAME: "usernames",
+            OsintTargetType.DOMAIN: "domains",
+            OsintTargetType.IP: "ip_addresses",
+            OsintTargetType.URL: "urls",
+            OsintTargetType.PHONE: "phones",
+        }.get(target_type)
+        if field is None:
+            self._set_message("Unsupported OSINT target type.")
+            return False
+
+        form_data: dict[str, Any] = {field: [value]}
+        if self._current_case_id:
+            form_data["case_id"] = self._current_case_id
+
+        started_at = datetime.now()
+        started_perf = perf_counter()
+        try:
+            result = self._container.osint_controller.run_investigation(
+                form_data,
+                timeout=30,
+                use_cache=True,
+                save_raw_output=False,
+                include_metadata=True,
+                include_related=True,
+            )
+        except Exception as exc:
+            LOGGER.exception("OSINT collection failed")
+            self._osint_run = self._failed_osint_run_payload(
+                target_type=target_type,
+                value=value,
+                started_at=started_at,
+                duration=perf_counter() - started_perf,
+                error=str(exc),
+            )
+            self._set_message(f"OSINT collection failed: {exc}")
+            self._generation += 1
+            self.changed.emit()
+            return False
+
+        self._osint_run = self._build_workspace_run_payload(
+            result=result if isinstance(result, dict) else {},
+            target_type=target_type,
+            value=value,
+            started_at=started_at,
+            duration=perf_counter() - started_perf,
+        )
+        summary = self._osint_run.get("summary", {})
+        self._set_message(
+            "OSINT collection completed; "
+            f"{int(summary.get('findings') or 0)} finding(s) returned."
+        )
+        self._generation += 1
+        self.changed.emit()
+        return True
+
+    def _build_enrichment_run_payload(
+        self,
+        *,
+        enrichment: Any,
+        target_type: OsintTargetType,
+        value: str,
+        started_at: datetime,
+        duration: float,
+    ) -> dict[str, Any]:
+        findings: list[dict[str, Any]] = []
+        leads: list[dict[str, Any]] = []
+        connectors: list[dict[str, Any]] = []
+        errors: list[dict[str, Any]] = []
+        entities_by_id: dict[str, dict[str, Any]] = {}
+        evidence_by_id: dict[str, dict[str, Any]] = {}
+
+        executions = list(getattr(enrichment, "executions", ()) or ())
+        for execution_index, execution in enumerate(executions):
+            route = getattr(execution, "route", None)
+            goal_object = getattr(route, "goal", None)
+            goal = getattr(goal_object, "value", None) or str(goal_object or "")
+            execution_status_object = getattr(execution, "status", None)
+            execution_status = (
+                getattr(execution_status_object, "value", None)
+                or str(execution_status_object or "unknown")
+            )
+            execution_error = str(getattr(execution, "error", None) or "").strip()
+            records = list(getattr(execution, "records", ()) or ())
+
+            if execution_error and not records:
+                errors.append({
+                    "id": f"execution:{execution_index}",
+                    "title": goal.replace("_", " ").title() or "OSINT execution",
+                    "detail": execution_error,
+                    "status": execution_status.replace("_", " ").title(),
+                    "meta": "Execution",
+                    "color": "#f25d68",
+                    "tint": "#3a1e26",
+                })
+
+            for record_index, record in enumerate(records):
+                connector_result = getattr(record, "result", None)
+                capability = getattr(record, "capability", None)
+                if connector_result is None:
+                    continue
+
+                status_object = getattr(connector_result, "status", None)
+                status = (
+                    getattr(status_object, "value", None)
+                    or str(status_object or "unknown")
+                )
+                connector_name = str(
+                    getattr(record, "runtime_connector_name", None)
+                    or getattr(connector_result, "connector", None)
+                    or getattr(capability, "display_name", None)
+                    or getattr(capability, "module", None)
+                    or "Unknown connector"
+                )
+                result_findings = list(
+                    getattr(connector_result, "findings", ()) or ()
+                )
+
+                finding_count = 0
+                lead_count = 0
+                for finding_index, finding in enumerate(result_findings):
+                    row = self._osint_finding_row(
+                        finding=finding,
+                        connector=connector_name,
+                        goal=goal,
+                        row_id=(
+                            f"{execution_index}:{record_index}:{finding_index}"
+                        ),
+                    )
+                    if row["kind"] == "lead":
+                        lead_count += 1
+                        leads.append(row)
+                    else:
+                        finding_count += 1
+                        findings.append(row)
+
+                result_error = str(
+                    getattr(connector_result, "error", None) or ""
+                ).strip()
+                execution_time = self._safe_float(
+                    getattr(connector_result, "execution_time", 0.0)
+                )
+                connector_color, connector_tint = self._osint_status_colors(status)
+                connectors.append({
+                    "id": f"{execution_index}:{record_index}:{connector_name}",
+                    "name": connector_name,
+                    "title": connector_name,
+                    "detail": (
+                        goal.replace("_", " ").title()
+                        if goal
+                        else "OSINT connector"
+                    ),
+                    "goal": goal,
+                    "status": status,
+                    "statusLabel": status.replace("_", " ").title(),
+                    "findingCount": finding_count,
+                    "leadCount": lead_count,
+                    "itemCount": len(result_findings),
+                    "executionTime": execution_time,
+                    "meta": f"{execution_time:.1f}s",
+                    "error": result_error,
+                    "color": connector_color,
+                    "tint": connector_tint,
+                })
+
+                if result_error:
+                    errors.append({
+                        "id": f"connector:{execution_index}:{record_index}",
+                        "title": connector_name,
+                        "detail": result_error,
+                        "status": status.replace("_", " ").title(),
+                        "meta": goal.replace("_", " ").title(),
+                        "color": "#f25d68",
+                        "tint": "#3a1e26",
+                    })
+
+        persistences = list(getattr(enrichment, "persistences", ()) or ())
+        if not persistences:
+            persistences = list(getattr(enrichment, "persistence", ()) or ())
+
+        for persistence in persistences:
+            for persisted in list(getattr(persistence, "persisted", ()) or ()):
+                evidence = getattr(persisted, "evidence", None)
+                if evidence is not None:
+                    evidence_id = str(getattr(evidence, "id", "") or "")
+                    if evidence_id and evidence_id not in evidence_by_id:
+                        evidence_type = getattr(evidence, "evidence_type", None)
+                        evidence_type_text = (
+                            getattr(evidence_type, "value", None)
+                            or str(evidence_type or "evidence")
+                        )
+                        evidence_by_id[evidence_id] = {
+                            "id": evidence_id,
+                            "title": str(
+                                getattr(evidence, "title", None)
+                                or getattr(evidence, "value", None)
+                                or "Evidence"
+                            ),
+                            "detail": str(
+                                getattr(evidence, "value", None)
+                                or "Persisted OSINT evidence"
+                            ),
+                            "status": evidence_type_text.replace("_", " ").title(),
+                            "meta": "Persisted",
+                            "color": "#68a4ff",
+                            "tint": "#142b47",
+                        }
+
+                for entity in list(getattr(persisted, "entities", ()) or ()):
+                    entity_id = str(getattr(entity, "id", "") or "")
+                    if not entity_id or entity_id in entities_by_id:
+                        continue
+                    entity_type = getattr(entity, "entity_type", None)
+                    entity_type_text = (
+                        getattr(entity_type, "value", None)
+                        or str(entity_type or "entity")
+                    )
+                    confidence = self._safe_optional_float(
+                        getattr(entity, "confidence", None)
+                    )
+                    entities_by_id[entity_id] = {
+                        "id": entity_id,
+                        "title": str(getattr(entity, "value", None) or "Unnamed entity"),
+                        "detail": entity_type_text.replace("_", " ").title(),
+                        "status": "Entity",
+                        "meta": self._confidence_text(confidence),
+                        "confidence": confidence,
+                        "color": "#a98be9",
+                        "tint": "#271f43",
+                    }
+
+        status_counts = Counter(
+            str(item.get("status") or "unknown") for item in connectors
+        )
+        success_like = status_counts.get("success", 0) + status_counts.get("partial", 0)
+        if success_like:
+            run_status = "completed_with_errors" if errors else "completed"
+        elif connectors or errors:
+            run_status = "failed"
+        else:
+            run_status = "completed"
+
+        persisted_findings = int(
+            getattr(enrichment, "persisted_findings", 0) or 0
+        )
+        sources_created = int(getattr(enrichment, "sources_created", 0) or 0)
+        evidences_created = int(
+            getattr(enrichment, "evidences_created", 0) or 0
+        )
+        entities_created = int(getattr(enrichment, "entities_created", 0) or 0)
+        links_created = int(getattr(enrichment, "links_created", 0) or 0)
+
+        completed_at = datetime.now()
+        return {
+            "hasRun": True,
+            "status": run_status,
+            "targetType": target_type.value,
+            "targetValue": value,
+            "caseId": self._current_case_id,
+            "caseTitle": self.currentCaseTitle,
+            "startedAt": started_at.isoformat(timespec="seconds"),
+            "startedLabel": started_at.strftime("%b %d, %Y · %H:%M:%S"),
+            "completedAt": completed_at.isoformat(timespec="seconds"),
+            "durationSeconds": round(duration, 3),
+            "durationText": f"{duration:.1f}s",
+            "summary": {
+                "connectors": len(connectors),
+                "successful": status_counts.get("success", 0),
+                "partial": status_counts.get("partial", 0),
+                "failed": status_counts.get("failed", 0),
+                "unavailable": status_counts.get("not_available", 0),
+                "notSupported": status_counts.get("not_supported", 0),
+                "findings": len(findings),
+                "leads": len(leads),
+                "errors": len(errors),
+                "persistedFindings": persisted_findings,
+                "sourcesCreated": sources_created,
+                "evidenceCreated": evidences_created,
+                "entitiesCreated": entities_created,
+                "linksCreated": links_created,
+            },
+            "findings": findings,
+            "leads": leads,
+            "entities": list(entities_by_id.values()),
+            "evidence": list(evidence_by_id.values()),
+            "connectors": connectors,
+            "errors": errors,
+        }
+
+    def _build_workspace_run_payload(
+        self,
+        *,
+        result: dict[str, Any],
+        target_type: OsintTargetType,
+        value: str,
+        started_at: datetime,
+        duration: float,
+    ) -> dict[str, Any]:
+        findings: list[dict[str, Any]] = []
+        leads: list[dict[str, Any]] = []
+        connectors: list[dict[str, Any]] = []
+        errors: list[dict[str, Any]] = []
+
+        for target_index, target_result in enumerate(result.get("target_results") or []):
+            if not isinstance(target_result, dict):
+                continue
+            for result_index, connector_result in enumerate(
+                target_result.get("results") or []
+            ):
+                if not isinstance(connector_result, dict):
+                    continue
+                connector_name = str(
+                    connector_result.get("connector") or "Unknown connector"
+                )
+                status = str(connector_result.get("status") or "unknown")
+                result_findings = list(connector_result.get("findings") or [])
+                finding_count = 0
+                lead_count = 0
+
+                for finding_index, finding in enumerate(result_findings):
+                    if not isinstance(finding, dict):
+                        continue
+                    is_lead = str(finding.get("kind") or "finding") == "lead"
+                    row = self._serialized_osint_finding_row(
+                        finding=finding,
+                        connector=connector_name,
+                        goal="",
+                        row_id=f"{target_index}:{result_index}:{finding_index}",
+                        is_lead=is_lead,
+                    )
+                    if is_lead:
+                        lead_count += 1
+                        leads.append(row)
+                    else:
+                        finding_count += 1
+                        findings.append(row)
+
+                error = str(connector_result.get("error") or "").strip()
+                execution_time = self._safe_float(
+                    connector_result.get("execution_time")
+                )
+                color, tint = self._osint_status_colors(status)
+                connectors.append({
+                    "id": f"{target_index}:{result_index}:{connector_name}",
+                    "name": connector_name,
+                    "title": connector_name,
+                    "detail": "OSINT connector",
+                    "goal": "",
+                    "status": status,
+                    "statusLabel": status.replace("_", " ").title(),
+                    "findingCount": finding_count,
+                    "leadCount": lead_count,
+                    "itemCount": len(result_findings),
+                    "executionTime": execution_time,
+                    "meta": f"{execution_time:.1f}s",
+                    "error": error,
+                    "color": color,
+                    "tint": tint,
+                })
+                if error:
+                    errors.append({
+                        "id": f"connector:{target_index}:{result_index}",
+                        "title": connector_name,
+                        "detail": error,
+                        "status": status.replace("_", " ").title(),
+                        "meta": "Connector",
+                        "color": "#f25d68",
+                        "tint": "#3a1e26",
+                    })
+
+        status_counts = Counter(
+            str(item.get("status") or "unknown") for item in connectors
+        )
+        success_like = status_counts.get("success", 0) + status_counts.get("partial", 0)
+        run_status = (
+            "completed_with_errors"
+            if success_like and errors
+            else "completed"
+            if success_like or not errors
+            else "failed"
+        )
+        completed_at = datetime.now()
+        return {
+            "hasRun": True,
+            "status": run_status,
+            "targetType": target_type.value,
+            "targetValue": value,
+            "caseId": str(result.get("case_id") or self._current_case_id),
+            "caseTitle": self.currentCaseTitle,
+            "startedAt": started_at.isoformat(timespec="seconds"),
+            "startedLabel": started_at.strftime("%b %d, %Y · %H:%M:%S"),
+            "completedAt": completed_at.isoformat(timespec="seconds"),
+            "durationSeconds": round(duration, 3),
+            "durationText": f"{duration:.1f}s",
+            "summary": {
+                "connectors": len(connectors),
+                "successful": status_counts.get("success", 0),
+                "partial": status_counts.get("partial", 0),
+                "failed": status_counts.get("failed", 0),
+                "unavailable": status_counts.get("not_available", 0),
+                "notSupported": status_counts.get("not_supported", 0),
+                "findings": len(findings),
+                "leads": len(leads),
+                "errors": len(errors),
+                "persistedFindings": 0,
+                "sourcesCreated": 0,
+                "evidenceCreated": 0,
+                "entitiesCreated": 0,
+                "linksCreated": 0,
+            },
+            "findings": findings,
+            "leads": leads,
+            "entities": [],
+            "evidence": [],
+            "connectors": connectors,
+            "errors": errors,
+        }
+
+    def _failed_osint_run_payload(
+        self,
+        *,
+        target_type: OsintTargetType,
+        value: str,
+        started_at: datetime,
+        duration: float,
+        error: str,
+    ) -> dict[str, Any]:
+        completed_at = datetime.now()
+        return {
+            "hasRun": True,
+            "status": "failed",
+            "targetType": target_type.value,
+            "targetValue": value,
+            "caseId": self._current_case_id,
+            "caseTitle": self.currentCaseTitle,
+            "startedAt": started_at.isoformat(timespec="seconds"),
+            "startedLabel": started_at.strftime("%b %d, %Y · %H:%M:%S"),
+            "completedAt": completed_at.isoformat(timespec="seconds"),
+            "durationSeconds": round(duration, 3),
+            "durationText": f"{duration:.1f}s",
+            "summary": {
+                "connectors": 0,
+                "successful": 0,
+                "partial": 0,
+                "failed": 1,
+                "unavailable": 0,
+                "notSupported": 0,
+                "findings": 0,
+                "leads": 0,
+                "errors": 1,
+                "persistedFindings": 0,
+                "sourcesCreated": 0,
+                "evidenceCreated": 0,
+                "entitiesCreated": 0,
+                "linksCreated": 0,
+            },
+            "findings": [],
+            "leads": [],
+            "entities": [],
+            "evidence": [],
+            "connectors": [],
+            "errors": [{
+                "id": "run:error",
+                "title": "Collection failed",
+                "detail": error or "Unknown OSINT error",
+                "status": "Failed",
+                "meta": "Run",
+                "color": "#f25d68",
+                "tint": "#3a1e26",
+            }],
+        }
+
+    def _osint_finding_row(
+        self,
+        *,
+        finding: Any,
+        connector: str,
+        goal: str,
+        row_id: str,
+    ) -> dict[str, Any]:
+        metadata = getattr(finding, "metadata", None)
+        is_lead = bool(
+            isinstance(metadata, dict) and metadata.get("lead_only", False)
+        )
+        serialized = {
+            "category": getattr(finding, "category", None),
+            "value": getattr(finding, "value", None),
+            "confidence": getattr(finding, "confidence", None),
+            "source": getattr(finding, "source", None),
+            "url": getattr(finding, "url", None),
+            "reliability": getattr(finding, "reliability", None),
+        }
+        return self._serialized_osint_finding_row(
+            finding=serialized,
+            connector=connector,
+            goal=goal,
+            row_id=row_id,
+            is_lead=is_lead,
+        )
+
+    def _serialized_osint_finding_row(
+        self,
+        *,
+        finding: dict[str, Any],
+        connector: str,
+        goal: str,
+        row_id: str,
+        is_lead: bool,
+    ) -> dict[str, Any]:
+        category = str(finding.get("category") or "finding")
+        value = str(finding.get("value") or "").strip()
+        source = str(finding.get("source") or "").strip()
+        url = str(finding.get("url") or "").strip()
+        confidence = self._safe_optional_float(finding.get("confidence"))
+        reliability = self._safe_optional_float(finding.get("reliability"))
+        detail_parts = [part for part in (source, connector) if part]
+        color = "#f4b638" if is_lead else "#68a4ff"
+        tint = "#3b3015" if is_lead else "#142b47"
+        return {
+            "id": row_id,
+            "kind": "lead" if is_lead else "finding",
+            "title": value or category.replace("_", " ").title(),
+            "detail": " · ".join(detail_parts) or "OSINT result",
+            "status": category.replace("_", " ").title(),
+            "meta": self._confidence_text(confidence),
+            "category": category,
+            "value": value,
+            "source": source,
+            "url": url,
+            "connector": connector,
+            "goal": goal,
+            "confidence": confidence,
+            "reliability": reliability,
+            "color": color,
+            "tint": tint,
+        }
+
+    def _invalidate_after_osint(self) -> None:
+        self._workspaces.pop(self._current_case_id, None)
+        for page in ("entities", "evidence", "timeline"):
+            self._page_records.pop(page, None)
+            self._page_offsets.pop(page, None)
+            self._page_errors.pop(page, None)
+            self._page_totals.pop(page, None)
+
+        case_id = UUID(self._current_case_id) if self._current_case_id else None
+        for page, attr in (
+            ("entities", "entity_service"),
+            ("evidence", "evidence_service"),
+            ("timeline", "timeline_service"),
+        ):
+            service = getattr(self._container, attr, None)
+            if service is None:
+                continue
+            try:
+                self._page_totals[page] = int(
+                    service.count_all(case_id=case_id)
+                )
+            except Exception:
+                LOGGER.debug(
+                    "Unable to refresh %s count after OSINT",
+                    page,
+                    exc_info=True,
+                )
+
+    @staticmethod
+    def _osint_status_colors(status: str) -> tuple[str, str]:
+        normalized = str(status or "").strip().lower()
+        if normalized == "success":
+            return "#45d898", "#12362f"
+        if normalized == "partial":
+            return "#f4b638", "#3b3015"
+        if normalized in {"failed", "error"}:
+            return "#f25d68", "#3a1e26"
+        if normalized in {"not_available", "not_supported", "skipped"}:
+            return "#8094a8", "#1a2b37"
+        return "#68a4ff", "#142b47"
+
+    @staticmethod
+    def _safe_float(value: Any) -> float:
+        try:
+            return float(value or 0.0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    @staticmethod
+    def _safe_optional_float(value: Any) -> float | None:
+        if value is None:
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _confidence_text(value: float | None) -> str:
+        if value is None:
+            return ""
+        return f"{max(0.0, min(1.0, value)) * 100:.0f}%"
 
     def _connector_records(self) -> list[dict[str, Any]]:
         if self._connector_cache is not None:

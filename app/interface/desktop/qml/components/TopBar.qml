@@ -27,9 +27,12 @@ Rectangle {
         width: Math.min(895, Math.max(540, parent.width - 455))
         height: 44
         radius: 8
-        color: searchMouse.containsMouse ? Theme.surfaceHover : Theme.surface
-        border.color: searchMouse.containsMouse ? Theme.borderHover : Theme.border
-        border.width: 1
+        activeFocusOnTab: enabled
+        color: searchMouse.pressed ? "#172a38" : (searchMouse.containsMouse ? Theme.surfaceHover : Theme.surface)
+        border.color: activeFocus ? Theme.accent : (searchMouse.containsMouse ? Theme.borderHover : Theme.border)
+        border.width: activeFocus ? 2 : 1
+        Keys.onReturnPressed: root.openCommand()
+        Keys.onSpacePressed: root.openCommand()
 
         Behavior on color { ColorAnimation { duration: Motion.hover } }
         Behavior on border.color { ColorAnimation { duration: Motion.hover } }
@@ -41,7 +44,7 @@ Rectangle {
             width: 61; height: 25; radius: 5; color: "#132637"; border.color: "#2b4358"
             Text { anchors.centerIn: parent; text: "Ctrl + K"; color: "#c0cfdd"; font.pixelSize: 11; font.weight: Font.Medium }
         }
-        MouseArea { id: searchMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.openCommand() }
+        MouseArea { id: searchMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onPressed: searchBox.forceActiveFocus(); onClicked: root.openCommand() }
     }
 
     Row {

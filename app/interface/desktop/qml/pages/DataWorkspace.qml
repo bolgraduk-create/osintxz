@@ -20,6 +20,10 @@ Item {
     property var records: []
     property var contextItems: []
     property string emptyText: "No records available"
+    property string emptyTitle: "No records available"
+    property string emptyDescription: "Records will appear here when they are available."
+    property string filteredEmptyTitle: "No matching records"
+    property string filteredEmptyDescription: "Try a different search term or clear the current filter."
     property bool actionEnabled: false
     property string actionReason: ""
     signal primaryActionRequested()
@@ -31,6 +35,33 @@ Item {
     property bool updatingRecords: false
     property bool recordsInteractive: root.pageKey === "cases"
     property var liveData: ({ metrics: [], records: [], contextItems: [], emptyText: "No records available", actionEnabled: false, actionReason: "" })
+
+    function conciseRecordDetail(record) {
+        var detail = String(record.detail || "").replace(/\s+/g, " ").trim()
+        if (root.pageKey !== "evidence")
+            return detail
+        var looksLikePath = /^[A-Za-z]:[\\/]/.test(detail) || /^[/\\]{1,2}[^/\\]/.test(detail)
+        var looksLikeRawMetadata = /(^|[;,\s])(sha256|storage_path|evidence_key|connector_metadata|raw_metadata)\s*[:=]/i.test(detail)
+        if (!detail || detail === String(record.title || "") || looksLikePath || looksLikeRawMetadata)
+            return String(record.status || "Evidence") + " evidence"
+        return detail
+    }
+
+    function resolvedEmptyTitle() {
+        if (root.emptyText.indexOf("Unable") === 0)
+            return "Unable to load records"
+        if (root.filterText.trim().length > 0)
+            return root.filteredEmptyTitle
+        return root.emptyTitle
+    }
+
+    function resolvedEmptyDescription() {
+        if (root.emptyText.indexOf("Unable") === 0)
+            return root.emptyText
+        if (root.filterText.trim().length > 0)
+            return root.filteredEmptyDescription
+        return root.emptyDescription
+    }
 
     function reloadData() {
         if (!root.pageKey)
@@ -117,30 +148,19 @@ Item {
                 font.pixelSize: 13
             }
 
-            Rectangle {
+            AppButton {
+                objectName: "primaryActionButton"
                 anchors.right: parent.right
                 anchors.bottom: parent.bottom
                 width: 142
                 height: 38
-                radius: 7
-                opacity: root.actionEnabled ? 1 : 0.42
-                color: root.actionEnabled && actionMouse.containsMouse ? "#2f75df" : Theme.accent
-                Behavior on color { ColorAnimation { duration: Motion.hover } }
-                Text {
-                    anchors.centerIn: parent
-                    text: "+   " + root.primaryAction
-                    color: "white"
-                    font.pixelSize: 12
-                    font.weight: Font.DemiBold
-                }
-                MouseArea {
-                    id: actionMouse
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    enabled: root.actionEnabled
-                    cursorShape: root.actionEnabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                    onClicked: root.primaryActionRequested()
-                }
+                text: "+   " + root.primaryAction
+                primary: true
+                enabled: root.actionEnabled
+                ToolTip.visible: hovered && !enabled && root.actionReason.length > 0
+                ToolTip.delay: 450
+                ToolTip.text: root.actionReason
+                onClicked: root.primaryActionRequested()
             }
         }
 
@@ -248,8 +268,13 @@ Item {
                             width: recordsView.width
                             height: 64
                             clip: true
-                            color: recordMouse.containsMouse ? "#142735" : "transparent"
+                            activeFocusOnTab: root.recordsInteractive
+                            color: recordMouse.pressed ? "#182e3e" : (recordMouse.containsMouse ? "#142735" : "transparent")
+                            border.width: activeFocus ? 1 : 0
+                            border.color: activeFocus ? Theme.borderHover : "transparent"
                             Behavior on color { ColorAnimation { duration: Motion.hover } }
+                            Keys.onReturnPressed: root.recordActivated(String(recordRow.modelData.id || ""))
+                            Keys.onSpacePressed: root.recordActivated(String(recordRow.modelData.id || ""))
 
                             Rectangle {
                                 anchors.left: parent.left
@@ -273,10 +298,11 @@ Item {
                                 }
                             }
                             Text {
+                                objectName: "recordTitle"
                                 x: 65
                                 y: 12
-                                width: parent.width - 310
-                                text: recordRow.modelData.title
+                                width: Math.max(80, parent.width - 302)
+                                text: String(recordRow.modelData.title || "Untitled record")
                                 color: Theme.textPrimary
                                 elide: Text.ElideRight
                                 font.pixelSize: 13
@@ -285,10 +311,11 @@ Item {
                                 wrapMode: Text.NoWrap
                             }
                             Text {
+                                objectName: "recordDetail"
                                 x: 65
                                 y: 34
-                                width: parent.width - 310
-                                text: recordRow.modelData.detail
+                                width: Math.max(80, parent.width - 302)
+                                text: root.conciseRecordDetail(recordRow.modelData)
                                 color: Theme.textMuted
                                 elide: Text.ElideRight
                                 font.pixelSize: 10
@@ -296,31 +323,45 @@ Item {
                                 wrapMode: Text.NoWrap
                             }
                             Rectangle {
-                                anchors.right: metaLabel.left
-                                anchors.rightMargin: 22
-                                anchors.verticalCenter: parent.verticalCenter
-                                width: statusLabel.implicitWidth + 22
-                                height: 26
-                                radius: 7
+                                anchors.right: parent.right
+                                anchors.rightMargin: root.recordsInteractive ? 48 : 18
+                                y: 9
+                                width: Math.min(174, Math.max(72, statusLabel.implicitWidth + 22))
+                                height: 24
+                                radius: 6
                                 color: recordRow.modelData.tint || "#142b47"
                                 border.color: recordRow.modelData.color || Theme.accent
                                 Text {
                                     id: statusLabel
-                                    anchors.centerIn: parent
-                                    text: recordRow.modelData.status
-                                    color: recordRow.modelData.color
+                                    objectName: "recordTypeBadgeText"
+                                    anchors.fill: parent
+                                    anchors.leftMargin: 10
+                                    anchors.rightMargin: 10
+                                    text: String(recordRow.modelData.status || "Record")
+                                    color: recordRow.modelData.color || Theme.accent
                                     font.pixelSize: 10
+                                    horizontalAlignment: Text.AlignHCenter
+                                    verticalAlignment: Text.AlignVCenter
+                                    elide: Text.ElideRight
+                                    maximumLineCount: 1
                                 }
                             }
                             Text {
                                 id: metaLabel
+                                objectName: "recordMeta"
                                 anchors.right: parent.right
-                                anchors.rightMargin: root.recordsInteractive ? 48 : 20
-                                anchors.verticalCenter: parent.verticalCenter
-                                text: recordRow.modelData.meta
+                                anchors.rightMargin: root.recordsInteractive ? 48 : 18
+                                y: 39
+                                width: 174
+                                text: root.pageKey === "evidence" && String(recordRow.modelData.meta || "") === "SHA-256"
+                                    ? "HASHED · SHA-256"
+                                    : String(recordRow.modelData.meta || "")
                                 color: Theme.textMuted
-                                font.pixelSize: 10
+                                font.pixelSize: 9
                                 elide: Text.ElideRight
+                                horizontalAlignment: Text.AlignRight
+                                maximumLineCount: 1
+                                wrapMode: Text.NoWrap
                             }
                             MouseArea {
                                 id: recordMouse
@@ -328,22 +369,28 @@ Item {
                                 enabled: root.recordsInteractive
                                 hoverEnabled: true
                                 cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                onPressed: recordRow.forceActiveFocus()
                                 onClicked: root.recordActivated(String(recordRow.modelData.id || ""))
                             }
                             Text {
+                                id: optionsLabel
                                 anchors.right: parent.right
                                 anchors.rightMargin: 17
                                 anchors.verticalCenter: parent.verticalCenter
                                 visible: root.recordsInteractive
+                                activeFocusOnTab: visible
                                 text: "•••"
-                                color: optionsMouse.containsMouse ? Theme.textPrimary : Theme.textSecondary
+                                color: activeFocus || optionsMouse.containsMouse ? Theme.textPrimary : Theme.textSecondary
                                 font.pixelSize: 11
+                                Keys.onReturnPressed: root.recordOptionsRequested(String(recordRow.modelData.id || ""), String(recordRow.modelData.title || ""))
+                                Keys.onSpacePressed: root.recordOptionsRequested(String(recordRow.modelData.id || ""), String(recordRow.modelData.title || ""))
                                 MouseArea {
                                     id: optionsMouse
                                     anchors.fill: parent
                                     anchors.margins: -10
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
+                                    onPressed: optionsLabel.forceActiveFocus()
                                     onClicked: function(mouse) {
                                         mouse.accepted = true
                                         root.recordOptionsRequested(
@@ -364,13 +411,14 @@ Item {
                     Item {
                         y: 62
                         width: parent.width
-                        height: root.records.length === 0 ? 132 : 0
+                        height: root.records.length === 0 ? parent.height - y : 0
                         visible: root.records.length === 0
-                        Text {
-                            anchors.centerIn: parent
-                            text: root.emptyText
-                            color: Theme.textMuted
-                            font.pixelSize: 13
+                        EmptyState {
+                            anchors.fill: parent
+                            anchors.bottomMargin: 18
+                            iconSource: root.iconSource
+                            title: root.resolvedEmptyTitle()
+                            description: root.resolvedEmptyDescription()
                         }
                     }
                 }

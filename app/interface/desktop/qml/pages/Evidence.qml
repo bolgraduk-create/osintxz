@@ -10,4 +10,8 @@ DataWorkspace {
     searchPlaceholder: "Filter evidence..."
     sectionTitle: "Evidence Register"
     contextTitle: "Evidence Scope"
+    emptyTitle: desktopBridge.hasCurrentCase ? "No evidence in this investigation yet" : "No evidence yet"
+    emptyDescription: desktopBridge.hasCurrentCase
+        ? "Run an OSINT collection or add source material through an existing workflow."
+        : "Evidence from stored investigations will appear here."
 }

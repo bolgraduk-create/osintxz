@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import "../components"
 import "../theme"
 
 DataWorkspace {
@@ -13,6 +14,8 @@ DataWorkspace {
     searchPlaceholder: "Search cases..."
     sectionTitle: "Active Investigations"
     contextTitle: "Case Context"
+    emptyTitle: "No investigations yet"
+    emptyDescription: "Create an investigation to begin organizing entities, evidence, and analysis."
     onPrimaryActionRequested: createDialog.open()
     onRecordActivated: function(recordId) { desktopBridge.activateRecord("cases", recordId) }
     onRecordOptionsRequested: function(recordId, recordTitle) {
@@ -25,53 +28,114 @@ DataWorkspace {
 
     Menu {
         id: optionsMenu
+        width: 176
+        padding: 6
+        background: Rectangle {
+            color: Theme.surfaceRaised
+            radius: 8
+            border.color: Theme.borderHover
+            border.width: 1
+        }
         MenuItem {
+            id: renameMenuItem
             text: "Rename"
+            height: 38
+            contentItem: Text {
+                text: renameMenuItem.text
+                color: Theme.textPrimary
+                font.pixelSize: 12
+                verticalAlignment: Text.AlignVCenter
+                leftPadding: 9
+            }
+            background: Rectangle {
+                radius: 6
+                color: renameMenuItem.down ? "#183044" : (renameMenuItem.highlighted ? Theme.surfaceHover : "transparent")
+            }
             onTriggered: {
                 renameInput.text = root.selectedCaseTitle
                 renameDialog.open()
             }
         }
-        MenuItem { text: "Delete"; onTriggered: deleteDialog.open() }
+        MenuItem {
+            id: deleteMenuItem
+            text: "Delete"
+            height: 38
+            contentItem: Text {
+                text: deleteMenuItem.text
+                color: Theme.danger
+                font.pixelSize: 12
+                verticalAlignment: Text.AlignVCenter
+                leftPadding: 9
+            }
+            background: Rectangle {
+                radius: 6
+                color: deleteMenuItem.down ? "#3d222a" : (deleteMenuItem.highlighted ? "#2d2028" : "transparent")
+            }
+            onTriggered: deleteDialog.open()
+        }
     }
 
-    Dialog {
+    AppDialog {
         id: renameDialog
-        anchors.centerIn: parent
+        objectName: "renameInvestigationDialog"
         width: 420
-        modal: true
         title: "Rename investigation"
-        standardButtons: Dialog.Ok | Dialog.Cancel
+        description: "Update the title shown across the workspace."
+        primaryText: "Rename"
+        bodyHeight: 92
         onAccepted: desktopBridge.renameCase(root.selectedCaseId, renameInput.text)
-        background: Rectangle { color: Theme.surface; radius: 10; border.color: Theme.borderHover }
-        contentItem: TextField { id: renameInput; placeholderText: "Investigation title" }
+
+        Column {
+            anchors.fill: parent
+            anchors.leftMargin: 22
+            anchors.rightMargin: 22
+            anchors.topMargin: 16
+            spacing: 6
+            Text { text: "TITLE"; color: Theme.textMuted; font.pixelSize: 9; font.weight: Font.Medium; font.letterSpacing: 1.2 }
+            AppTextField {
+                id: renameInput
+                objectName: "renameInvestigationInput"
+                width: parent.width
+                placeholderText: "Investigation title"
+                Keys.onReturnPressed: renameDialog.accept()
+            }
+        }
         onOpened: renameInput.forceActiveFocus()
     }
 
-    Dialog {
+    AppDialog {
         id: deleteDialog
-        anchors.centerIn: parent
+        objectName: "deleteInvestigationDialog"
         width: 440
-        modal: true
         title: "Delete investigation?"
-        standardButtons: Dialog.Yes | Dialog.Cancel
+        description: "This action uses the existing soft-delete workflow."
+        primaryText: "Delete"
+        destructive: true
+        bodyHeight: 106
         onAccepted: desktopBridge.deleteCase(root.selectedCaseId)
-        background: Rectangle { color: Theme.surface; radius: 10; border.color: Theme.borderHover }
-        contentItem: Text {
-            width: parent.width
+
+        Text {
+            anchors.fill: parent
+            anchors.leftMargin: 22
+            anchors.rightMargin: 22
+            anchors.topMargin: 18
+            anchors.bottomMargin: 18
             wrapMode: Text.Wrap
             color: Theme.textSecondary
+            font.pixelSize: 12
+            lineHeight: 1.25
             text: "This will soft-delete “" + root.selectedCaseTitle + "” using the existing case controller."
         }
     }
 
-    Dialog {
+    AppDialog {
         id: createDialog
-        anchors.centerIn: parent
+        objectName: "createInvestigationDialog"
         width: 460
-        modal: true
         title: "Create investigation"
-        standardButtons: Dialog.Ok | Dialog.Cancel
+        description: "Create a new workspace for entities, evidence, and analysis."
+        primaryText: "Create"
+        bodyHeight: 226
         onAccepted: {
             if (desktopBridge.createCase(titleInput.text, descriptionInput.text)) {
                 titleInput.clear()
@@ -81,12 +145,29 @@ DataWorkspace {
                 titleInput.forceActiveFocus()
             }
         }
-        background: Rectangle { color: Theme.surface; radius: 10; border.color: Theme.borderHover }
-        contentItem: Column {
-            spacing: 12
-            TextField { id: titleInput; width: parent.width; placeholderText: "Investigation title" }
-            TextArea { id: descriptionInput; width: parent.width; height: 100; placeholderText: "Description (optional)"; wrapMode: TextEdit.Wrap }
-            Text { visible: desktopBridge.message.length > 0; text: desktopBridge.message; color: Theme.danger; font.pixelSize: 11; wrapMode: Text.Wrap; width: parent.width }
+
+        Column {
+            anchors.fill: parent
+            anchors.leftMargin: 22
+            anchors.rightMargin: 22
+            anchors.topMargin: 16
+            anchors.bottomMargin: 14
+            spacing: 6
+            Text { text: "TITLE"; color: Theme.textMuted; font.pixelSize: 9; font.weight: Font.Medium; font.letterSpacing: 1.2 }
+            AppTextField { id: titleInput; objectName: "createInvestigationTitleInput"; width: parent.width; placeholderText: "Investigation title" }
+            Item { width: 1; height: 3 }
+            Text { text: "DESCRIPTION"; color: Theme.textMuted; font.pixelSize: 9; font.weight: Font.Medium; font.letterSpacing: 1.2 }
+            AppTextArea { id: descriptionInput; objectName: "createInvestigationDescriptionInput"; width: parent.width; height: 78; placeholderText: "Description (optional)" }
+            Text {
+                visible: desktopBridge.message.length > 0
+                text: desktopBridge.message
+                color: Theme.danger
+                font.pixelSize: 10
+                wrapMode: Text.Wrap
+                width: parent.width
+                maximumLineCount: 2
+                elide: Text.ElideRight
+            }
         }
         onOpened: titleInput.forceActiveFocus()
     }

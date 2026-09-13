@@ -1,6 +1,7 @@
 import QtQuick
 
 DataWorkspace {
+    id: root
     pageKey: "graph"
     eyebrow: "RELATIONSHIP ANALYSIS"
     title: "Graph"
@@ -10,4 +11,10 @@ DataWorkspace {
     searchPlaceholder: "Filter graph entities..."
     sectionTitle: "Graph Entities"
     contextTitle: "Graph Context"
+    emptyTitle: desktopBridge.hasCurrentCase
+        ? "No entities in this investigation yet"
+        : "No investigation selected"
+    emptyDescription: desktopBridge.hasCurrentCase
+        ? "Add entities or run an OSINT collection to start building the graph."
+        : "Select an investigation to explore its entity graph."
 }
