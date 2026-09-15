@@ -33,3 +33,4 @@ python main.py
 ## Reference geometry
 
 The UI is tuned around a 1648×928 reference window and scales down to 1280×720.
+# osintxz
