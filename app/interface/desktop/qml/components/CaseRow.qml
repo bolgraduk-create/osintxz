@@ -9,6 +9,9 @@ Item {
     property color priorityColor: "#6d91ad"
     property string timeText: "Updated 1d ago"
     property color folderColor: Theme.accent
+    property string caseId: ""
+    property bool clickable: true
+    signal clicked()
     width: parent ? parent.width : 400
     height: 51
 
@@ -90,5 +93,14 @@ Item {
         color: Theme.textSecondary
         font.pixelSize: 11
         font.letterSpacing: 1
+    }
+
+    MouseArea {
+        id: rowMouse
+        anchors.fill: parent
+        enabled: root.clickable
+        hoverEnabled: true
+        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+        onClicked: root.clicked()
     }
 }

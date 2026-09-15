@@ -6,7 +6,6 @@ Every module must obtain configuration only through `settings`.
 
 Do not read environment variables directly anywhere else.
 """
-
 from __future__ import annotations
 
 from functools import lru_cache
@@ -121,6 +120,28 @@ class Settings(BaseSettings):
     port: int = 8000
 
     # ======================================================
+    # Central Registry Backend
+    # ======================================================
+
+    # Desktop-facing endpoint.  Public deployments must use HTTPS.  Plain HTTP
+    # is accepted by the Registry API client only for localhost development.
+    registry_api_url: str = "http://127.0.0.1:8011"
+
+    registry_api_timeout: int = 20
+
+    # Transitional service token for development/private deployments.  Final
+    # public authentication is owned by the IAM stage and must not rely on an
+    # embedded static desktop secret.
+    registry_api_token: SecretStr | None = None
+
+    # ASGI bind address used when this repository is deployed as Registry
+    # Backend infrastructure.  End-user desktop installations do not need to
+    # run this service.
+    registry_backend_host: str = "127.0.0.1"
+
+    registry_backend_port: int = 8011
+
+    # ======================================================
     # PostgreSQL
     # ======================================================
 
@@ -154,7 +175,7 @@ class Settings(BaseSettings):
 
     virustotal_api_key: str | None = None
 
-    # M021.16.5.2B — Brave Search API
+    # Brave Search credentials are optional and remain disabled by default.
     brave_search_api_key: SecretStr | None = None
 
     # ======================================================
@@ -258,7 +279,6 @@ class Settings(BaseSettings):
         ]
 
         for directory in directories:
-
             directory.mkdir(
                 parents=True,
                 exist_ok=True,

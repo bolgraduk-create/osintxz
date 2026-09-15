@@ -1,0 +1,3621 @@
+
+
+====================================================================================================
+FILE: app/interface/desktop/bridges/desktop_bridge.py
+====================================================================================================
+"""Backend-backed view model for the authoritative QML desktop shell.
+
+The bridge deliberately contains presentation mapping only. Database access and
+business operations stay in the existing controllers and application services.
+"""
+
+from __future__ import annotations
+
+from collections import Counter
+from datetime import datetime
+import logging
+from time import perf_counter
+from typing import Any
+from uuid import UUID
+
+from PySide6.QtCore import QObject, Property, Signal, Slot
+
+from app.investigation.search_query import InvestigationSearchQuery, SearchMethod
+
+
+LOGGER = logging.getLogger(__name__)
+
+
+class DesktopBridge(QObject):
+    """Expose existing OSINTXZ application services to QML."""
+
+    changed = Signal()
+    navigationRequested = Signal(str)
+    messageChanged = Signal()
+    PAGE_SIZE = 100
+
+    def __init__(self, container: Any, parent: QObject | None = None) -> None:
+        super().__init__(parent)
+        self._container = container
+        self._cases: list[dict[str, Any]] = []
+        self._workspaces: dict[str, dict[str, Any]] = {}
+        self._current_case_id = ""
+        self._search_results: list[dict[str, Any]] = []
+        self._page_records: dict[str, list[dict[str, Any]]] = {}
+        self._page_offsets: dict[str, int] = {}
+        self._page_totals: dict[str, int] = {}
+        self._page_loading: set[str] = set()
+        self._page_errors: dict[str, str] = {}
+        self._last_page = ""
+        self._connector_cache = None
+        self._message = ""
+        self._database_available = True
+        self._generation = 0
+        self.refresh()
+
+    @Property(int, notify=changed)
+    def generation(self) -> int:
+        return self._generation
+
+    @Property(str, constant=True)
+    def accountDisplayName(self) -> str:
+        # The existing application has no authentication/session user model.
+        return "Local workspace"
+
+    @Property(str, constant=True)
+    def accountRole(self) -> str:
+        return "No authenticated user"
+
+    @Property(str, constant=True)
+    def accountInitials(self) -> str:
+        return "LW"
+
+    @Property(str, notify=messageChanged)
+    def message(self) -> str:
+        return self._message
+
+    @Property(bool, notify=changed)
+    def databaseAvailable(self) -> bool:
+        return self._database_available
+
+    @Property(str, notify=changed)
+    def currentCaseId(self) -> str:
+        return self._current_case_id
+
+    @Property(str, notify=changed)
+    def currentCaseTitle(self) -> str:
+        case = self._case_by_id(self._current_case_id)
+        return str(case.get("title") or "") if case else ""
+
+    @Property(bool, notify=changed)
+    def hasCurrentCase(self) -> bool:
+        return bool(self._current_case_id)
+
+    @Property("QVariantMap", notify=changed)
+    def dashboard(self) -> dict[str, Any]:
+        entities = self._all_workspace_items("entities")
+        evidence = self._all_workspace_items("evidence")
+        recent_cases = [self._case_record(case) for case in self._cases[:4]]
+        intelligence = self._recent_intelligence(entities, evidence)
+        workspace = self._current_workspace()
+        graph = workspace.get("graph", {}) if workspace else {}
+        return {
+            "dateLabel": datetime.now().strftime("%A, %b %d, %Y").upper(),
+            "greeting": self._greeting(),
+            "summary": self._dashboard_summary(len(self._cases), len(intelligence)),
+            "activeCases": len(self._cases),
+            "entities": self._page_totals.get("entities", len(entities)),
+            "findings": self._page_totals.get("evidence", len(evidence)),
+            "risks": 0,
+            "recentCases": recent_cases,
+            "recentIntelligence": intelligence[:4],
+            "graphNodes": list(graph.get("nodes") or [])[:9],
+            "graphEdges": list(graph.get("edges") or []),
+            "graphCaseTitle": self.currentCaseTitle,
+        }
+
+    @Slot()
+    def refresh(self) -> None:
+        """Reload UI data exclusively through existing controllers/services."""
+        started = perf_counter()
+        try:
+            cases = self._container.case_controller.get_cases() or []
+            self._cases = [dict(case) for case in cases if isinstance(case, dict)]
+            self._workspaces = {}
+            # Test/adaptor containers may only expose the legacy workspace API.
+            # Keep that compatibility path while the real container stays lazy.
+            if not hasattr(self._container, "entity_service"):
+                for case in self._cases:
+                    case_id = str(case.get("id") or "")
+                    if case_id:
+                        try:
+                            workspace = self._container.workspace_controller.load_workspace(case_id)
+                            if isinstance(workspace, dict):
+                                self._workspaces[case_id] = workspace
+                        except Exception:
+                            LOGGER.debug("Legacy workspace unavailable for %s", case_id, exc_info=True)
+            self._page_records.clear(); self._page_offsets.clear(); self._page_totals.clear()
+            self._page_errors.clear()
+            for key, attr in (("entities", "entity_service"), ("evidence", "evidence_service"), ("timeline", "timeline_service"), ("reports", "report_service")):
+                service = getattr(self._container, attr, None)
+                if service is not None:
+                    try:
+                        self._page_totals[key] = int(service.count_all())
+                    except Exception:
+                        LOGGER.debug("Unable to count %s", key, exc_info=True)
+            if self._current_case_id and self._current_case_id not in {str(c.get("id")) for c in self._cases}:
+                self._current_case_id = ""
+            self._database_available = True
+            self._set_message("")
+        except Exception as exc:
+            LOGGER.exception("Unable to refresh desktop data")
+            self._cases = []
+            self._workspaces = {}
+            self._current_case_id = ""
+            self._database_available = False
+            self._set_message(f"Database unavailable: {exc}")
+            try:
+                self._container.rollback()
+            except Exception:
+                LOGGER.debug("Rollback after dashboard refresh failed", exc_info=True)
+        self._generation += 1
+        self.changed.emit()
+        LOGGER.info("Desktop refresh completed in %.1f ms (cases=%s)", (perf_counter() - started) * 1000, len(self._cases))
+
+    @Slot(str, str, result="QVariantMap")
+    def pageData(self, page: str, query: str = "") -> dict[str, Any]:
+        started = perf_counter()
+        page_key = (page or "").strip().lower()
+        if page_key != self._last_page:
+            LOGGER.info("PAGE OPEN: %s", page_key.title())
+            self._last_page = page_key
+        if page_key in {"entities", "evidence", "timeline", "reports"} and page_key not in self._page_records:
+            self._load_page(page_key, 0, notify=False)
+        records = self._records_for_page(page_key)
+        normalized_query = (query or "").strip().casefold()
+        if normalized_query:
+            records = [
+                record for record in records
+                if normalized_query in " ".join(
+                    str(record.get(key) or "")
+                    for key in ("title", "detail", "status", "meta")
+                ).casefold()
+            ]
+        result = {
+            "metrics": self._metrics_for_page(page_key),
+            "records": records,
+            "contextItems": self._context_for_page(page_key),
+            "emptyText": self._page_errors.get(page_key) or self._empty_text(page_key, bool(normalized_query)),
+            "actionEnabled": page_key in {"cases", "osint"},
+            "actionReason": "" if page_key in {"cases", "osint"} else self._disabled_reason(page_key),
+            "loading": page_key in self._page_loading,
+            "total": self._page_totals.get(page_key, len(records)),
+            "hasMore": len(self._page_records.get(page_key, records)) < self._page_totals.get(page_key, len(records)),
+        }
+        elapsed = (perf_counter() - started) * 1000
+        if elapsed > 50:
+            LOGGER.info("Page %s model update %.1f ms (%s records)", page_key, elapsed, len(records))
+        return result
+
+    @Slot(str)
+    def loadMore(self, page: str) -> None:
+        key = (page or "").strip().lower()
+        if key not in {"entities", "evidence", "timeline", "reports"}:
+            return
+        if key not in self._page_records:
+            self._load_page(key, 0)
+            return
+        offset = self._page_offsets.get(key, 0) + self.PAGE_SIZE
+        if offset < self._page_totals.get(key, 0):
+            self._load_page(key, offset)
+
+    def _load_page(self, page: str, offset: int, *, notify: bool = True) -> None:
+        if page in self._page_loading:
+            return
+        self._page_loading.add(page)
+        started = perf_counter()
+        scope = self._current_case_id or "all"
+        LOGGER.info("[%s] %s scope=%s offset=%s limit=%s loading=True", page.title(), "INITIAL LOAD REQUESTED" if offset == 0 else "NEXT PAGE", scope, offset, self.PAGE_SIZE)
+        try:
+            service = {"entities": "entity_service", "evidence": "evidence_service", "timeline": "timeline_service", "reports": "report_service"}[page]
+            svc = getattr(self._container, service, None)
+            if svc is None:
+                items = self._selected_or_all(page)
+                rows = items[offset:offset + self.PAGE_SIZE]
+                total = len(items)
+                mapped = [self._workspace_record(page, row) for row in rows]
+            else:
+                case_id = UUID(self._current_case_id) if self._current_case_id else None
+                rows = svc.get_page(limit=self.PAGE_SIZE, offset=offset, case_id=case_id)
+                total = svc.count_all(case_id=case_id) if offset == 0 else self._page_totals[page]
+                mapped = [self._workspace_record(page, self._model_dict(row)) for row in rows]
+            self._page_records.setdefault(page, []).extend(mapped)
+            self._page_offsets[page] = offset
+            self._page_totals[page] = int(total)
+            self._page_errors.pop(page, None)
+            LOGGER.info("[%s] initial=%s scope=%s offset=%s limit=%s db_rows=%s model_rows=%s total=%s has_more=%s loading=False elapsed_ms=%.1f", page.title(), offset == 0, scope, offset, self.PAGE_SIZE, len(rows), len(self._page_records[page]), total, len(self._page_records[page]) < total, (perf_counter()-started)*1000)
+        except Exception:
+            LOGGER.exception("Unable to load %s page", page)
+            self._page_errors[page] = "Unable to load records. Reopen this page to retry."
+        finally:
+            self._page_loading.discard(page)
+            self._generation += 1
+            if notify:
+                self.changed.emit()
+
+    @staticmethod
+    def _model_dict(row: Any) -> dict[str, Any]:
+        if isinstance(row, dict): return row
+        data = {}
+        for key in ("id", "title", "description", "value", "type", "confidence", "sha256", "created_at", "updated_at", "event_time", "date"):
+            try: data[key] = getattr(row, key)
+            except Exception: pass
+        for key in ("entity_type", "evidence_type", "event_type", "report_type"):
+            value = getattr(row, key, None)
+            if value is not None:
+                data["type"] = getattr(value, "value", value)
+                break
+        data["date"] = data.get("date") or data.get("event_time") or ""
+        return data
+
+    @Slot(str, result=bool)
+    def selectCase(self, case_id: str) -> bool:
+        normalized = str(case_id or "").strip()
+        if not self._case_by_id(normalized):
+            self._set_message("The selected investigation is unavailable.")
+            return False
+        if normalized != self._current_case_id:
+            self._page_records.clear()
+            self._page_offsets.clear()
+            self._page_errors.clear()
+        self._current_case_id = normalized
+        self._set_message("")
+        self._generation += 1
+        self.changed.emit()
+        self.navigationRequested.emit("overview")
+        return True
+
+    @Slot(str, str, result=bool)
+    def createCase(self, title: str, description: str = "") -> bool:
+        normalized_title = str(title or "").strip()
+        if not normalized_title:
+            self._set_message("Case title cannot be empty.")
+            return False
+        try:
+            case = self._container.case_controller.create_case(
+                title=normalized_title,
+                description=str(description or "").strip(),
+            )
+        except Exception as exc:
+            LOGGER.exception("Unable to create case")
+            self._set_message(f"Unable to create case: {exc}")
+            return False
+        self.refresh()
+        case_id = str(case.get("id") or "") if isinstance(case, dict) else ""
+        if case_id:
+            self.selectCase(case_id)
+        self._set_message("Investigation created.")
+        return True
+
+    @Slot(str, str, result=bool)
+    def renameCase(self, case_id: str, title: str) -> bool:
+        normalized_title = str(title or "").strip()
+        if not normalized_title:
+            self._set_message("Case title cannot be empty.")
+            return False
+        try:
+            renamed = self._container.case_controller.rename_case(
+                str(case_id or "").strip(),
+                normalized_title,
+            )
+        except Exception as exc:
+            LOGGER.exception("Unable to rename case")
+            self._set_message(f"Unable to rename case: {exc}")
+            return False
+        if not renamed:
+            self._set_message("The selected investigation could not be renamed.")
+            return False
+        self.refresh()
+        self._set_message("Investigation renamed.")
+        return True
+
+    @Slot(str, result=bool)
+    def deleteCase(self, case_id: str) -> bool:
+        normalized = str(case_id or "").strip()
+        try:
+            deleted = self._container.case_controller.delete_case(normalized)
+        except Exception as exc:
+            LOGGER.exception("Unable to delete case")
+            self._set_message(f"Unable to delete case: {exc}")
+            return False
+        if not deleted:
+            self._set_message("The selected investigation could not be deleted.")
+            return False
+        if normalized == self._current_case_id:
+            self._current_case_id = ""
+        self.refresh()
+        self._set_message("Investigation deleted.")
+        return True
+
+    @Slot(str, str, result=bool)
+    def runOsint(self, target_type: str, value: str) -> bool:
+        normalized_value = str(value or "").strip()
+        if not normalized_value:
+            self._set_message("OSINT collection requires a target.")
+            return False
+        field = {
+            "email": "emails",
+            "username": "usernames",
+            "domain": "domains",
+            "ip": "ip_addresses",
+            "url": "urls",
+            "phone": "phones",
+        }.get(str(target_type or "").strip().lower())
+        if field is None:
+            self._set_message("Unsupported OSINT target type.")
+            return False
+        form_data: dict[str, Any] = {field: [normalized_value]}
+        if self._current_case_id:
+            form_data["case_id"] = self._current_case_id
+        try:
+            result = self._container.osint_controller.run_investigation(
+                form_data,
+                timeout=30,
+                use_cache=True,
+                save_raw_output=False,
+                include_metadata=True,
+                include_related=True,
+            )
+        except Exception as exc:
+            LOGGER.exception("OSINT collection failed")
+            self._set_message(f"OSINT collection failed: {exc}")
+            return False
+        target_count = int((result or {}).get("target_count") or 1)
+        finding_count = int(
+            (result or {}).get("finding_count")
+            or (result or {}).get("total_findings")
+            or 0
+        )
+        self._set_message(
+            f"OSINT collection completed for {target_count} target(s); "
+            f"{finding_count} finding(s) returned."
+        )
+        self._generation += 1
+        self.changed.emit()
+        return True
+
+    @Slot(str, result="QVariantList")
+    def search(self, query: str) -> list[dict[str, Any]]:
+        normalized = str(query or "").strip()
+        if not normalized:
+            self._search_results = []
+            self._generation += 1
+            self.changed.emit()
+            return []
+        try:
+            request = InvestigationSearchQuery(
+                query=normalized,
+                case_id=UUID(self._current_case_id) if self._current_case_id else None,
+                methods=(SearchMethod.STRUCTURED, SearchMethod.LEXICAL),
+                limit=25,
+                candidate_limit=50,
+                enable_query_expansion=False,
+                enable_reranking=False,
+                enable_neural_reranking=False,
+            )
+            response = self._container.unified_search_service.search(request)
+            self._search_results = [
+                {
+                    "id": str(hit.object_id),
+                    "title": hit.title or str(hit.object_id),
+                    "detail": hit.snippet or "No preview available",
+                    "status": str(hit.object_type).replace("_", " ").title(),
+                    "meta": self._score_text(hit.final_score),
+                    "color": "#68a4ff",
+                    "tint": "#142b47",
+                }
+                for hit in response.hits
+            ]
+            self._set_message(
+                "No matching intelligence found."
+                if not self._search_results
+                else f"{len(self._search_results)} search result(s)."
+            )
+        except Exception as exc:
+            LOGGER.exception("Unified search failed")
+            self._search_results = []
+            self._set_message(f"Search failed: {exc}")
+        self._generation += 1
+        self.changed.emit()
+        return list(self._search_results)
+
+    @Slot(str, str)
+    def activateRecord(self, page: str, record_id: str) -> None:
+        if (page or "").strip().lower() == "cases":
+            self.selectCase(record_id)
+
+    @Slot()
+    def clearMessage(self) -> None:
+        self._set_message("")
+
+    def _records_for_page(self, page: str) -> list[dict[str, Any]]:
+        if page == "cases":
+            return [self._case_record(case) for case in self._cases]
+        if page == "search":
+            return list(self._search_results)
+        if page == "osint":
+            return self._connector_records()
+        key = {
+            "entities": "entities",
+            "evidence": "evidence",
+            "reports": "reports",
+            "timeline": "timeline",
+        }.get(page)
+        if key:
+            return list(self._page_records.get(page, []))
+        if page == "graph":
+            graph = self._current_workspace().get("graph", {}) if self._current_workspace() else {}
+            return [
+                {
+                    "id": str(node.get("id") or ""),
+                    "title": str(node.get("label") or "Unnamed entity"),
+                    "detail": str(node.get("type") or "entity").replace("_", " ").title(),
+                    "status": "Connected" if not node.get("is_isolated") else "Isolated",
+                    "meta": f"{int(node.get('degree') or 0)} links",
+                    "color": "#68a4ff",
+                    "tint": "#142b47",
+                }
+                for node in list(graph.get("nodes") or [])
+            ]
+        return []
+
+    def _metrics_for_page(self, page: str) -> list[dict[str, Any]]:
+        records = self._records_for_page(page)
+        current = self._current_workspace()
+        stats = current.get("statistics", {}) if current else {}
+        scope = self.currentCaseTitle or "All investigations"
+        if page == "cases":
+            return self._metric_set(len(self._cases), "Active cases", "Stored investigations", 0, "Selected", self.currentCaseTitle or "None", 0, "Archived", "Not exposed by current service")
+        if page == "entities":
+            return self._metric_set(self._page_totals.get("entities", len(records)), "Entities", scope, 0, "Entity types", "Current scope", 0, "Needs review", "No persisted review status")
+        if page == "evidence":
+            hashed = sum(1 for item in records if item.get("meta"))
+            return self._metric_set(self._page_totals.get("evidence", len(records)), "Evidence items", scope, hashed, "Hashed", "SHA-256 recorded", 0, "Needs review", "No persisted review status")
+        if page == "reports":
+            return self._metric_set(self._page_totals.get("reports", len(records)), "Reports", scope, 0, "Report types", "Current scope", 0, "In review", "No workflow status model")
+        if page == "timeline":
+            return self._metric_set(self._page_totals.get("timeline", len(records)), "Events", scope, 0, "Event types", "Current scope", 0, "Anomalies", "No persisted anomaly metric")
+        if page == "graph":
+            graph_stats = (current or {}).get("graph", {}).get("statistics", {})
+            return self._metric_set(int(graph_stats.get("node_count") or len(records)), "Nodes", scope, int(graph_stats.get("edge_count") or stats.get("relationships") or 0), "Relationships", "Current case", int(graph_stats.get("isolated_nodes") or 0), "Isolated", "No relationships")
+        if page == "osint":
+            return self._metric_set(len(records), "Connectors", "Registered by the existing pipeline", 0, "Active monitors", "No monitor model", 0, "Integrations", "No account status model")
+        if page == "search":
+            return self._metric_set(len(records), "Results", "Last internal search", 2, "Methods", "Structured and lexical", 0, "Queued", "Search runs immediately")
+        return self._metric_set(0, "Items", "No data", 0, "Available", "No data", 0, "Pending", "No data")
+
+    @staticmethod
+    def _metric_set(a: Any, at: str, ad: str, b: Any, bt: str, bd: str, c: Any, ct: str, cd: str) -> list[dict[str, Any]]:
+        return [
+            {"title": at, "value": str(a), "delta": "", "subtext": ad, "color": "#68a4ff", "chart": "none"},
+            {"title": bt, "value": str(b), "delta": "", "subtext": bd, "color": "#36cfa1", "chart": "none"},
+            {"title": ct, "value": str(c), "delta": "", "subtext": cd, "color": "#e5a84b", "chart": "none"},
+        ]
+
+    def _context_for_page(self, page: str) -> list[dict[str, Any]]:
+        if not self._database_available:
+            return [{"title": "Database unavailable", "detail": self._message, "color": "#e46b74"}]
+        items = []
+        if self._message:
+            items.append({
+                "title": "Latest operation",
+                "detail": self._message,
+                "color": "#68a4ff",
+            })
+        items.append({
+            "title": self.currentCaseTitle or "No investigation selected",
+            "detail": "Current investigation" if self.currentCaseTitle else "Open a case to use case-specific tools",
+            "color": "#68a4ff" if self.currentCaseTitle else "#8094a8",
+        })
+        if page in {"graph", "timeline", "entities", "evidence", "reports"}:
+            items.append({"title": "Case-scoped data" if self.currentCaseTitle else "All stored data", "detail": "Loaded through the existing workspace service", "color": "#36cfa1"})
+        if page == "osint":
+            items.append({"title": "Collection form required", "detail": "Use an investigation workspace before running connectors", "color": "#e5a84b"})
+        return items
+
+    def _case_record(self, case: dict[str, Any]) -> dict[str, Any]:
+        selected = str(case.get("id") or "") == self._current_case_id
+        return {
+            "id": str(case.get("id") or ""),
+            "title": str(case.get("title") or "Untitled investigation"),
+            "detail": str(case.get("description") or "No description"),
+            "status": "Selected" if selected else "Active",
+            "meta": self._short_id(case.get("id")),
+            "color": "#36cfa1" if selected else "#68a4ff",
+            "tint": "#12362f" if selected else "#142b47",
+        }
+
+    def _workspace_record(self, kind: str, item: dict[str, Any]) -> dict[str, Any]:
+        if kind == "entities":
+            confidence = item.get("confidence")
+            detail = str(item.get("type") or "entity").replace("_", " ").title()
+            meta = f"{float(confidence) * 100:.0f}%" if confidence is not None else ""
+            title = item.get("value")
+            status = "Entity"
+        elif kind == "evidence":
+            title = item.get("title")
+            detail = item.get("description") or item.get("value") or "No preview available"
+            status = str(item.get("type") or "evidence").replace("_", " ").title()
+            meta = "SHA-256" if item.get("sha256") else ""
+        elif kind == "reports":
+            title = item.get("title")
+            detail = item.get("description") or "Stored investigation report"
+            status = str(item.get("type") or "report").replace("_", " ").title()
+            meta = self._date_text(item.get("updated_at") or item.get("created_at"))
+        else:
+            title = item.get("title")
+            detail = item.get("description") or "Investigation event"
+            status = str(item.get("type") or "event").replace("_", " ").title()
+            meta = str(item.get("date") or "")
+        return {
+            "id": str(item.get("id") or ""),
+            "title": str(title or "Untitled record"),
+            "detail": str(detail),
+            "status": str(status),
+            "meta": str(meta),
+            "color": "#68a4ff",
+            "tint": "#142b47",
+        }
+
+    def _connector_records(self) -> list[dict[str, Any]]:
+        if self._connector_cache is not None:
+            return self._connector_cache
+        try:
+            state = self._container.osint_controller.get_workspace_state() or {}
+            connectors = state.get("connectors") or []
+        except Exception as exc:
+            LOGGER.exception("Unable to load OSINT connector state")
+            self._set_message(f"Unable to load connector state: {exc}")
+            connectors = []
+        records = [
+            {"id": str(name), "title": str(name), "detail": "Registered OSINT connector", "status": "Available", "meta": "Pipeline", "color": "#36cfa1", "tint": "#12362f"}
+            for name in connectors
+        ]
+        self._connector_cache = records
+        LOGGER.info("[OSINT] initial=True scope=registry model_rows=%s has_more=False loading=False", len(records))
+        return records
+
+    def _recent_intelligence(self, entities: list[dict[str, Any]], evidence: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        rows: list[tuple[str, dict[str, Any]]] = []
+        for item in entities:
+            rows.append((str(item.get("created_at") or item.get("updated_at") or ""), {
+                "headline": str(item.get("value") or "Unnamed entity"),
+                "detail": f"{str(item.get('type') or 'entity').replace('_', ' ').title()} added to an investigation",
+                "timeText": self._date_text(item.get("created_at") or item.get("updated_at")),
+                "icon": "users_purple.svg",
+                "color": "#a98be9",
+            }))
+        for item in evidence:
+            rows.append((str(item.get("created_at") or item.get("updated_at") or ""), {
+                "headline": str(item.get("title") or "Untitled evidence"),
+                "detail": f"{str(item.get('type') or 'evidence').replace('_', ' ').title()} evidence recorded",
+                "timeText": self._date_text(item.get("created_at") or item.get("updated_at")),
+                "icon": "document_blue.svg",
+                "color": "#68a4ff",
+            }))
+        rows.sort(key=lambda pair: pair[0], reverse=True)
+        return [row for _, row in rows]
+
+    def _all_workspace_items(self, key: str) -> list[dict[str, Any]]:
+        result: list[dict[str, Any]] = []
+        for workspace in self._workspaces.values():
+            result.extend(item for item in (workspace.get(key) or []) if isinstance(item, dict))
+        return result
+
+    def _selected_or_all(self, key: str) -> list[dict[str, Any]]:
+        workspace = self._current_workspace()
+        if workspace:
+            return [item for item in (workspace.get(key) or []) if isinstance(item, dict)]
+        return self._all_workspace_items(key)
+
+    def _type_count(self, key: str) -> int:
+        return len(Counter(str(item.get("type") or "") for item in self._selected_or_all(key) if item.get("type")))
+
+    def _current_workspace(self) -> dict[str, Any]:
+        return self._workspaces.get(self._current_case_id, {})
+
+    def _case_by_id(self, case_id: str) -> dict[str, Any] | None:
+        return next((case for case in self._cases if str(case.get("id") or "") == case_id), None)
+
+    def _set_message(self, message: str) -> None:
+        normalized = str(message or "")
+        if normalized != self._message:
+            self._message = normalized
+            self.messageChanged.emit()
+
+    @staticmethod
+    def _greeting() -> str:
+        hour = datetime.now().hour
+        if hour < 12:
+            return "Good morning."
+        if hour < 18:
+            return "Good afternoon."
+        return "Good evening."
+
+    @staticmethod
+    def _dashboard_summary(case_count: int, intelligence_count: int) -> str:
+        if not case_count:
+            return "No active investigations. Create a case to begin analysis."
+        suffix = f" and {intelligence_count} recent intelligence item(s)" if intelligence_count else ""
+        return f"{case_count} active investigation(s){suffix}."
+
+    @staticmethod
+    def _empty_text(page: str, filtered: bool) -> str:
+        if filtered:
+            return "No records match the current filter."
+        return {
+            "cases": "No active investigations",
+            "search": "Enter a query to search stored intelligence",
+            "entities": "No entities yet",
+            "graph": "Select a case with entities to view its graph",
+            "timeline": "No timeline events yet",
+            "osint": "No OSINT connectors are registered",
+            "evidence": "No evidence yet",
+            "reports": "No reports yet",
+            "settings": "No settings interface existed in the previous application",
+        }.get(page, "No records available")
+
+    @staticmethod
+    def _disabled_reason(page: str) -> str:
+        return {
+            "search": "Use the search field; a separate New Search action did not exist.",
+            "entities": "Entity creation requires source context in the existing workspace.",
+            "graph": "Saved graph creation did not exist in the previous application.",
+            "timeline": "Timeline creation requires source context in the existing workspace.",
+            "evidence": "Evidence creation requires source context in the existing workspace.",
+            "reports": "Report creation requires an open investigation workspace.",
+            "settings": "No settings action existed in the previous application.",
+        }.get(page, "This action is unavailable.")
+
+    @staticmethod
+    def _short_id(value: Any) -> str:
+        text = str(value or "")
+        return text[:8] if text else ""
+
+    @staticmethod
+    def _date_text(value: Any) -> str:
+        if not value:
+            return ""
+        text = str(value)
+        try:
+            parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+            return parsed.strftime("%b %d, %Y")
+        except ValueError:
+            return text[:16]
+
+    @staticmethod
+    def _score_text(value: Any) -> str:
+        try:
+            return f"{float(value):.2f}"
+        except (TypeError, ValueError):
+            return ""
+
+
+====================================================================================================
+FILE: app/services/case_osint_service.py
+====================================================================================================
+"""
+Case OSINT service.
+
+Provides OSINT information
+attached to investigation cases.
+
+Responsibilities:
+
+- collect OSINT statistics
+- provide case OSINT overview
+- combine OSINT sources,
+  evidence and entities
+
+Does NOT:
+
+- execute connectors
+- store data
+- call AI
+"""
+
+from __future__ import annotations
+
+from uuid import UUID
+
+from app.services.osint_result_service import (
+    OsintResultService,
+)
+
+
+class CaseOsintService:
+    """
+    Service for OSINT case overview.
+    """
+
+    def __init__(
+        self,
+        osint_result_service: OsintResultService,
+    ) -> None:
+
+        self.osint_result_service = (
+            osint_result_service
+        )
+
+
+    def get_overview(
+        self,
+        case_id: UUID,
+    ) -> dict:
+        """
+        Return complete OSINT overview
+        for investigation case.
+        """
+
+        sources = (
+            self.osint_result_service
+            .get_case_sources(
+                case_id
+            )
+        )
+
+        evidence = (
+            self.osint_result_service
+            .get_case_evidence(
+                case_id
+            )
+        )
+
+        entities = (
+            self.osint_result_service
+            .get_case_entities(
+                case_id
+            )
+        )
+
+
+        return {
+
+            "case_id": str(
+                case_id
+            ),
+
+            "sources": [
+                {
+                    "id": str(
+                        source.id
+                    ),
+                    "name": source.name,
+                    "type": (
+                        source.source_type.value
+                    ),
+                }
+                for source in sources
+            ],
+
+            "statistics": {
+
+                "sources": len(
+                    sources
+                ),
+
+                "evidence": len(
+                    evidence
+                ),
+
+                "entities": len(
+                    entities
+                ),
+
+            },
+
+            "entities": [
+
+                {
+                    "id": str(
+                        entity.id
+                    ),
+                    "type": (
+                        entity.entity_type.value
+                    ),
+                    "value": entity.value,
+                    "confidence": (
+                        entity.confidence
+                    ),
+                }
+
+                for entity in entities
+
+            ],
+
+            "evidence": [
+
+                {
+                    "id": str(
+                        item.id
+                    ),
+                    "type": (
+                        item.evidence_type.value
+                    ),
+                    "value": item.value,
+                }
+
+                for item in evidence
+
+            ],
+
+        }
+
+
+====================================================================================================
+FILE: app/services/osint_investigation_service.py
+====================================================================================================
+"""
+OSINT investigation service.
+
+Connects OSINT pipeline with
+the investigation domain.
+
+Responsibilities:
+
+- execute OSINT investigation
+- create source records
+- store evidence candidates
+- store entity candidates
+
+Does NOT:
+
+- execute external tools directly
+- call AI
+- resolve entities
+- build relationships
+"""
+
+from __future__ import annotations
+
+import json
+from uuid import UUID
+
+from sqlalchemy.orm import Session
+
+from app.models.source import SourceType
+from app.models.evidence import EvidenceType
+from app.models.entity import EntityType
+
+from app.osint.models import ConnectorRequest
+from app.osint.pipeline import OsintPipeline
+from app.osint.result_mapper import ResultMapper
+
+from app.services.source_service import SourceService
+from app.services.evidence_service import EvidenceService
+from app.services.entity_service import EntityService
+
+
+class OsintInvestigationService:
+    """
+    Service connecting OSINT
+    with investigation cases.
+    """
+
+    def __init__(
+        self,
+        session: Session,
+        pipeline: OsintPipeline,
+    ) -> None:
+
+        self.pipeline = pipeline
+
+        self.mapper = ResultMapper()
+
+        self.source_service = SourceService(
+            session
+        )
+
+        self.evidence_service = EvidenceService(
+            session
+        )
+
+        self.entity_service = EntityService(
+            session
+        )
+
+
+    def run_investigation(
+        self,
+        case_id: UUID,
+        request: ConnectorRequest,
+    ) -> dict:
+        """
+        Execute OSINT collection
+        and save results.
+        """
+
+        source = self.source_service.create_source(
+
+            case_id=case_id,
+
+            name=(
+                f"OSINT: "
+                f"{request.target.value}"
+            ),
+
+            source_type=SourceType.API,
+
+            description=(
+                "OSINT connector investigation"
+            ),
+        )
+
+
+        results = self.pipeline.run(
+            request
+        )
+
+
+        saved_evidence = 0
+        saved_entities = 0
+
+
+        for result in results:
+
+            if not result.success:
+                continue
+
+
+            mapped = self.mapper.map(
+                result
+            )
+
+
+            for evidence in mapped.evidence:
+
+                self.evidence_service.create_evidence(
+
+                    case_id=case_id,
+
+                    source_id=source.id,
+
+                    evidence_type=(
+                        self._map_evidence_type(
+                            evidence.category
+                        )
+                    ),
+
+                    title=(
+                        f"{result.connector} "
+                        f"finding"
+                    ),
+
+                    value=evidence.value,
+
+                    description=(
+                        evidence.source
+                    ),
+                )
+
+                saved_evidence += 1
+
+
+
+            for entity in mapped.entities:
+
+                self.entity_service.create_entity(
+
+                    case_id=case_id,
+
+                    entity_type=(
+                        self._map_entity_type(
+                            entity.entity_type
+                        )
+                    ),
+
+                    value=entity.value,
+
+                    confidence=entity.confidence,
+
+                    metadata_json=json.dumps(
+                        entity.metadata,
+                        default=str,
+                    ),
+                )
+
+                saved_entities += 1
+
+
+        return {
+
+            "source_id": str(source.id),
+
+            "connectors_executed": len(
+                results
+            ),
+
+            "evidence_created": saved_evidence,
+
+            "entities_created": saved_entities,
+
+        }
+
+
+    def _map_entity_type(
+        self,
+        value: str,
+    ) -> EntityType:
+        """
+        Convert connector category
+        into platform entity type.
+        """
+
+        try:
+
+            return EntityType(
+                value.lower()
+            )
+
+        except ValueError:
+
+            return EntityType.OTHER
+
+
+
+    def _map_evidence_type(
+        self,
+        value: str,
+    ) -> EvidenceType:
+        """
+        Convert connector category
+        into evidence type.
+        """
+
+        try:
+
+            return EvidenceType(
+                value.lower()
+            )
+
+        except ValueError:
+
+            return EvidenceType.OTHER
+
+
+====================================================================================================
+FILE: app/services/osint_result_service.py
+====================================================================================================
+"""
+OSINT result service.
+
+Provides access to OSINT investigation results
+stored inside the investigation domain.
+
+Responsibilities:
+
+- retrieve OSINT sources
+- retrieve OSINT evidence
+- retrieve OSINT entities
+- filter results by connector/source
+
+Does NOT:
+
+- execute connectors
+- call AI
+- create OSINT data
+- resolve entities
+"""
+
+from __future__ import annotations
+
+from uuid import UUID
+
+from sqlalchemy.orm import Session
+
+from app.models.source import Source
+from app.models.evidence import Evidence
+from app.models.entity import Entity
+
+from app.repositories.source_repository import SourceRepository
+from app.repositories.evidence_repository import EvidenceRepository
+from app.repositories.entity_repository import EntityRepository
+
+
+class OsintResultService:
+    """
+    Service for accessing stored OSINT results.
+    """
+
+    def __init__(
+        self,
+        session: Session,
+    ) -> None:
+
+        self.source_repository = SourceRepository(
+            session
+        )
+
+        self.evidence_repository = EvidenceRepository(
+            session
+        )
+
+        self.entity_repository = EntityRepository(
+            session
+        )
+
+
+    def get_case_sources(
+        self,
+        case_id: UUID,
+    ) -> list[Source]:
+        """
+        Return OSINT sources
+        belonging to a case.
+        """
+
+        return self.source_repository.get_by_case(
+            case_id
+        )
+
+
+    def get_case_evidence(
+        self,
+        case_id: UUID,
+    ) -> list[Evidence]:
+        """
+        Return all OSINT evidence
+        belonging to a case.
+        """
+
+        return self.evidence_repository.get_by_case(
+            case_id
+        )
+
+
+    def get_case_entities(
+        self,
+        case_id: UUID,
+    ) -> list[Entity]:
+        """
+        Return all OSINT entities
+        belonging to a case.
+        """
+
+        return self.entity_repository.get_by_case(
+            case_id
+        )
+
+
+    def get_source_evidence(
+        self,
+        source_id: UUID,
+    ) -> list[Evidence]:
+        """
+        Return evidence produced
+        by specific OSINT source.
+        """
+
+        return self.evidence_repository.get_by_source(
+            source_id
+        )
+
+
+    def get_evidence_by_type(
+        self,
+        case_id: UUID,
+        evidence_type,
+    ) -> list[Evidence]:
+        """
+        Filter evidence by type.
+        """
+
+        evidence = self.get_case_evidence(
+            case_id
+        )
+
+        return [
+            item
+            for item in evidence
+            if item.evidence_type == evidence_type
+        ]
+
+
+    def get_entities_by_type(
+        self,
+        case_id: UUID,
+        entity_type,
+    ) -> list[Entity]:
+        """
+        Filter entities by type.
+        """
+
+        entities = self.get_case_entities(
+            case_id
+        )
+
+        return [
+            item
+            for item in entities
+            if item.entity_type == entity_type
+        ]
+
+
+    def build_summary(
+        self,
+        case_id: UUID,
+    ) -> dict:
+        """
+        Create compact OSINT result summary.
+        """
+
+        sources = self.get_case_sources(
+            case_id
+        )
+
+        evidence = self.get_case_evidence(
+            case_id
+        )
+
+        entities = self.get_case_entities(
+            case_id
+        )
+
+
+        return {
+
+            "sources": len(
+                sources
+            ),
+
+            "evidence": len(
+                evidence
+            ),
+
+            "entities": len(
+                entities
+            ),
+
+        }
+
+
+====================================================================================================
+FILE: app/osint/result.py
+====================================================================================================
+"""
+OSINT result models.
+
+Universal result returned
+by every OSINT connector.
+
+Responsibilities:
+
+- standardized connector output
+- discovered objects
+- execution metadata
+
+Does NOT:
+
+- store database models
+- execute tools
+- call AI
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from dataclasses import field
+from enum import Enum
+from typing import Any
+
+
+class ResultStatus(str, Enum):
+    """
+    Connector execution status.
+    """
+
+    SUCCESS = "success"
+
+    PARTIAL = "partial"
+
+    FAILED = "failed"
+
+    NOT_SUPPORTED = "not_supported"
+
+    NOT_AVAILABLE = "not_available"
+
+
+@dataclass(slots=True)
+class OsintFinding:
+    """
+    Single discovered object.
+    """
+
+    category: str
+
+    value: str
+
+    confidence: float = 1.0
+
+    source: str | None = None
+
+    url: str | None = None
+
+    reliability: float = 1.0
+
+    metadata: dict[str, Any] = field(
+        default_factory=dict,
+    )
+
+
+@dataclass(slots=True)
+class OsintResult:
+    """
+    Universal connector result.
+    """
+
+    connector: str
+
+    status: ResultStatus
+
+    findings: list[OsintFinding] = field(
+        default_factory=list,
+    )
+
+    raw_data: Any | None = None
+
+    execution_time: float = 0.0
+
+    error: str | None = None
+
+    metadata: dict[str, Any] = field(
+        default_factory=dict,
+    )
+
+    @property
+    def success(
+        self,
+    ) -> bool:
+        """
+        Returns True if execution succeeded.
+        """
+
+        return self.status in (
+            ResultStatus.SUCCESS,
+            ResultStatus.PARTIAL,
+        )
+
+    @property
+    def total_findings(
+        self,
+    ) -> int:
+        """
+        Number of discovered objects.
+        """
+
+        return len(
+            self.findings
+        )
+
+    def add_finding(
+        self,
+        finding: OsintFinding,
+    ) -> None:
+        """
+        Append discovered object.
+        """
+
+        self.findings.append(
+            finding
+        )
+
+    @classmethod
+    def failed(
+        cls,
+        connector: str,
+        error: str,
+    ) -> "OsintResult":
+        """
+        Create failed connector result.
+        """
+
+        return cls(
+            connector=connector,
+            status=ResultStatus.FAILED,
+            error=error,
+        )
+
+    @classmethod
+    def success_result(
+        cls,
+        connector: str,
+    ) -> "OsintResult":
+        """
+        Create successful empty result.
+        """
+
+        return cls(
+            connector=connector,
+            status=ResultStatus.SUCCESS,
+        )
+
+    @classmethod
+    def partial_result(
+        cls,
+        connector: str,
+        error: str | None = None,
+    ) -> "OsintResult":
+        """
+        Create partially successful result.
+        """
+
+        return cls(
+            connector=connector,
+            status=ResultStatus.PARTIAL,
+            error=error,
+        )
+
+    @classmethod
+    def unsupported(
+        cls,
+        connector: str,
+    ) -> "OsintResult":
+        """
+        Connector does not support target.
+        """
+
+        return cls(
+            connector=connector,
+            status=ResultStatus.NOT_SUPPORTED,
+        )
+
+    @classmethod
+    def unavailable(
+        cls,
+        connector: str,
+        error: str | None = None,
+    ) -> "OsintResult":
+        """
+        External tool unavailable.
+        """
+
+        return cls(
+            connector=connector,
+            status=ResultStatus.NOT_AVAILABLE,
+            error=error,
+        )
+
+
+====================================================================================================
+FILE: app/osint/models.py
+====================================================================================================
+"""
+OSINT models.
+
+Shared models used by every
+OSINT connector.
+
+Responsibilities:
+
+- investigation target
+- structured investigation request
+- target types
+- connector requests
+
+Does NOT:
+
+- store results
+- call tools
+- access database
+- select connectors
+- normalize user input
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from dataclasses import field
+from datetime import date
+from enum import Enum
+
+
+class OsintTargetType(str, Enum):
+    """
+    Supported investigation targets.
+    """
+
+    USERNAME = "username"
+    EMAIL = "email"
+    PHONE = "phone"
+    DOMAIN = "domain"
+    URL = "url"
+    IP = "ip"
+    HASH = "hash"
+    PERSON = "person"
+    ORGANIZATION = "organization"
+    FILE = "file"
+    IMAGE = "image"
+    LOCATION = "location"
+
+
+@dataclass(slots=True)
+class OsintTarget:
+    """
+    Universal investigation target.
+
+    Represents one concrete value that can be
+    passed to compatible OSINT connectors.
+
+    Examples:
+
+    - username
+    - email address
+    - phone number
+    - domain
+    - IP address
+    - person name
+    """
+
+    target_type: OsintTargetType
+
+    value: str
+
+    label: str | None = None
+
+    description: str | None = None
+
+    case_id: str | None = None
+
+
+@dataclass(slots=True)
+class OsintInvestigationRequest:
+    """
+    Structured OSINT investigation request.
+
+    Represents all information entered by the user
+    in the OSINT workspace.
+
+    One investigation request may later be converted
+    into multiple independent OsintTarget objects.
+
+    Empty fields are allowed. The user only needs to
+    provide information that is currently known.
+    """
+
+    # ==========================================================
+    # Investigation context
+    # ==========================================================
+
+    case_id: str | None = None
+
+    title: str | None = None
+
+    description: str | None = None
+
+    # ==========================================================
+    # Person identity
+    # ==========================================================
+
+    first_name: str | None = None
+
+    middle_name: str | None = None
+
+    last_name: str | None = None
+
+    birth_date: date | None = None
+
+    # ==========================================================
+    # Online identities
+    # ==========================================================
+
+    usernames: list[str] = field(
+        default_factory=list
+    )
+
+    emails: list[str] = field(
+        default_factory=list
+    )
+
+    phones: list[str] = field(
+        default_factory=list
+    )
+
+    # ==========================================================
+    # Location information
+    # ==========================================================
+
+    country: str | None = None
+
+    region: str | None = None
+
+    city: str | None = None
+
+    postal_code: str | None = None
+
+    address: str | None = None
+
+    # ==========================================================
+    # Organizations
+    # ==========================================================
+
+    organizations: list[str] = field(
+        default_factory=list
+    )
+
+    # ==========================================================
+    # Network and web targets
+    # ==========================================================
+
+    domains: list[str] = field(
+        default_factory=list
+    )
+
+    urls: list[str] = field(
+        default_factory=list
+    )
+
+    ip_addresses: list[str] = field(
+        default_factory=list
+    )
+
+    hashes: list[str] = field(
+        default_factory=list
+    )
+
+    # ==========================================================
+    # Local artifacts
+    # ==========================================================
+
+    file_paths: list[str] = field(
+        default_factory=list
+    )
+
+    image_paths: list[str] = field(
+        default_factory=list
+    )
+
+    # ==========================================================
+    # Additional search context
+    # ==========================================================
+
+    keywords: list[str] = field(
+        default_factory=list
+    )
+
+    notes: str | None = None
+
+
+@dataclass(slots=True)
+class ConnectorRequest:
+    """
+    Request passed to connector.
+
+    Contains one concrete target and common
+    execution options shared by connectors.
+    """
+
+    target: OsintTarget
+
+    timeout: int = 300
+
+    use_cache: bool = True
+
+    save_raw_output: bool = False
+
+    include_metadata: bool = True
+
+    include_related: bool = True
+
+    limit: int | None = None
+
+
+====================================================================================================
+FILE: app/osint/enrichment_execution.py
+====================================================================================================
+"""
+M021.2 — OSINT Enrichment Execution Boundary.
+
+Connects:
+    Pivot Policy -> Capability Router -> existing OsintPipeline
+
+Does NOT persist findings, create entities/evidence, recurse, or call AI.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from enum import Enum
+
+from app.osint.capabilities import DiscoveryGoal, OsintConnectorCapability
+from app.osint.models import ConnectorRequest, OsintTarget, OsintTargetType
+from app.osint.pipeline import OsintPipeline
+from app.osint.pivot_policy import PivotKey, PivotTraversalState
+from app.osint.pivot_router import OsintCapabilityRouter, PivotRoute
+from app.osint.result import OsintResult, ResultStatus
+
+
+class EnrichmentExecutionStatus(str, Enum):
+    SUCCESS = "success"
+    PARTIAL = "partial"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+
+
+@dataclass(frozen=True, slots=True)
+class ConnectorExecutionRecord:
+    capability: OsintConnectorCapability
+    runtime_connector_name: str | None
+    result: OsintResult
+
+    @property
+    def available(self) -> bool:
+        return self.result.status is not ResultStatus.NOT_AVAILABLE
+
+
+@dataclass(slots=True)
+class NewEntityBudget:
+    """
+    Shared in-memory creation budget for one enrichment batch.
+
+    Multiple execution results may reference the same instance. Persistence
+    consumes it only when a genuinely new Entity is created, which prevents
+    sibling goals/connectors from independently overshooting max_new_entities.
+    """
+
+    limit: int
+    consumed: int = 0
+
+    def __post_init__(self) -> None:
+        if self.limit < 0:
+            raise ValueError("limit must be >= 0")
+        if self.consumed < 0:
+            raise ValueError("consumed must be >= 0")
+        if self.consumed > self.limit:
+            raise ValueError("consumed must not exceed limit")
+
+    @property
+    def remaining(self) -> int:
+        return max(0, self.limit - self.consumed)
+
+    @property
+    def exhausted(self) -> bool:
+        return self.remaining == 0
+
+    def consume(self, count: int) -> None:
+        if count < 0:
+            raise ValueError("count must be >= 0")
+        if count > self.remaining:
+            raise ValueError(
+                "new-entity budget consumption exceeds remaining budget"
+            )
+        self.consumed += count
+
+
+@dataclass(slots=True)
+class EnrichmentExecutionResult:
+    route: PivotRoute
+    status: EnrichmentExecutionStatus
+    records: list[ConnectorExecutionRecord] = field(default_factory=list)
+    error: str | None = None
+    entity_budget: NewEntityBudget | None = None
+
+    @property
+    def results(self) -> list[OsintResult]:
+        return [record.result for record in self.records]
+
+    @property
+    def total_connectors(self) -> int:
+        return len(self.records)
+
+    @property
+    def total_findings(self) -> int:
+        return sum(result.total_findings for result in self.results)
+
+    @property
+    def successful_connectors(self) -> int:
+        return sum(result.status is ResultStatus.SUCCESS for result in self.results)
+
+    @property
+    def partial_connectors(self) -> int:
+        return sum(result.status is ResultStatus.PARTIAL for result in self.results)
+
+    @property
+    def failed_connectors(self) -> int:
+        return sum(result.status is ResultStatus.FAILED for result in self.results)
+
+    @property
+    def unavailable_connectors(self) -> int:
+        return sum(result.status is ResultStatus.NOT_AVAILABLE for result in self.results)
+
+
+class OsintEnrichmentExecutionService:
+    """Execute only connectors explicitly selected by M021 routing policy."""
+
+    def __init__(
+        self,
+        *,
+        pipeline: OsintPipeline,
+        router: OsintCapabilityRouter | None = None,
+    ) -> None:
+        self.pipeline = pipeline
+        self.router = router or OsintCapabilityRouter()
+
+    def execute(
+        self,
+        *,
+        target_type: OsintTargetType,
+        value: str,
+        goal: DiscoveryGoal,
+        depth: int,
+        entity_identity: str,
+        state: PivotTraversalState,
+        case_id: str | None = None,
+        timeout: int = 300,
+        use_cache: bool = True,
+        save_raw_output: bool = False,
+        include_metadata: bool = True,
+        include_related: bool = True,
+        entity_budget: NewEntityBudget | None = None,
+        finding_limit: int | None = None,
+    ) -> EnrichmentExecutionResult:
+        route = self.router.route(
+            target_type=target_type,
+            value=value,
+            goal=goal,
+            depth=depth,
+            entity_identity=entity_identity,
+            state=state,
+        )
+
+        if not route.allowed:
+            return EnrichmentExecutionResult(
+                route=route,
+                status=EnrichmentExecutionStatus.SKIPPED,
+                error=route.decision.reason,
+            )
+
+        if not route.connectors:
+            return EnrichmentExecutionResult(
+                route=route,
+                status=EnrichmentExecutionStatus.SKIPPED,
+                error="Pivot is allowed, but no automatic connector capability is available.",
+            )
+
+        limits = self.router.policy.limits
+        shared_entity_budget = (
+            entity_budget
+            if entity_budget is not None
+            else NewEntityBudget(
+                state.remaining_new_entities(limits)
+            )
+        )
+
+        if shared_entity_budget.exhausted:
+            return EnrichmentExecutionResult(
+                route=route,
+                status=EnrichmentExecutionStatus.SKIPPED,
+                error="No remaining new-entity budget is available.",
+                entity_budget=shared_entity_budget,
+            )
+
+        if finding_limit is None:
+            remaining_finding_budget = shared_entity_budget.remaining
+        else:
+            remaining_finding_budget = min(
+                max(0, int(finding_limit)),
+                shared_entity_budget.remaining,
+            )
+
+        if remaining_finding_budget <= 0:
+            return EnrichmentExecutionResult(
+                route=route,
+                status=EnrichmentExecutionStatus.SKIPPED,
+                error="No remaining finding budget is available.",
+                entity_budget=shared_entity_budget,
+            )
+
+        state.mark_visited(
+            key=PivotKey.build(target_type, value, goal),
+            entity_identity=entity_identity,
+        )
+
+        records: list[ConnectorExecutionRecord] = []
+
+        for capability in route.connectors:
+            if remaining_finding_budget <= 0:
+                break
+
+            request = ConnectorRequest(
+                target=OsintTarget(
+                    target_type=target_type,
+                    value=value,
+                    case_id=case_id,
+                ),
+                timeout=timeout,
+                use_cache=use_cache,
+                save_raw_output=save_raw_output,
+                include_metadata=include_metadata,
+                include_related=include_related,
+                limit=remaining_finding_budget,
+            )
+
+            runtime_name = self._resolve_runtime_connector_name(capability)
+
+            if runtime_name is None:
+                result = OsintResult(
+                    connector=capability.display_name,
+                    status=ResultStatus.NOT_AVAILABLE,
+                    error=(
+                        "Connector was selected by capability policy but is "
+                        "not registered in the current OsintManager runtime."
+                    ),
+                    metadata={
+                        "capability_module": capability.module,
+                        "connector_class": capability.connector_class,
+                    },
+                )
+            else:
+                result = self._execute_connector(
+                    runtime_name=runtime_name,
+                    capability=capability,
+                    request=request,
+                )
+
+            result = self._enforce_result_limit(
+                result,
+                remaining_finding_budget,
+            )
+
+            remaining_finding_budget = max(
+                0,
+                remaining_finding_budget
+                - result.total_findings,
+            )
+
+            records.append(
+                ConnectorExecutionRecord(
+                    capability=capability,
+                    runtime_connector_name=runtime_name,
+                    result=result,
+                )
+            )
+
+        return EnrichmentExecutionResult(
+            route=route,
+            status=self._aggregate_status(records),
+            records=records,
+            entity_budget=shared_entity_budget,
+        )
+
+    def execute_defaults(
+        self,
+        *,
+        target_type: OsintTargetType,
+        value: str,
+        depth: int,
+        entity_identity: str,
+        state: PivotTraversalState,
+        case_id: str | None = None,
+        timeout: int = 300,
+        use_cache: bool = True,
+        save_raw_output: bool = False,
+        include_metadata: bool = True,
+        include_related: bool = True,
+        entity_budget_limit: int | None = None,
+    ) -> tuple[EnrichmentExecutionResult, ...]:
+        goals = self.router.policy.default_goals(target_type)
+        limits = self.router.policy.limits
+
+        remaining_global_budget = state.remaining_new_entities(
+            limits
+        )
+
+        if entity_budget_limit is None:
+            target_entity_budget = remaining_global_budget
+        else:
+            target_entity_budget = min(
+                remaining_global_budget,
+                max(
+                    0,
+                    int(entity_budget_limit),
+                ),
+            )
+
+        shared_entity_budget = NewEntityBudget(
+            target_entity_budget
+        )
+
+        remaining_finding_budget = (
+            shared_entity_budget.remaining
+        )
+
+        executions: list[
+            EnrichmentExecutionResult
+        ] = []
+
+        for goal in goals:
+            execution = self.execute(
+                target_type=target_type,
+                value=value,
+                goal=goal,
+                depth=depth,
+                entity_identity=entity_identity,
+                state=state,
+                case_id=case_id,
+                timeout=timeout,
+                use_cache=use_cache,
+                save_raw_output=save_raw_output,
+                include_metadata=include_metadata,
+                include_related=include_related,
+                entity_budget=shared_entity_budget,
+                finding_limit=remaining_finding_budget,
+            )
+
+            executions.append(
+                execution
+            )
+
+            remaining_finding_budget = max(
+                0,
+                remaining_finding_budget
+                - execution.total_findings,
+            )
+
+        return tuple(executions)
+
+    def _resolve_runtime_connector_name(
+        self,
+        capability: OsintConnectorCapability,
+    ) -> str | None:
+        registry = self.pipeline.manager.registry
+
+        for connector in registry.all():
+            if connector.__class__.__name__ == capability.connector_class:
+                return connector.name
+
+        return None
+
+    def _execute_connector(
+        self,
+        *,
+        runtime_name: str,
+        capability: OsintConnectorCapability,
+        request: ConnectorRequest,
+    ) -> OsintResult:
+        try:
+            result = self.pipeline.run_connector(runtime_name, request)
+        except Exception as exc:  # defensive boundary
+            return OsintResult(
+                connector=runtime_name,
+                status=ResultStatus.FAILED,
+                error=str(exc),
+                metadata={
+                    "capability_module": capability.module,
+                    "execution_boundary_exception": True,
+                },
+            )
+
+        if result is None:
+            return OsintResult(
+                connector=runtime_name,
+                status=ResultStatus.NOT_AVAILABLE,
+                error="Connector disappeared from runtime registry before execution.",
+                metadata={"capability_module": capability.module},
+            )
+
+        result.metadata.setdefault("capability_module", capability.module)
+        result.metadata.setdefault(
+            "discovery_goals",
+            sorted(goal.value for goal in capability.goals),
+        )
+        return result
+
+    @staticmethod
+    def _enforce_result_limit(
+        result: OsintResult,
+        limit: int,
+    ) -> OsintResult:
+        """
+        Enforce the application boundary even for legacy connectors that do
+        not yet honor ConnectorRequest.limit themselves.
+        """
+
+        safe_limit = max(
+            0,
+            int(limit),
+        )
+
+        if len(result.findings) <= safe_limit:
+            return result
+
+        trimmed = (
+            len(result.findings)
+            - safe_limit
+        )
+
+        result.findings = (
+            result.findings[
+                :safe_limit
+            ]
+        )
+
+        result.metadata[
+            "execution_boundary_trimmed_findings"
+        ] = (
+            result.metadata.get(
+                "execution_boundary_trimmed_findings",
+                0,
+            )
+            + trimmed
+        )
+
+        result.metadata[
+            "execution_boundary_limit"
+        ] = safe_limit
+
+        return result
+
+    @staticmethod
+    def _aggregate_status(
+        records: list[ConnectorExecutionRecord],
+    ) -> EnrichmentExecutionStatus:
+        if not records:
+            return EnrichmentExecutionStatus.SKIPPED
+
+        statuses = [record.result.status for record in records]
+
+        if all(status is ResultStatus.SUCCESS for status in statuses):
+            return EnrichmentExecutionStatus.SUCCESS
+
+        usable = any(
+            status in {ResultStatus.SUCCESS, ResultStatus.PARTIAL}
+            for status in statuses
+        )
+        if usable:
+            return EnrichmentExecutionStatus.PARTIAL
+
+        return EnrichmentExecutionStatus.FAILED
+
+
+====================================================================================================
+FILE: app/models/entity.py
+====================================================================================================
+"""
+Entity domain model.
+
+Represents an extracted entity from a Case.
+
+Examples:
+
+- Person
+- Organization
+- Phone
+- Email
+- Address
+- Username
+- Domain
+- IP
+- Vehicle
+"""
+
+from __future__ import annotations
+
+from enum import Enum
+from typing import TYPE_CHECKING
+from uuid import UUID
+
+from sqlalchemy import Enum as SqlEnum
+from sqlalchemy import ForeignKey
+from sqlalchemy import Index
+from sqlalchemy import String
+from sqlalchemy import Text
+from sqlalchemy.orm import Mapped
+from sqlalchemy.orm import mapped_column
+from sqlalchemy.orm import relationship
+
+
+from app.database.base import BaseModel
+from app.database.mixins import (
+    DescriptionMixin,
+    SoftDeleteMixin,
+    TimestampMixin,
+)
+
+if TYPE_CHECKING:
+    from app.models.case import Case
+    from app.models.evidence_entity import EvidenceEntity
+
+
+class EntityType(str, Enum):
+    PERSON = "person"
+    ORGANIZATION = "organization"
+    LOCATION = "location"
+    ADDRESS = "address"
+    PHONE = "phone"
+    EMAIL = "email"
+    USERNAME = "username"
+    DOMAIN = "domain"
+    URL = "url"
+    IP = "ip"
+    VEHICLE = "vehicle"
+    DOCUMENT = "document"
+    ACCOUNT = "account"
+    OTHER = "other"
+    BANK_CARD = "bank_card"
+
+
+class Entity(
+    TimestampMixin,
+    SoftDeleteMixin,
+    DescriptionMixin,
+    BaseModel,
+):
+    """
+    Extracted entity.
+    """
+
+    __tablename__ = "entities"
+
+    case_id: Mapped[UUID] = mapped_column(
+        ForeignKey("cases.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    entity_type: Mapped[EntityType] = mapped_column(
+        SqlEnum(EntityType, name="entity_type"),
+        nullable=False,
+        index=True,
+    )
+
+    value: Mapped[str] = mapped_column(
+        String(512),
+        nullable=False,
+        index=True,
+    )
+
+    normalized_value: Mapped[str | None] = mapped_column(
+        String(512),
+        nullable=True,
+        index=True,
+    )
+
+    confidence: Mapped[float] = mapped_column(
+        default=1.0,
+        nullable=False,
+    )
+
+    metadata_json: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    case: Mapped["Case"] = relationship(
+        "Case",
+        back_populates="entities",
+    )
+
+    evidence_links: Mapped[list["EvidenceEntity"]] = relationship(
+        "EvidenceEntity",
+        back_populates="entity",
+        cascade="all, delete-orphan",
+    )
+
+
+Index(
+    "ix_entities_case_type",
+    Entity.case_id,
+    Entity.entity_type,
+)
+
+Index(
+    "ix_entities_case_value",
+    Entity.case_id,
+    Entity.value,
+)
+
+
+====================================================================================================
+FILE: app/models/evidence.py
+====================================================================================================
+"""
+Evidence model.
+
+Evidence represents any extracted object from a Source.
+
+Examples:
+
+- image
+- video
+- audio
+- document
+- archive
+- phone number
+- email
+- url
+- location
+- contact
+"""
+
+from __future__ import annotations
+
+from enum import Enum
+from typing import TYPE_CHECKING
+from uuid import UUID
+
+from sqlalchemy import Enum as SqlEnum
+from sqlalchemy import ForeignKey
+from sqlalchemy import Index
+from sqlalchemy import String
+from sqlalchemy import Text
+from sqlalchemy.orm import Mapped
+from sqlalchemy.orm import mapped_column
+from sqlalchemy.orm import relationship
+
+from app.database.base import BaseModel
+from app.database.mixins import (
+    DescriptionMixin,
+    SoftDeleteMixin,
+    TimestampMixin,
+)
+
+if TYPE_CHECKING:
+    from app.models.case import Case
+    from app.models.source import Source
+    from app.models.evidence_entity import EvidenceEntity
+
+class EvidenceType(str, Enum):
+    IMAGE = "image"
+    VIDEO = "video"
+    AUDIO = "audio"
+    DOCUMENT = "document"
+    ARCHIVE = "archive"
+    CONTACT = "contact"
+    LOCATION = "location"
+    LINK = "link"
+    PHONE = "phone"
+    EMAIL = "email"
+    USERNAME = "username"
+    HASH = "hash"
+    METADATA = "metadata"
+    MESSAGE = "message"
+    OTHER = "other"
+
+
+class Evidence(
+    TimestampMixin,
+    SoftDeleteMixin,
+    DescriptionMixin,
+    BaseModel,
+):
+    """
+    Extracted evidence.
+    """
+
+    __tablename__ = "evidences"
+
+    case_id: Mapped[UUID] = mapped_column(
+        ForeignKey("cases.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    source_id: Mapped[UUID] = mapped_column(
+        ForeignKey("sources.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    evidence_type: Mapped[EvidenceType] = mapped_column(
+        SqlEnum(EvidenceType, name="evidence_type"),
+        nullable=False,
+        index=True,
+    )
+
+    title: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+    )
+
+    value: Mapped[str | None] = mapped_column(
+        String(1024),
+        nullable=True,
+    )   
+
+    file_path: Mapped[str | None] = mapped_column(
+        String(1024),
+        nullable=True,
+    )
+
+    mime_type: Mapped[str | None] = mapped_column(
+        String(128),
+        nullable=True,
+    )
+
+    sha256: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+        index=True,
+    )
+
+    metadata_json: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    source: Mapped["Source"] = relationship(
+        "Source",
+        back_populates="evidences",
+    )
+
+    case: Mapped["Case"] = relationship(
+        "Case",
+        back_populates="evidences",
+)
+
+
+    entity_links: Mapped[list["EvidenceEntity"]] = relationship(
+        "EvidenceEntity",
+        back_populates="evidence",
+        cascade="all, delete-orphan",
+)
+
+
+Index(
+    "ix_evidences_case_type",
+    Evidence.case_id,
+    Evidence.evidence_type,
+)
+
+Index(
+    "ix_evidences_source_type",
+    Evidence.source_id,
+    Evidence.evidence_type,
+)
+
+
+====================================================================================================
+FILE: app/models/evidence_entity.py
+====================================================================================================
+"""
+Evidence-Entity association model.
+
+Represents links between evidence
+objects and extracted entities.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from typing import TYPE_CHECKING
+from uuid import UUID
+
+from sqlalchemy import (
+    DateTime,
+    ForeignKey,
+    Index,
+)
+
+from sqlalchemy.orm import (
+    Mapped,
+    mapped_column,
+    relationship,
+)
+
+from app.database.base import BaseModel
+
+if TYPE_CHECKING:
+    from app.models.evidence import Evidence
+    from app.models.entity import Entity
+
+
+class EvidenceEntity(
+    BaseModel,
+):
+    """
+    Many-to-many relation between
+    Evidence and Entity.
+    """
+
+    __tablename__ = "evidence_entities"
+
+    evidence_id: Mapped[UUID] = mapped_column(
+        ForeignKey(
+            "evidences.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+        index=True,
+    )
+
+    entity_id: Mapped[UUID] = mapped_column(
+        ForeignKey(
+            "entities.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+        index=True,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    evidence: Mapped["Evidence"] = relationship(
+        "Evidence",
+        back_populates="entity_links",
+    )
+
+    entity: Mapped["Entity"] = relationship(
+        "Entity",
+        back_populates="evidence_links",
+    )
+
+
+Index(
+    "ix_evidence_entities_unique",
+    EvidenceEntity.evidence_id,
+    EvidenceEntity.entity_id,
+    unique=True,
+)
+
+
+====================================================================================================
+FILE: app/services/evidence_link_service.py
+====================================================================================================
+"""
+Evidence linking service.
+
+Handles relations between evidence
+objects and entities.
+"""
+
+from __future__ import annotations
+
+from uuid import UUID
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.models.evidence import (
+    Evidence,
+    EvidenceType,
+)
+
+from app.models.evidence_entity import (
+    EvidenceEntity,
+)
+
+
+class EvidenceLinkService:
+    """
+    Service for evidence-entity links.
+    """
+
+    def __init__(
+        self,
+        session: Session,
+    ) -> None:
+
+        self.session = session
+
+    # ==========================================================
+    # Link creation
+    # ==========================================================
+
+    def link_evidence_to_entity(
+        self,
+        evidence_id: UUID,
+        entity_id: UUID,
+    ) -> EvidenceEntity:
+        """
+        Create evidence-entity link.
+
+        This method keeps the original direct-create behavior.
+        Use ensure_link() when duplicate-safe behavior is required.
+        """
+
+        link = EvidenceEntity(
+            evidence_id=evidence_id,
+            entity_id=entity_id,
+        )
+
+        self.session.add(
+            link
+        )
+
+        self.session.flush()
+
+        return link
+
+    def ensure_link(
+        self,
+        evidence_id: UUID,
+        entity_id: UUID,
+    ) -> tuple[EvidenceEntity, bool]:
+        """
+        Ensure evidence-entity link exists.
+
+        Returns:
+            tuple[EvidenceEntity, bool]:
+                link object and whether it was newly created.
+        """
+
+        existing = self.get_link(
+            evidence_id=evidence_id,
+            entity_id=entity_id,
+        )
+
+        if existing is not None:
+
+            return (
+                existing,
+                False,
+            )
+
+        link = self.link_evidence_to_entity(
+            evidence_id=evidence_id,
+            entity_id=entity_id,
+        )
+
+        return (
+            link,
+            True,
+        )
+
+    # ==========================================================
+    # Link removal
+    # ==========================================================
+
+    def unlink_evidence_from_entity(
+        self,
+        evidence_id: UUID,
+        entity_id: UUID,
+    ) -> bool:
+        """
+        Remove evidence-entity link.
+        """
+
+        link = self.get_link(
+            evidence_id=evidence_id,
+            entity_id=entity_id,
+        )
+
+        if link is None:
+
+            return False
+
+        self.session.delete(
+            link
+        )
+
+        self.session.flush()
+
+        return True
+
+    # ==========================================================
+    # Link lookup
+    # ==========================================================
+
+    def get_link(
+        self,
+        evidence_id: UUID,
+        entity_id: UUID,
+    ) -> EvidenceEntity | None:
+        """
+        Return one exact evidence-entity link.
+        """
+
+        result = self.session.execute(
+            select(
+                EvidenceEntity
+            )
+            .where(
+                EvidenceEntity.evidence_id
+                ==
+                evidence_id,
+                EvidenceEntity.entity_id
+                ==
+                entity_id,
+            )
+            .limit(
+                1
+            )
+        )
+
+        return result.scalar_one_or_none()
+
+    def has_link(
+        self,
+        evidence_id: UUID,
+        entity_id: UUID,
+    ) -> bool:
+        """
+        Check whether evidence is already linked
+        to the selected entity.
+        """
+
+        return (
+            self.get_link(
+                evidence_id=evidence_id,
+                entity_id=entity_id,
+            )
+            is not None
+        )
+
+    # ==========================================================
+    # Link retrieval
+    # ==========================================================
+
+    def get_entities_for_evidence(
+        self,
+        evidence_id: UUID,
+    ) -> list[EvidenceEntity]:
+        """
+        Return entity links connected
+        to evidence.
+        """
+
+        result = self.session.execute(
+            select(
+                EvidenceEntity
+            )
+            .where(
+                EvidenceEntity.evidence_id
+                ==
+                evidence_id
+            )
+        )
+
+        return list(
+            result.scalars().all()
+        )
+
+    def get_evidence_for_entity(
+        self,
+        entity_id: UUID,
+    ) -> list[EvidenceEntity]:
+        """
+        Return evidence links connected
+        to entity.
+        """
+
+        result = self.session.execute(
+            select(
+                EvidenceEntity
+            )
+            .where(
+                EvidenceEntity.entity_id
+                ==
+                entity_id
+            )
+        )
+
+        return list(
+            result.scalars().all()
+        )
+
+    # ==========================================================
+    # Evidence object retrieval
+    # ==========================================================
+
+    def get_evidence_objects_for_entity(
+        self,
+        entity_id: UUID,
+        *,
+        evidence_type: EvidenceType | None = None,
+        include_deleted: bool = False,
+    ) -> list[Evidence]:
+        """
+        Return actual Evidence objects connected to entity.
+
+        Optional evidence_type allows callers to request only
+        images, documents, videos, etc.
+        """
+
+        statement = (
+            select(
+                Evidence
+            )
+            .join(
+                EvidenceEntity,
+                EvidenceEntity.evidence_id
+                ==
+                Evidence.id,
+            )
+            .where(
+                EvidenceEntity.entity_id
+                ==
+                entity_id
+            )
+        )
+
+        if evidence_type is not None:
+
+            statement = statement.where(
+                Evidence.evidence_type
+                ==
+                evidence_type
+            )
+
+        if not include_deleted:
+
+            statement = statement.where(
+                Evidence.deleted_at.is_(
+                    None
+                )
+            )
+
+        statement = statement.order_by(
+            Evidence.created_at
+        )
+
+        result = self.session.execute(
+            statement
+        )
+
+        return list(
+            result.scalars().all()
+        )
+
+    def get_image_evidence_for_entity(
+        self,
+        entity_id: UUID,
+    ) -> list[Evidence]:
+        """
+        Return active IMAGE evidence connected
+        to entity.
+        """
+
+        return (
+            self.get_evidence_objects_for_entity(
+                entity_id,
+                evidence_type=(
+                    EvidenceType.IMAGE
+                ),
+                include_deleted=False,
+            )
+        )
+
+
+====================================================================================================
+FILE: app/services/entity_service.py
+====================================================================================================
+"""
+Entity service.
+
+Contains business logic related
+to extracted entities.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+from uuid import UUID
+
+from sqlalchemy.orm import Session
+
+from app.models.entity import (
+    Entity,
+    EntityType,
+)
+
+from app.entity_resolution.normalizer import (
+    EntityNormalizer,
+)
+
+from app.repositories.entity_repository import (
+    EntityRepository,
+)
+
+
+
+class EntityService:
+    """
+    Service for managing entities.
+    """
+
+    def __init__(
+        self,
+        session: Session,
+        *,
+        normalizer: EntityNormalizer | None = None,
+    ) -> None:
+
+        self.repository = EntityRepository(
+            session
+        )
+
+        self.normalizer = (
+            normalizer
+            or EntityNormalizer()
+        )
+
+    # ==========================================================
+    # CRUD
+    # ==========================================================
+
+    def create_entity(
+        self,
+        case_id: UUID,
+        entity_type: EntityType,
+        value: str,
+        normalized_value: str | None = None,
+        confidence: float = 1.0,
+        metadata_json: str | None = None,
+        description: str | None = None,
+    ) -> Entity:
+        """
+        Create an entity using the shared normalization contract.
+
+        If a caller supplies a specialized normalized_value, that
+        value is preserved as the normalization source and passed
+        through EntityNormalizer for canonical formatting.
+
+        If normalized_value is omitted or blank, the canonical value
+        is derived directly from the entity display value.
+        """
+
+        normalization_source = (
+            normalized_value
+            if (
+                normalized_value is not None
+                and str(normalized_value).strip()
+            )
+            else value
+        )
+
+        canonical_normalized_value = (
+            self._normalize_entity_value(
+                value=str(
+                    normalization_source
+                ),
+                entity_type=entity_type,
+            )
+        )
+
+        entity = Entity(
+            case_id=case_id,
+            entity_type=entity_type,
+            value=value,
+            normalized_value=(
+                canonical_normalized_value
+            ),
+            confidence=confidence,
+            metadata_json=metadata_json,
+            description=description,
+        )
+
+        return self.repository.create(
+            entity
+        )
+
+    def resolve_existing_entity(
+        self,
+        *,
+        case_id: str | UUID,
+        entity_type: EntityType,
+        value: str,
+        normalized_value: str | None = None,
+    ) -> Entity | None:
+        """
+        Resolve an exact logical Entity inside one case.
+
+        The lookup key is always produced by the shared
+        EntityNormalizer before repository access. This prevents
+        extraction-specific formatting from becoming a second,
+        competing identity contract.
+
+        This method performs exact canonical resolution only. It does
+        not run fuzzy identity scoring and does not merge entities.
+        """
+
+        case_uuid = self._normalize_uuid(
+            case_id,
+            field_name="case_id",
+        )
+
+        normalization_source = (
+            normalized_value
+            if (
+                normalized_value is not None
+                and str(normalized_value).strip()
+            )
+            else value
+        )
+
+        canonical_normalized_value = self._normalize_entity_value(
+            value=str(normalization_source),
+            entity_type=entity_type,
+        )
+
+        if not canonical_normalized_value:
+            return None
+
+        return self.repository.find_in_case(
+            case_id=case_uuid,
+            entity_type=entity_type,
+            normalized_value=canonical_normalized_value,
+        )
+
+    def resolve_or_create_entity(
+        self,
+        *,
+        case_id: str | UUID,
+        entity_type: EntityType,
+        value: str,
+        normalized_value: str | None = None,
+        confidence: float = 1.0,
+        metadata_json: str | None = None,
+        description: str | None = None,
+    ) -> tuple[Entity, bool]:
+        """
+        Resolve an exact canonical Entity or create it once.
+
+        Returns:
+            tuple[Entity, bool]:
+                ``(entity, True)`` when a new Entity was created,
+                otherwise ``(existing_entity, False)``.
+
+        The normalization used for lookup is exactly the same
+        normalization used for persistence. Fuzzy Entity Resolution
+        remains a separate read-only analysis pipeline and is never
+        invoked implicitly from extraction.
+        """
+
+        case_uuid = self._normalize_uuid(
+            case_id,
+            field_name="case_id",
+        )
+
+        normalization_source = (
+            normalized_value
+            if (
+                normalized_value is not None
+                and str(normalized_value).strip()
+            )
+            else value
+        )
+
+        canonical_normalized_value = self._normalize_entity_value(
+            value=str(normalization_source),
+            entity_type=entity_type,
+        )
+
+        if not canonical_normalized_value:
+            raise ValueError(
+                "Entity normalized value cannot be empty."
+            )
+
+        existing = self.repository.find_in_case(
+            case_id=case_uuid,
+            entity_type=entity_type,
+            normalized_value=canonical_normalized_value,
+        )
+
+        if existing is not None:
+            return existing, False
+
+        entity = self.create_entity(
+            case_id=case_uuid,
+            entity_type=entity_type,
+            value=value,
+            normalized_value=canonical_normalized_value,
+            confidence=confidence,
+            metadata_json=metadata_json,
+            description=description,
+        )
+
+        return entity, True
+
+    def create_from_message_field(
+        self,
+        case_id: str | UUID,
+        message_data: dict[str, Any],
+        field_name: str,
+        entity_type: EntityType,
+    ) -> tuple[Entity, bool]:
+        """
+        Create an entity from one message field.
+
+        Returns:
+            tuple[Entity, bool]:
+                Entity object and whether it was newly created.
+        """
+
+        if not isinstance(
+            message_data,
+            dict,
+        ):
+
+            raise TypeError(
+                "message_data must be a dictionary"
+            )
+
+        case_uuid = self._normalize_uuid(
+            case_id,
+            field_name="case_id",
+        )
+
+        normalized_field_name = str(
+            field_name
+        ).strip().lower()
+
+        allowed_fields = {
+            "sender",
+            "receiver",
+            "chat_name",
+        }
+
+        if (
+            normalized_field_name
+            not in allowed_fields
+        ):
+
+            raise ValueError(
+                "Unsupported message entity field."
+            )
+
+        raw_value = message_data.get(
+            normalized_field_name
+        )
+
+        value = self._normalize_text(
+            raw_value
+        )
+
+        if not value:
+
+            raise ValueError(
+                "The selected message field is empty."
+            )
+
+        normalized_value = (
+            self._normalize_entity_value(
+                value=value,
+                entity_type=entity_type,
+            )
+        )
+
+        existing_entity = (
+            self.repository.find_in_case(
+                case_id=case_uuid,
+                entity_type=entity_type,
+                normalized_value=(
+                    normalized_value
+                ),
+            )
+        )
+
+        if existing_entity is not None:
+
+            return (
+                existing_entity,
+                False,
+            )
+
+        description = (
+            self._build_message_entity_description(
+                message_data=message_data,
+                field_name=(
+                    normalized_field_name
+                ),
+            )
+        )
+
+        entity = self.create_entity(
+            case_id=case_uuid,
+            entity_type=entity_type,
+            value=value,
+            normalized_value=(
+                normalized_value
+            ),
+            confidence=1.0,
+            description=description,
+        )
+
+        return (
+            entity,
+            True,
+        )
+
+    # ==========================================================
+    # Retrieval
+    # ==========================================================
+
+    def get_entity(
+        self,
+        entity_id: str | UUID,
+    ) -> Entity | None:
+
+        normalized_entity_id = (
+            self._normalize_uuid(
+                entity_id,
+                field_name="entity_id",
+            )
+        )
+
+        return self.repository.get(
+            normalized_entity_id
+        )
+
+    def get_case_entities(
+        self,
+        case_id: str | UUID,
+    ) -> list[Entity]:
+
+        normalized_case_id = (
+            self._normalize_uuid(
+                case_id,
+                field_name="case_id",
+            )
+        )
+
+        return self.repository.get_by_case(
+            normalized_case_id
+        )
+
+    def get_page(self, *, limit: int = 100, offset: int = 0, case_id: UUID | None = None):
+        return self.repository.get_page(limit=limit, offset=offset, case_id=case_id)
+
+    def count_all(self, *, case_id: UUID | None = None) -> int:
+        return self.repository.count_all(case_id=case_id)
+
+    def find_by_value(
+        self,
+        value: str,
+    ) -> list[Entity]:
+
+        return self.repository.find_by_value(
+            value
+        )
+
+    # ==========================================================
+    # Updates
+    # ==========================================================
+
+    def update_entity(
+        self,
+        entity_id: str | UUID,
+        *,
+        value: str | None = None,
+        description: str | None = None,
+        metadata_json: str | None = None,
+    ) -> Entity | None:
+        """
+        Update editable entity fields.
+
+        When value is changed, normalized_value is
+        recalculated automatically.
+
+        For LOCATION entities, callers should normally
+        preserve value/normalized_value because they may
+        represent the geographic identity of the entity.
+        User-facing marker names belong in metadata_json.
+        """
+
+        normalized_entity_id = (
+            self._normalize_uuid(
+                entity_id,
+                field_name="entity_id",
+            )
+        )
+
+        entity = self.repository.get(
+            normalized_entity_id
+        )
+
+        if entity is None:
+
+            return None
+
+        if value is not None:
+
+            normalized_value_text = (
+                self._normalize_text(
+                    value
+                )
+            )
+
+            if not normalized_value_text:
+
+                raise ValueError(
+                    "Entity value cannot be empty."
+                )
+
+            entity.value = (
+                normalized_value_text
+            )
+
+            entity.normalized_value = (
+                self._normalize_entity_value(
+                    value=(
+                        normalized_value_text
+                    ),
+                    entity_type=(
+                        entity.entity_type
+                    ),
+                )
+            )
+
+        if description is not None:
+
+            entity.description = str(
+                description
+            ).strip()
+
+        if metadata_json is not None:
+
+            entity.metadata_json = str(
+                metadata_json
+            )
+
+        self.repository.session.flush()
+
+        return entity
+
+    def update_metadata(
+        self,
+        entity_id: str | UUID,
+        metadata_json: str,
+    ) -> Entity | None:
+        """
+        Update entity metadata JSON.
+        """
+
+        return self.update_entity(
+            entity_id,
+            metadata_json=metadata_json,
+        )
+
+    def update_description(
+        self,
+        entity_id: str | UUID,
+        description: str,
+    ) -> Entity | None:
+        """
+        Update entity description.
+        """
+
+        return self.update_entity(
+            entity_id,
+            description=description,
+        )
+
+    def update_confidence(
+        self,
+        entity_id: str | UUID,
+        confidence: float,
+    ) -> Entity | None:
+
+        normalized_entity_id = (
+            self._normalize_uuid(
+                entity_id,
+                field_name="entity_id",
+            )
+        )
+
+        entity = self.repository.get(
+            normalized_entity_id
+        )
+
+        if entity is None:
+
+            return None
+
+        normalized_confidence = float(
+            confidence
+        )
+
+        if not (
+            0.0
+            <= normalized_confidence
+            <= 1.0
+        ):
+
+            raise ValueError(
+                "Entity confidence must be "
+                "between 0.0 and 1.0."
+            )
+
+        entity.confidence = (
+            normalized_confidence
+        )
+
+        self.repository.session.flush()
+
+        return entity
+
+    # ==========================================================
+    # Deletion
+    # ==========================================================
+
+    def delete_entity(
+        self,
+        entity_id: str | UUID,
+    ) -> bool:
+
+        normalized_entity_id = (
+            self._normalize_uuid(
+                entity_id,
+                field_name="entity_id",
+            )
+        )
+
+        entity = self.repository.get(
+            normalized_entity_id
+        )
+
+        if entity is None:
+
+            return False
+
+        entity.soft_delete()
+
+        self.repository.session.flush()
+
+        return True
+
+    # ==========================================================
+    # Processing
+    # ==========================================================
+
+    def process_case(
+        self,
+        case_id: UUID,
+    ) -> dict[str, Any]:
+        """
+        Backward-compatible entity extraction entry point.
+
+        Extraction orchestration now belongs to
+        UnifiedExtractionService. Existing callers can continue using
+        EntityService.process_case() while new workflows should depend
+        on UnifiedExtractionService directly.
+        """
+
+        from app.processing.extraction import IdentifierExtractor
+        from app.services.unified_extraction_service import (
+            UnifiedExtractionService,
+        )
+
+        extraction_service = UnifiedExtractionService(
+            session=self.repository.session,
+            entity_service=self,
+            identifier_extractor=IdentifierExtractor(
+                normalizer=self.normalizer,
+            ),
+        )
+
+        return extraction_service.extract_case_messages(
+            case_id=case_id,
+        )
+
+    # ==========================================================
+    # Helpers
+    # ==========================================================
+
+    @staticmethod
+    def _normalize_uuid(
+        value: str | UUID,
+        *,
+        field_name: str,
+    ) -> UUID:
+        """
+        Convert an identifier to UUID.
+        """
+
+        if isinstance(
+            value,
+            UUID,
+        ):
+
+            return value
+
+        try:
+
+            return UUID(
+                str(
+                    value
+                )
+            )
+
+        except (
+            TypeError,
+            ValueError,
+            AttributeError,
+        ) as error:
+
+            raise ValueError(
+                f"{field_name} must contain "
+                "a valid UUID."
+            ) from error
+
+    @staticmethod
+    def _normalize_text(
+        value: Any,
+    ) -> str:
+        """
+        Convert an optional value to stripped text.
+        """
+
+        if value is None:
+
+            return ""
+
+        return str(
+            value
+        ).strip()
+
+    def _normalize_entity_value(
+        self,
+        *,
+        value: str,
+        entity_type: EntityType,
+    ) -> str:
+        """
+        Normalize an entity value through the shared
+        EntityNormalizer contract.
+
+        This method remains as the EntityService-local adapter so
+        existing callers and service boundaries stay stable while the
+        normalization implementation has a single source of truth.
+        """
+
+        return self.normalizer.normalize(
+            entity_type,
+            value,
+        )
+
+    @staticmethod
+    def _build_message_entity_description(
+        *,
+        message_data: dict[str, Any],
+        field_name: str,
+    ) -> str:
+        """
+        Build provenance information for a
+        message-derived entity.
+        """
+
+        message_id = str(
+            message_data.get(
+                "id"
+            )
+            or ""
+        )
+
+        external_id = str(
+            message_data.get(
+                "external_id"
+            )
+            or ""
+        )
+
+        sent_at = str(
+            message_data.get(
+                "sent_at"
+            )
+            or ""
+        )
+
+        chat_name = str(
+            message_data.get(
+                "chat_name"
+            )
+            or ""
+        )
+
+        return (
+            "Entity created from message.\n\n"
+            f"Field: {field_name}\n"
+            f"Message ID: "
+            f"{message_id or 'Unavailable'}\n"
+            f"External ID: "
+            f"{external_id or 'Unavailable'}\n"
+            f"Date: "
+            f"{sent_at or 'Unavailable'}\n"
+            f"Chat: "
+            f"{chat_name or 'Unavailable'}"
+        )

@@ -1,0 +1,712 @@
+        self.form_run_button.setProperty(
+            "variant",
+            "primary",
+        )
+
+        self.form_run_button.setCursor(
+            Qt.CursorShape.PointingHandCursor
+        )
+
+        self.form_run_button.clicked.connect(
+            self.run_requested.emit
+        )
+
+        actions_layout.addStretch(
+            1
+        )
+
+        actions_layout.addWidget(
+            self.form_preview_button
+        )
+
+        actions_layout.addWidget(
+            self.form_connectors_button
+        )
+
+        actions_layout.addWidget(
+            self.form_run_button
+        )
+
+        self.form_actions_card.add_widget(
+            actions_container
+        )
+
+        self.investigation_layout.addWidget(
+            self.form_actions_card
+        )
+
+    # ==========================================================
+    # Results tab
+    # ==========================================================
+
+    def _create_results_tab(
+        self,
+    ) -> None:
+        """
+        Create results tab.
+        """
+
+        self.results_scroll = QScrollArea(
+            self.tabs
+        )
+
+        self.results_scroll.setObjectName(
+            "OsintResultsScroll"
+        )
+
+        self.results_scroll.setWidgetResizable(
+            True
+        )
+
+        self.results_scroll.setFrameShape(
+            QFrame.Shape.NoFrame
+        )
+
+        self.results_container = QWidget()
+
+        self.results_container.setObjectName(
+            "OsintResultsContainer"
+        )
+
+        self.results_layout = QVBoxLayout(
+            self.results_container
+        )
+
+        self.results_layout.setContentsMargins(
+            20,
+            20,
+            20,
+            20,
+        )
+
+        self.results_layout.setSpacing(
+            16
+        )
+
+        self._create_results_summary()
+        self._create_results_placeholder()
+
+        self.results_layout.addStretch(
+            1
+        )
+
+        self.results_scroll.setWidget(
+            self.results_container
+        )
+
+        self.tabs.addTab(
+            self.results_scroll,
+            "Results",
+        )
+
+    def _create_results_summary(
+        self,
+    ) -> None:
+        """
+        Create production results counters.
+        """
+
+        self.results_summary_card = Card(
+            title="Investigation Results",
+            subtitle=(
+                "Separate confirmed findings from "
+                "unverified discovery leads."
+            ),
+            parent=self.results_container,
+        )
+
+        self.results_summary_card.setObjectName(
+            "OsintResultsSummaryCard"
+        )
+
+        self.results_summary_card.set_variant(
+            "default"
+        )
+
+        statistics_container = QWidget(
+            self.results_summary_card
+        )
+
+        statistics_layout = QHBoxLayout(
+            statistics_container
+        )
+
+        statistics_layout.setContentsMargins(
+            0,
+            0,
+            0,
+            0,
+        )
+
+        statistics_layout.setSpacing(
+            18
+        )
+
+        self.target_count_label = QLabel(
+            "Targets: 0",
+            statistics_container,
+        )
+
+        self.connector_count_label = QLabel(
+            "Connectors: 0",
+            statistics_container,
+        )
+
+        self.result_count_label = QLabel(
+            "Findings: 0",
+            statistics_container,
+        )
+
+        self.lead_count_label = QLabel(
+            "Leads: 0",
+            statistics_container,
+        )
+
+        statistics_layout.addWidget(
+            self.target_count_label
+        )
+
+        statistics_layout.addWidget(
+            self.connector_count_label
+        )
+
+        statistics_layout.addWidget(
+            self.result_count_label
+        )
+
+        statistics_layout.addWidget(
+            self.lead_count_label
+        )
+
+        statistics_layout.addStretch(
+            1
+        )
+
+        self.results_summary_card.add_widget(
+            statistics_container
+        )
+
+        self.results_layout.addWidget(
+            self.results_summary_card
+        )
+
+    def _create_results_placeholder(
+        self,
+    ) -> None:
+        """
+        Create empty state and production results host.
+        """
+
+        self.results_placeholder_card = Card(
+            title="No OSINT results",
+            subtitle=(
+                "Preview targets or run an investigation "
+                "to populate this workspace."
+            ),
+            parent=self.results_container,
+        )
+
+        self.results_placeholder_card.setObjectName(
+            "OsintResultsPlaceholderCard"
+        )
+
+        self.results_placeholder_card.set_variant(
+            "default"
+        )
+
+        self.results_placeholder_label = QLabel(
+            (
+                "Run an investigation to display "
+                "findings and discovery leads."
+            ),
+            self.results_placeholder_card,
+        )
+
+        self.results_placeholder_label.setWordWrap(
+            True
+        )
+
+        self.results_placeholder_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+
+        self.results_placeholder_card.add_widget(
+            self.results_placeholder_label
+        )
+
+        self.results_layout.addWidget(
+            self.results_placeholder_card
+        )
+
+        self.results_content_container = QWidget(
+            self.results_container
+        )
+
+        self.results_content_container.setObjectName(
+            "OsintResultsContentContainer"
+        )
+
+        self.results_content_layout = QVBoxLayout(
+            self.results_content_container
+        )
+
+        self.results_content_layout.setContentsMargins(
+            0,
+            0,
+            0,
+            0,
+        )
+
+        self.results_content_layout.setSpacing(
+            14
+        )
+
+        self.results_layout.addWidget(
+            self.results_content_container
+        )
+
+        self.results_content_container.setVisible(
+            False
+        )
+
+    def _clear_results_content(
+        self,
+    ) -> None:
+        """
+        Remove all previously rendered result widgets.
+        """
+
+        while (
+            self.results_content_layout.count()
+        ):
+
+            item = (
+                self.results_content_layout
+                .takeAt(0)
+            )
+
+            widget = item.widget()
+
+            if widget is not None:
+                widget.deleteLater()
+
+    @staticmethod
+    def _lead_platform_name(
+        domain: object,
+    ) -> str:
+        """
+        Return readable platform name.
+        """
+
+        value = str(
+            domain
+            or ""
+        ).strip().lower()
+
+        known = {
+            "facebook.com": "Facebook",
+            "instagram.com": "Instagram",
+            "twitter.com": "Twitter / X",
+            "x.com": "X",
+            "linkedin.com": "LinkedIn",
+            "vk.com": "VK",
+            "tiktok.com": "TikTok",
+            "youtube.com": "YouTube",
+            "reddit.com": "Reddit",
+            "telegram.me": "Telegram",
+            "t.me": "Telegram",
+            "pinterest.com": "Pinterest",
+            "github.com": "GitHub",
+            "gitlab.com": "GitLab",
+        }
+
+        if value in known:
+            return known[
+                value
+            ]
+
+        if not value:
+            return "Search lead"
+
+        first = value.split(
+            "."
+        )[0]
+
+        return (
+            first[:1].upper()
+            + first[1:]
+        )
+
+    @staticmethod
+    def _open_external_url(
+        url: object,
+    ) -> None:
+        """
+        Open only HTTP/HTTPS URLs in the system browser.
+        """
+
+        import webbrowser
+
+        from urllib.parse import (
+            urlparse,
+        )
+
+        value = str(
+            url
+            or ""
+        ).strip()
+
+        if not value:
+            return
+
+        try:
+
+            parsed = urlparse(
+                value
+            )
+
+        except Exception:
+            return
+
+        if parsed.scheme not in {
+            "http",
+            "https",
+        }:
+            return
+
+        if not parsed.netloc:
+            return
+
+        webbrowser.open(
+            value,
+            new=2,
+        )
+
+    def _create_url_button(
+        self,
+        text: str,
+        url: object,
+        parent: QWidget,
+    ):
+        """
+        Create safe external URL button.
+        """
+
+        value = str(
+            url
+            or ""
+        ).strip()
+
+        if not value:
+            return None
+
+        button = QPushButton(
+            text,
+            parent,
+        )
+
+        button.setCursor(
+            Qt.CursorShape.PointingHandCursor
+        )
+
+        button.clicked.connect(
+            lambda checked=False, target_url=value: (
+                self._open_external_url(
+                    target_url
+                )
+            )
+        )
+
+        return button
+
+    @staticmethod
+    def _toggle_lead_details(
+        panel: QWidget,
+        button: QPushButton,
+        checked: bool,
+    ) -> None:
+        """
+        Expand/collapse one lead.
+        """
+
+        panel.setVisible(
+            bool(
+                checked
+            )
+        )
+
+        button.setText(
+            "Hide details"
+            if checked
+            else "Details"
+        )
+
+    def _create_finding_widget(
+        self,
+        finding: dict[str, Any],
+        parent: QWidget,
+    ) -> QWidget:
+        """
+        Create compact confirmed/extracted finding.
+        """
+
+        row = QFrame(
+            parent
+        )
+
+        row.setObjectName(
+            "OsintFindingRow"
+        )
+
+        layout = QHBoxLayout(
+            row
+        )
+
+        layout.setContentsMargins(
+            10,
+            8,
+            10,
+            8,
+        )
+
+        layout.setSpacing(
+            10
+        )
+
+        category = str(
+            finding.get(
+                "category"
+            )
+            or "finding"
+        )
+
+        value = str(
+            finding.get(
+                "value"
+            )
+            or ""
+        )
+
+        source = str(
+            finding.get(
+                "source"
+            )
+            or ""
+        )
+
+        parts = [
+            f"<b>{category}</b>",
+        ]
+
+        if value:
+            ):
+                target = {}
+
+            target_type = str(
+                target.get(
+                    "type"
+                )
+                or "target"
+            )
+
+            target_value = str(
+                target.get(
+                    "value"
+                )
+                or ""
+            )
+
+            target_card = Card(
+                title=(
+                    f"Target {target_index} · "
+                    f"{target_type}"
+                ),
+                subtitle=target_value,
+                parent=self.results_content_container,
+            )
+
+            target_card.setObjectName(
+                "OsintTargetResultCard"
+            )
+
+            target_card.set_variant(
+                "default"
+            )
+
+            connector_results = (
+                target_result.get(
+                    "results"
+                )
+            )
+
+            if not isinstance(
+                connector_results,
+                list,
+            ):
+                connector_results = []
+
+            for result in connector_results:
+
+                if not isinstance(
+                    result,
+                    dict,
+                ):
+                    continue
+
+                connector_name = str(
+                    result.get(
+                        "connector"
+                    )
+                    or "Unknown connector"
+                )
+
+                status = str(
+                    result.get(
+                        "status"
+                    )
+                    or "unknown"
+                )
+
+                finding_count = int(
+                    result.get(
+                        "total_findings"
+                    )
+                    or 0
+                )
+
+                lead_count = int(
+                    result.get(
+                        "total_leads"
+                    )
+                    or 0
+                )
+
+                connector_card = Card(
+                    title=connector_name,
+                    subtitle=(
+                        f"Status: {status} · "
+                        f"Findings: {finding_count} · "
+                        f"Leads: {lead_count}"
+                    ),
+                    parent=target_card,
+                )
+
+                connector_card.setObjectName(
+                    "OsintConnectorResultCard"
+                )
+
+                connector_card.set_variant(
+                    "default"
+                )
+
+                error = result.get(
+                    "error"
+                )
+
+                if error:
+
+                    error_label = QLabel(
+                        (
+                            "<b>Error:</b> "
+                            + str(
+                                error
+                            )
+                        ),
+                        connector_card,
+                    )
+
+                    error_label.setWordWrap(
+                        True
+                    )
+
+                    connector_card.add_widget(
+                        error_label
+                    )
+
+                items = result.get(
+                    "findings"
+                )
+
+                if not isinstance(
+                    items,
+                    list,
+                ):
+                    items = []
+
+                findings = [
+                    item
+                    for item in items
+                    if (
+                        isinstance(
+                            item,
+                            dict,
+                        )
+                        and item.get(
+                            "kind"
+                        )
+                        != "lead"
+                    )
+                ]
+
+                leads = [
+                    item
+                    for item in items
+                    if (
+                        isinstance(
+                            item,
+                            dict,
+                        )
+                        and item.get(
+                            "kind"
+                        )
+                        == "lead"
+                    )
+                ]
+
+                findings_title = QLabel(
+                    (
+                        "<b>"
+                        f"Findings ({len(findings)})"
+                        "</b>"
+                    ),
+                    connector_card,
+                )
+
+                findings_title.setTextFormat(
+                    Qt.TextFormat.RichText
+                )
+
+                connector_card.add_widget(
+                    findings_title
+                )
+
+                if findings:
+
+                    for finding in findings:
+
+                        connector_card.add_widget(
+                            self._create_finding_widget(
+                                finding,
+                                connector_card,
+                            )
+                        )
+
+                else:
+
+                    connector_card.add_widget(
+                        QLabel(
+                            "No confirmed/extracted findings.",
+                            connector_card,
+                        )
+                    )
+
+                leads_title = QLabel(
+                    (
+                        "<b>"
+                        f"Leads ({len(leads)})"
+                        "</b>"
+                    ),
+                    connector_card,
+                )
+
+                leads_title.setTextFormat(

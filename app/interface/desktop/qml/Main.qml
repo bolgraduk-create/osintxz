@@ -28,12 +28,15 @@ ApplicationWindow {
         switch (page) {
         case "cases": return "pages/Cases.qml"
         case "search": return "pages/Search.qml"
+        case "registry": return "pages/Registry.qml"
         case "entities": return "pages/Entities.qml"
+        case "person": return "pages/Person.qml"
         case "graph": return "pages/Graph.qml"
         case "timeline": return "pages/Timeline.qml"
         case "osint": return "pages/Osint.qml"
         case "evidence": return "pages/Evidence.qml"
         case "reports": return "pages/Reports.qml"
+        case "report": return "pages/Report.qml"
         case "settings": return "pages/Settings.qml"
         default: return "pages/Dashboard.qml"
         }
@@ -110,8 +113,30 @@ ApplicationWindow {
         anchors.top: titleStrip.bottom
         anchors.bottom: parent.bottom
 
+        Image {
+            id: worldBackdrop
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.leftMargin: 12
+            anchors.rightMargin: 8
+            anchors.topMargin: 34
+            height: Math.min(520, parent.height * 0.62)
+            source: "../assets/images/world_network.svg"
+            fillMode: Image.PreserveAspectFit
+            horizontalAlignment: Image.AlignHCenter
+            verticalAlignment: Image.AlignTop
+            visible: Boolean(desktopBridge.uiSettings.showWorldMap)
+            opacity: window.currentPage === "overview" ? 0.40 : 0.31
+            asynchronous: true
+            smooth: true
+            mipmap: true
+            z: 0
+        }
+
         TopBar {
             id: topBar
+            z: 2
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.top: parent.top
@@ -125,6 +150,7 @@ ApplicationWindow {
 
         Loader {
             id: pageLoader
+            z: 1
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.top: topBar.bottom
@@ -139,3 +165,5 @@ ApplicationWindow {
         bridge: desktopBridge
     }
 }
+
+

@@ -1,0 +1,234 @@
+C:\osintxz\app\database\session.py:12:from sqlalchemy import create_engine
+C:\osintxz\app\database\session.py:14:from sqlalchemy.orm import sessionmaker
+C:\osintxz\app\database\session.py:19:engine = create_engine(
+C:\osintxz\app\database\session.py:26:SessionFactory = sessionmaker(
+C:\osintxz\app\database\session.py:33:def create_session() -> Session:
+C:\osintxz\app\database\session.py:41:def get_session() -> Generator[Session, None, None]:
+C:\osintxz\app\database\session.py:51:    session = create_session()
+C:\osintxz\app\interface\desktop\bootstrap\container.py:17:    create_session,
+C:\osintxz\app\interface\desktop\bootstrap\container.py:74:            create_session()
+C:\osintxz\app\interface\desktop\bridges\__init__.py:3:from app.interface.desktop.bridges.desktop_bridge import DesktopBridge
+C:\osintxz\app\interface\desktop\bridges\__init__.py:5:__all__ = ["DesktopBridge"]
+C:\osintxz\app\interface\desktop\bridges\desktop_bridge.py:25:class DesktopBridge(QObject):
+C:\osintxz\app\interface\desktop\desktop_app.py:34:from PySide6.QtQml import QQmlApplicationEngine
+C:\osintxz\app\interface\desktop\desktop_app.py:37:from app.interface.desktop.bridges import DesktopBridge
+C:\osintxz\app\interface\desktop\desktop_app.py:66:        self.bridge = DesktopBridge(container=self.container)
+C:\osintxz\app\interface\desktop\desktop_app.py:67:        self.engine = QQmlApplicationEngine()
+C:\osintxz\app\interface\desktop\desktop_app.py:70:            "desktopBridge",
+
+
+====================================================================================================
+FILE: app/core/application.py
+====================================================================================================
+"""
+Legacy application import compatibility.
+
+The authoritative desktop bootstrap is:
+
+    main.py
+        -> app.interface.desktop.desktop_app.DesktopApplication
+
+This module intentionally contains no QApplication, database-session,
+ServiceContainer, theme, or MainWindow construction.
+
+It remains only so older imports of ``app.core.application.Application``
+do not create a second application bootstrap implementation.
+"""
+
+from __future__ import annotations
+
+from app.interface.desktop.desktop_app import (
+    DesktopApplication,
+)
+
+
+Application = DesktopApplication
+
+
+__all__ = [
+    "Application",
+    "DesktopApplication",
+]
+
+
+====================================================================================================
+FILE: app/database/session.py
+====================================================================================================
+"""
+Database session management.
+
+Provides SQLAlchemy sessions
+for application services and tests.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Generator
+
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
+from sqlalchemy.orm import sessionmaker
+
+from app.core.config import settings
+
+
+engine = create_engine(
+    settings.database_url,
+    echo=settings.debug,
+    pool_pre_ping=True,
+)
+
+
+SessionFactory = sessionmaker(
+    bind=engine,
+    autoflush=False,
+    autocommit=False,
+)
+
+
+def create_session() -> Session:
+    """
+    Create new database session.
+    """
+
+    return SessionFactory()
+
+
+def get_session() -> Generator[Session, None, None]:
+    """
+    Provide database session.
+
+    Used by:
+    - tests
+    - services
+    - dependency injection
+    """
+
+    session = create_session()
+
+    try:
+        yield session
+
+    finally:
+        session.close()
+
+
+====================================================================================================
+FILE: app/database/base.py
+====================================================================================================
+"""
+Base SQLAlchemy models.
+
+Every ORM model in the project must inherit from BaseModel.
+
+The base model provides:
+
+- UUID primary key
+- automatic table naming
+- common object representation
+
+Infrastructure concerns such as timestamps,
+soft deletion and ownership are implemented
+through mixins.
+"""
+
+from __future__ import annotations
+
+from uuid import UUID
+from uuid import uuid4
+
+from sqlalchemy import MetaData
+from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.orm import Mapped
+from sqlalchemy.orm import declared_attr
+from sqlalchemy.orm import mapped_column
+
+
+# ==========================================================
+# Naming convention
+#
+# Never change after the first migration.
+# ==========================================================
+
+NAMING_CONVENTION = {
+    "ix": "ix_%(column_0_label)s",
+    "uq": "uq_%(table_name)s_%(column_0_name)s",
+    "ck": "ck_%(table_name)s_%(constraint_name)s",
+    "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
+    "pk": "pk_%(table_name)s",
+}
+
+metadata = MetaData(
+    naming_convention=NAMING_CONVENTION,
+)
+
+
+class Base(DeclarativeBase):
+    """
+    SQLAlchemy declarative base.
+    """
+
+    metadata = metadata
+
+
+class BaseModel(Base):
+    """
+    Base class for every ORM entity.
+
+    Contains only functionality that every
+    database entity must have.
+    """
+
+    __abstract__ = True
+
+    @declared_attr.directive
+    def __tablename__(cls) -> str:
+        """
+        Automatic table name.
+
+        Example:
+
+            User -> users
+            Project -> projects
+            Case -> cases
+        """
+
+        return f"{cls.__name__.lower()}s"
+
+    id: Mapped[UUID] = mapped_column(
+        primary_key=True,
+        default=uuid4,
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__name__}"
+            f"(id={self.id})"
+        )
+
+
+====================================================================================================
+FILE: app/interface/desktop/app.py
+====================================================================================================
+"""
+Legacy desktop application import compatibility.
+
+The canonical implementation lives in:
+
+    app.interface.desktop.desktop_app.DesktopApplication
+
+This module must not create QApplication, containers, sessions, themes,
+or windows independently. It exists only for compatibility with older
+imports.
+"""
+
+from __future__ import annotations
+
+from app.interface.desktop.desktop_app import (
+    DesktopApplication,
+)
+
+
+__all__ = [
+    "DesktopApplication",
+]

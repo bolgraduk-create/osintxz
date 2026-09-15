@@ -57,7 +57,16 @@ class EntityRepository(
             result.scalars().all()
         )
 
-    def get_page(self, *, limit: int = 100, offset: int = 0, case_id: UUID | None = None) -> list[Entity]:
+    def get_page(
+        self,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+        case_id: UUID | None = None,
+        entity_types: tuple[EntityType, ...] = (),
+    ) -> list[Entity]:
+        """Return one virtualized page, optionally restricted by entity type."""
+
         statement = (
             select(Entity)
             .where(Entity.deleted_at.is_(None))
@@ -67,14 +76,45 @@ class EntityRepository(
         )
         if case_id is not None:
             statement = statement.where(Entity.case_id == case_id)
+        if entity_types:
+            statement = statement.where(Entity.entity_type.in_(entity_types))
         return list(self.session.scalars(statement).all())
 
-    def count_all(self, *, case_id: UUID | None = None) -> int:
+    def count_all(
+        self,
+        *,
+        case_id: UUID | None = None,
+        entity_types: tuple[EntityType, ...] = (),
+    ) -> int:
+        """Count active entities, optionally restricted by entity type."""
+
         statement = select(func.count(Entity.id))
         statement = statement.where(Entity.deleted_at.is_(None))
         if case_id is not None:
             statement = statement.where(Entity.case_id == case_id)
+        if entity_types:
+            statement = statement.where(Entity.entity_type.in_(entity_types))
         return int(self.session.scalar(statement) or 0)
+
+    def count_by_type(
+        self,
+        *,
+        case_id: UUID | None = None,
+    ) -> dict[EntityType, int]:
+        """Return active entity counts grouped by EntityType in one query."""
+
+        statement = (
+            select(Entity.entity_type, func.count(Entity.id))
+            .where(Entity.deleted_at.is_(None))
+            .group_by(Entity.entity_type)
+        )
+        if case_id is not None:
+            statement = statement.where(Entity.case_id == case_id)
+
+        return {
+            entity_type: int(count or 0)
+            for entity_type, count in self.session.execute(statement).all()
+        }
 
     def get_by_type(
         self,

@@ -1,0 +1,3489 @@
+
+
+====================================================================================================
+FILE: app/controllers/osint_controller.py
+====================================================================================================
+"""
+OSINT workspace controller.
+
+Responsible for:
+
+- receiving OSINT workspace input
+- converting UI data into application models
+- validating basic input format
+- calling the OSINT workspace application service
+- returning UI-ready data
+
+Does NOT:
+
+- execute connectors directly
+- contain OSINT business logic
+- access database
+- create or store domain entities
+- contain widget logic
+- call AI
+"""
+
+from __future__ import annotations
+
+from collections.abc import Iterable
+from collections.abc import Mapping
+from datetime import date
+from datetime import datetime
+from typing import Any
+
+from app.application.osint_workspace_service import (
+    OsintWorkspaceService,
+)
+
+from app.osint.models import (
+    OsintInvestigationRequest,
+)
+
+
+class OsintController:
+    """
+    Controller for the OSINT workspace.
+
+    Converts values received from the interface into
+    an OsintInvestigationRequest and delegates execution
+    to OsintWorkspaceService.
+    """
+
+    def __init__(
+        self,
+        osint_service: OsintWorkspaceService,
+    ) -> None:
+
+        self.osint_service = osint_service
+
+    # ==========================================================
+    # Workspace
+    # ==========================================================
+
+    def get_workspace_state(
+        self,
+    ) -> dict[str, Any]:
+        """
+        Return the initial OSINT workspace state.
+        """
+
+        return (
+            self.osint_service
+            .get_workspace_state()
+        )
+
+    # ==========================================================
+    # Investigation request
+    # ==========================================================
+
+    def create_request(
+        self,
+        form_data: Mapping[str, Any],
+    ) -> OsintInvestigationRequest:
+        """
+        Convert UI form data into an investigation request.
+
+        List fields may be passed as:
+
+        - a Python list
+        - a tuple or set
+        - text separated by lines
+        - text separated by commas
+        - text separated by semicolons
+        """
+
+        return OsintInvestigationRequest(
+
+            # Investigation context
+
+            case_id=self._clean_optional_text(
+                form_data.get(
+                    "case_id"
+                )
+            ),
+
+            title=self._clean_optional_text(
+                form_data.get(
+                    "title"
+                )
+            ),
+
+            description=self._clean_optional_text(
+                form_data.get(
+                    "description"
+                )
+            ),
+
+            # Person identity
+
+            first_name=self._clean_optional_text(
+                form_data.get(
+                    "first_name"
+                )
+            ),
+
+            middle_name=self._clean_optional_text(
+                form_data.get(
+                    "middle_name"
+                )
+            ),
+
+            last_name=self._clean_optional_text(
+                form_data.get(
+                    "last_name"
+                )
+            ),
+
+            birth_date=self._parse_date(
+                form_data.get(
+                    "birth_date"
+                )
+            ),
+
+            # Online identities
+
+            usernames=self._parse_list(
+                form_data.get(
+                    "usernames"
+                )
+            ),
+
+            emails=self._parse_list(
+                form_data.get(
+                    "emails"
+                )
+            ),
+
+            phones=self._parse_list(
+                form_data.get(
+                    "phones"
+                )
+            ),
+
+            # Location
+
+            country=self._clean_optional_text(
+                form_data.get(
+                    "country"
+                )
+            ),
+
+            region=self._clean_optional_text(
+                form_data.get(
+                    "region"
+                )
+            ),
+
+            city=self._clean_optional_text(
+                form_data.get(
+                    "city"
+                )
+            ),
+
+            postal_code=self._clean_optional_text(
+                form_data.get(
+                    "postal_code"
+                )
+            ),
+
+            address=self._clean_optional_text(
+                form_data.get(
+                    "address"
+                )
+            ),
+
+            # Organizations
+
+            organizations=self._parse_list(
+                form_data.get(
+                    "organizations"
+                )
+            ),
+
+            # Network and web targets
+
+            domains=self._parse_list(
+                form_data.get(
+                    "domains"
+                )
+            ),
+
+            urls=self._parse_list(
+                form_data.get(
+                    "urls"
+                )
+            ),
+
+            ip_addresses=self._parse_list(
+                form_data.get(
+                    "ip_addresses"
+                )
+            ),
+
+            hashes=self._parse_list(
+                form_data.get(
+                    "hashes"
+                )
+            ),
+
+            # Local artifacts
+
+            file_paths=self._parse_list(
+                form_data.get(
+                    "file_paths"
+                )
+            ),
+
+            image_paths=self._parse_list(
+                form_data.get(
+                    "image_paths"
+                )
+            ),
+
+            # Additional context
+
+            keywords=self._parse_list(
+                form_data.get(
+                    "keywords"
+                )
+            ),
+
+            notes=self._clean_optional_text(
+                form_data.get(
+                    "notes"
+                )
+            ),
+        )
+
+    # ==========================================================
+    # Preview
+    # ==========================================================
+
+    def preview_targets(
+        self,
+        form_data: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        """
+        Build investigation targets without running connectors.
+        """
+
+        request = self.create_request(
+            form_data
+        )
+
+        targets = (
+            self.osint_service
+            .build_targets(
+                request
+            )
+        )
+
+        return {
+            "request": (
+                self._serialize_request(
+                    request
+                )
+            ),
+            "targets": targets,
+            "target_count": len(
+                targets
+            ),
+            "has_targets": bool(
+                targets
+            ),
+        }
+
+    def get_compatible_connectors(
+        self,
+        form_data: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        """
+        Return compatible connectors for generated targets.
+        """
+
+        request = self.create_request(
+            form_data
+        )
+
+        targets = (
+            self.osint_service
+            .build_targets(
+                request
+            )
+        )
+
+        compatibility = (
+            self.osint_service
+            .get_compatible_connectors(
+                request
+            )
+        )
+
+        connector_names: set[str] = set()
+
+        for item in compatibility:
+
+            connectors = item.get(
+                "connectors",
+                [],
+            )
+
+            for connector_name in connectors:
+
+                cleaned_name = (
+                    self._clean_optional_text(
+                        connector_name
+                    )
+                )
+
+                if cleaned_name:
+
+                    connector_names.add(
+                        cleaned_name
+                    )
+
+        return {
+            "request": (
+                self._serialize_request(
+                    request
+                )
+            ),
+            "targets": targets,
+            "target_count": len(
+                targets
+            ),
+            "compatibility": compatibility,
+            "compatible_connectors": sorted(
+                connector_names,
+                key=str.casefold,
+            ),
+            "compatible_connector_count": len(
+                connector_names
+            ),
+            "has_targets": bool(
+                targets
+            ),
+        }
+
+    # ==========================================================
+    # Execution
+    # ==========================================================
+
+    def run_investigation(
+        self,
+        form_data: Mapping[str, Any],
+        selected_connectors: Iterable[str] | str | None = None,
+        timeout: int = 300,
+        use_cache: bool = True,
+        save_raw_output: bool = False,
+        include_metadata: bool = True,
+        include_related: bool = True,
+    ) -> dict[str, Any]:
+        """
+        Execute an OSINT investigation.
+
+        When selected_connectors is None, all compatible
+        connectors are executed.
+        """
+
+        request = self.create_request(
+            form_data
+        )
+
+        targets = (
+            self.osint_service
+            .build_targets(
+                request
+            )
+        )
+
+        if not targets:
+
+            raise ValueError(
+                "OSINT investigation requires at least "
+                "one non-empty target."
+            )
+
+        normalized_connectors = (
+            self._normalize_selected_connectors(
+                selected_connectors
+            )
+        )
+
+        normalized_timeout = (
+            self._normalize_timeout(
+                timeout
+            )
+        )
+
+        return (
+            self.osint_service
+            .run_investigation(
+                request=request,
+                selected_connectors=(
+                    normalized_connectors
+                ),
+                timeout=normalized_timeout,
+                use_cache=bool(
+                    use_cache
+                ),
+                save_raw_output=bool(
+                    save_raw_output
+                ),
+                include_metadata=bool(
+                    include_metadata
+                ),
+                include_related=bool(
+                    include_related
+                ),
+            )
+        )
+
+    # ==========================================================
+    # Serialization
+    # ==========================================================
+
+    def _serialize_request(
+        self,
+        request: OsintInvestigationRequest,
+    ) -> dict[str, Any]:
+        """
+        Serialize an investigation request for the UI.
+        """
+
+        return {
+            "case_id": request.case_id,
+            "title": request.title,
+            "description": request.description,
+
+            "first_name": request.first_name,
+            "middle_name": request.middle_name,
+            "last_name": request.last_name,
+
+            "birth_date": (
+                request.birth_date.isoformat()
+                if request.birth_date is not None
+                else None
+            ),
+
+            "usernames": list(
+                request.usernames
+            ),
+
+            "emails": list(
+                request.emails
+            ),
+
+            "phones": list(
+                request.phones
+            ),
+
+            "country": request.country,
+            "region": request.region,
+            "city": request.city,
+            "postal_code": request.postal_code,
+            "address": request.address,
+
+            "organizations": list(
+                request.organizations
+            ),
+
+            "domains": list(
+                request.domains
+            ),
+
+            "urls": list(
+                request.urls
+            ),
+
+            "ip_addresses": list(
+                request.ip_addresses
+            ),
+
+            "hashes": list(
+                request.hashes
+            ),
+
+            "file_paths": list(
+                request.file_paths
+            ),
+
+            "image_paths": list(
+                request.image_paths
+            ),
+
+            "keywords": list(
+                request.keywords
+            ),
+
+            "notes": request.notes,
+        }
+
+    # ==========================================================
+    # Input helpers
+    # ==========================================================
+
+    def _clean_optional_text(
+        self,
+        value: Any,
+    ) -> str | None:
+        """
+        Convert an optional UI value into clean text.
+        """
+
+        if value is None:
+            return None
+
+        cleaned_value = str(
+            value
+        ).strip()
+
+        if not cleaned_value:
+            return None
+
+        return cleaned_value
+
+    def _parse_list(
+        self,
+        value: Any,
+    ) -> list[str]:
+        """
+        Convert a UI value into a clean unique text list.
+        """
+
+        if value is None:
+            return []
+
+        raw_values: list[Any] = []
+
+        if isinstance(
+            value,
+            str,
+        ):
+
+            normalized_text = (
+                value
+                .replace(
+                    "\r\n",
+                    "\n",
+                )
+                .replace(
+                    "\r",
+                    "\n",
+                )
+                .replace(
+                    ";",
+                    "\n",
+                )
+                .replace(
+                    ",",
+                    "\n",
+                )
+            )
+
+            raw_values.extend(
+                normalized_text.split(
+                    "\n"
+                )
+            )
+
+        elif isinstance(
+            value,
+            Iterable,
+        ):
+
+            raw_values.extend(
+                value
+            )
+
+        else:
+
+            raw_values.append(
+                value
+            )
+
+        result: list[str] = []
+
+        seen: set[str] = set()
+
+        for raw_value in raw_values:
+
+            cleaned_value = (
+                self._clean_optional_text(
+                    raw_value
+                )
+            )
+
+            if cleaned_value is None:
+                continue
+
+            normalized_value = (
+                cleaned_value.casefold()
+            )
+
+            if normalized_value in seen:
+                continue
+
+            seen.add(
+                normalized_value
+            )
+
+            result.append(
+                cleaned_value
+            )
+
+        return result
+
+    def _parse_date(
+        self,
+        value: Any,
+    ) -> date | None:
+        """
+        Convert a UI date value into datetime.date.
+        """
+
+        if value is None:
+            return None
+
+        if isinstance(
+            value,
+            datetime,
+        ):
+
+            return value.date()
+
+        if isinstance(
+            value,
+            date,
+        ):
+
+            return value
+
+        cleaned_value = (
+            self._clean_optional_text(
+                value
+            )
+        )
+
+        if cleaned_value is None:
+            return None
+
+        accepted_formats = (
+            "%Y-%m-%d",
+            "%d.%m.%Y",
+            "%d/%m/%Y",
+            "%m/%d/%Y",
+        )
+
+        for date_format in accepted_formats:
+
+            try:
+
+                return datetime.strptime(
+                    cleaned_value,
+                    date_format,
+                ).date()
+
+            except ValueError:
+                continue
+
+        raise ValueError(
+            "Unsupported birth date format. "
+            "Use YYYY-MM-DD or DD.MM.YYYY."
+        )
+
+    def _normalize_selected_connectors(
+        self,
+        connector_names: Iterable[str] | str | None,
+    ) -> list[str] | None:
+        """
+        Normalize connector selection received from the UI.
+        """
+
+        if connector_names is None:
+            return None
+
+        names = self._parse_list(
+            connector_names
+        )
+
+        return names
+
+    def _normalize_timeout(
+        self,
+        timeout: Any,
+    ) -> int:
+        """
+        Validate connector timeout.
+        """
+
+        try:
+
+            normalized_timeout = int(
+                timeout
+            )
+
+        except (
+            TypeError,
+            ValueError,
+        ) as exc:
+
+            raise ValueError(
+                "OSINT timeout must be an integer."
+            ) from exc
+
+        if normalized_timeout < 1:
+
+            raise ValueError(
+                "OSINT timeout must be greater than zero."
+            )
+
+        return normalized_timeout
+
+
+====================================================================================================
+FILE: app/core/service_container.py
+====================================================================================================
+"""
+Application Service Container.
+
+Responsible for:
+
+- creating all domain services
+- creating application services
+- creating AI layer
+- creating OSINT layer
+- creating controllers
+- dependency injection
+
+This is the single Composition Root
+for the entire application.
+"""
+
+from __future__ import annotations
+
+from app.application.investigation_target_enrichment_service import (
+    InvestigationTargetEnrichmentService,
+)
+
+from app.application.registry_intelligence_service import RegistryIntelligenceService
+from app.application.registry_persistence_service import RegistryPersistenceService
+from app.infrastructure.registries.gleif_client import GleifRegistryHttpClient
+from app.registry_intelligence.providers.gleif import GleifRegistryProvider
+from app.registry_intelligence.registry import RegistryProviderRegistry
+
+from sqlalchemy.orm import Session
+
+# ==========================================================
+# AI
+# ==========================================================
+
+from app.core.ai_factory import (
+    create_ai_stack,
+)
+
+# ==========================================================
+# Domain Services
+# ==========================================================
+
+from app.services.case_service import (
+    CaseService,
+)
+
+from app.services.source_service import (
+    SourceService,
+)
+
+from app.services.evidence_service import (
+    EvidenceService,
+)
+
+from app.evidence.source_reliability import (
+    SourceReliabilityScoringService,
+)
+
+from app.services.entity_service import (
+    EntityService,
+)
+
+from app.services.relationship_service import (
+    RelationshipService,
+)
+
+from app.services.timeline_service import (
+    TimelineService,
+)
+
+from app.services.report_service import (
+    ReportService,
+)
+
+from app.services.message_service import (
+    MessageService,
+)
+
+from app.services.document_service import (
+    DocumentService,
+)
+
+from app.services.artifact_service import (
+    ArtifactService,
+)
+
+from app.services.entity_graph_service import (
+    EntityGraphService,
+)
+
+from app.analysis.unified_graph_analysis import (
+    UnifiedGraphAnalysisService,
+)
+
+from app.analysis.graph_explainability import (
+    GraphExplainabilityService,
+)
+
+from app.analysis.unified_temporal_analysis import (
+    UnifiedTemporalAnalysisService,
+)
+
+from app.analysis.unified_anomaly_analysis import (
+    UnifiedAnomalyAnalysisService,
+)
+
+from app.services.file_import_service import (
+    FileImportService,
+)
+
+from app.services.image_analysis_service import (
+    ImageAnalysisService,
+)
+
+from app.controllers.file_import_controller import (
+    FileImportController,
+)
+
+from app.processing.file_processing_router import (
+    FileProcessingRouter,
+)
+
+from app.services.image_comparison_service import (
+    ImageComparisonService,
+)
+
+from app.services.image_similarity_search_service import (
+    ImageSimilaritySearchService,
+)
+
+from app.repositories.search_index_repository import (
+    SearchIndexRepository,
+)
+
+from app.repositories.search_embedding_repository import (
+    SearchEmbeddingRepository,
+)
+
+from app.services.search_index_builder import (
+    SearchIndexBuilder,
+)
+
+from app.services.lexical_search_retriever import (
+    LexicalSearchRetriever,
+)
+
+from app.services.structured_search_retriever import (
+    StructuredSearchRetriever,
+)
+
+from app.services.fuzzy_search_service import (
+    FuzzySearchService,
+)
+
+from app.services.fuzzy_search_retriever import (
+    FuzzySearchRetriever,
+)
+
+from app.services.ollama_embedding_service import (
+    OllamaEmbeddingService,
+)
+
+from app.services.search_embedding_indexer import (
+    SearchEmbeddingIndexer,
+)
+
+from app.services.semantic_search_retriever import (
+    SemanticSearchRetriever,
+)
+
+from app.services.unified_search_service import (
+    UnifiedSearchService,
+)
+
+from app.services.search_confidence_service import (
+    SearchConfidenceService,
+)
+
+from app.services.search_explanation_service import (
+    SearchExplanationService,
+)
+
+from app.services.investigation_rag_retrieval_service import (
+    InvestigationRAGRetrievalService,
+)
+
+from app.services.investigation_rag_context_builder import (
+    InvestigationRAGContextBuilder,
+)
+
+from app.services.investigation_rag_prompt_service import (
+    InvestigationRAGPromptService,
+)
+
+from app.services.investigation_rag_summary_service import (
+    InvestigationRAGSummaryService,
+)
+
+from app.services.investigation_rag_conclusions_service import (
+    InvestigationRAGConclusionsService,
+)
+
+from app.services.investigation_rag_grounded_citation_service import (
+    InvestigationRAGGroundedCitationService,
+)
+
+from app.services.investigation_unified_analytical_context_service import (
+    InvestigationUnifiedAnalyticalContextService,
+)
+
+from app.repositories.face_profile_repository import (
+    FaceProfileRepository,
+)
+
+from app.repositories.face_embedding_repository import (
+    FaceEmbeddingRepository,
+)
+
+from app.services.face_memory_service import (
+    FaceMemoryService,
+)
+
+from app.services.face_analysis_service import (
+    FaceAnalysisService,
+)
+
+from app.services.image_gps_location_service import (
+    ImageGpsLocationService,
+)
+
+from app.services.evidence_link_service import (
+    EvidenceLinkService,
+)
+
+from app.services.search_indexing_service import (
+    SearchIndexingService,
+)
+
+from app.repositories.search_semantic_chunk_repository import (
+    SearchSemanticChunkRepository,
+)
+
+from app.repositories.search_semantic_chunk_embedding_repository import (
+    SearchSemanticChunkEmbeddingRepository,
+)
+
+from app.services.search_semantic_chunk_embedding_indexer import (
+    SearchSemanticChunkEmbeddingIndexer,
+)
+
+from app.services.composite_semantic_retriever import (
+    CompositeSemanticRetriever,
+)
+
+# ==========================================================
+# Import Pipeline
+# ==========================================================
+
+from app.collectors.telegram.telegram_collector import (
+    TelegramCollector,
+)
+
+from app.services.collection_service import (
+    CollectionService,
+)
+
+from app.services.unified_extraction_service import (
+    UnifiedExtractionService,
+)
+
+from app.services.entity_resolution_pipeline import (
+    EntityResolutionPipeline,
+)
+
+from app.services.telegram_entity_mapper_service import (
+    TelegramEntityMapperService,
+)
+
+from app.services.telegram_entity_import_service import (
+    TelegramEntityImportService,
+)
+
+from app.services.telegram_interaction_service import (
+    TelegramInteractionService,
+)
+
+from app.services.telegram_relationship_import_service import (
+    TelegramRelationshipImportService,
+)
+
+from app.services.telegram_timeline_mapper_service import (
+    TelegramTimelineMapperService,
+)
+
+from app.services.telegram_timeline_import_service import (
+    TelegramTimelineImportService,
+)
+
+from app.services.investigation_summary_builder import (
+    InvestigationSummaryBuilder,
+)
+
+from app.services.telegram_report_import_service import (
+    TelegramReportImportService,
+)
+
+from app.services.telegram_import_service import (
+    TelegramImportService,
+)
+
+from app.application.investigation_ai_service import (
+    InvestigationAIService,
+)
+
+from app.ai.providers.ai_investigation_service import (
+    AIInvestigationService as AIExecutionService,
+)
+
+from app.services.message_semantic_chunk_builder import (
+    MessageSemanticChunkBuilder,
+)
+
+from app.services.message_semantic_chunk_service import (
+    MessageSemanticChunkService,
+)
+
+from app.services.semantic_chunk_retriever import (
+    SemanticChunkRetriever,
+)
+
+# ==========================================================
+# OSINT
+# ==========================================================
+
+from app.osint.manager import (
+    OsintManager,
+)
+
+from app.osint.pipeline import (
+    OsintPipeline,
+)
+
+from app.osint.enrichment_execution import (
+    OsintEnrichmentExecutionService,
+)
+
+from app.osint.finding_persistence import (
+    OsintFindingPersistenceService,
+)
+
+from app.osint.target_builder import (
+    OsintTargetBuilder,
+)
+
+# ==========================================================
+# Application Services
+# ==========================================================
+
+from app.application.workflow import (
+    InvestigationWorkflow,
+)
+
+from app.application.case_workspace_service import (
+    CaseWorkspaceService,
+)
+
+from app.application.investigation_graph_analysis_service import (
+    InvestigationGraphAnalysisService,
+)
+
+from app.application.investigation_temporal_analysis_service import (
+    InvestigationTemporalAnalysisService,
+)
+
+from app.application.investigation_entity_feature_extraction_service import (
+    InvestigationEntityFeatureExtractionService,
+)
+
+from app.application.investigation_anomaly_analysis_service import (
+    InvestigationAnomalyAnalysisService,
+)
+
+from app.application.investigation_entity_clustering_service import (
+    InvestigationEntityClusteringService,
+)
+
+from app.application.investigation_entity_resolution_analysis_service import (
+    InvestigationEntityResolutionAnalysisService,
+)
+
+from app.application.investigation_evidence_analysis_service import (
+    InvestigationEvidenceAnalysisService,
+)
+
+from app.application.investigation_multimodal_analysis_service import (
+    InvestigationMultimodalAnalysisService,
+)
+
+from app.analysis.multimodal_image_aggregation import (
+    MultimodalImageAggregationService,
+)
+
+from app.application.investigation_analysis_orchestrator import (
+    InvestigationAnalysisOrchestrator,
+)
+
+from app.application.investigation_analysis_runner import (
+    InvestigationAnalysisRunner,
+)
+
+from app.application.ai_workspace_service import (
+    AIWorkspaceService,
+)
+
+from app.application.import_workspace_service import (
+    ImportWorkspaceService,
+)
+
+from app.application.osint_workspace_service import (
+    OsintWorkspaceService,
+)
+
+from app.application.osint_enrichment_service import (
+    OsintEnrichmentService,
+)
+
+from app.application.osint_recursive_enrichment_service import (
+    OsintRecursiveEnrichmentService,
+)
+
+from app.application.workspaces import (
+    ApplicationWorkspaces,
+)
+
+from app.application.services import (
+    InvestigationApplicationService,
+)
+
+# ==========================================================
+# Controllers
+# ==========================================================
+
+from app.controllers.case_controller import (
+    CaseController,
+)
+
+from app.controllers.workspace_controller import (
+    WorkspaceController,
+)
+
+from app.controllers.ai_analysis_controller import (
+    AIAnalysisController,
+)
+
+from app.controllers.import_controller import (
+    ImportController,
+)
+
+from app.controllers.osint_controller import (
+    OsintController,
+)
+
+from app.localization import (
+    TranslationManager,
+    configure_translator,
+)
+
+
+
+from app.application.open_web_enrichment_service import (
+    OpenWebEnrichmentService,
+)
+from app.osint.open_web.extraction_bridge import (
+    OpenWebIdentifierExtractionBridge,
+)
+from app.osint.open_web.registry import (
+    OpenWebProviderRegistry,
+)
+from app.osint.open_web.service import (
+    OpenWebDiscoveryService,
+)
+
+
+from app.infrastructure.open_web.common_crawl_client import (
+    CommonCrawlHttpClient,
+)
+from app.osint.open_web.providers.common_crawl import (
+    CommonCrawlOpenWebProvider,
+)
+from app.osint.open_web.providers.gdelt_phone_exact import (
+    GdeltPhoneExactOpenWebProvider,
+)
+from app.osint.open_web.providers.searxng_phone_exact import (
+    SearxngPhoneExactOpenWebProvider,
+)
+from app.osint.open_web.providers.targeted_phone_public_sources import (
+    TargetedPhonePublicSourcesProvider,
+)
+from app.osint.open_web.providers.live_web import (
+    LiveWebOpenWebProvider,
+)
+
+from app.infrastructure.open_web.common_crawl_warc_client import (
+    CommonCrawlWarcContentClient,
+)
+from app.osint.open_web.content_hydration import (
+    CommonCrawlContentHydrator,
+)
+
+
+from app.infrastructure.open_web.common_crawl_metadata_client import (
+    CommonCrawlMetadataClient,
+)
+from app.infrastructure.open_web.common_crawl_raw_index import (
+    CommonCrawlRawIndexClient,
+)
+
+from app.application.open_web_recursive_pivot_service import (
+    OpenWebRecursivePivotService,
+)
+
+class ServiceContainer:
+    """
+    Central dependency injection container.
+
+    This is the only Composition Root
+    of the application.
+    """
+
+    def __init__(
+        self,
+        session: Session,
+    ) -> None:
+
+        self.session = session
+
+        # ==================================================
+        # Localization
+        # ==================================================
+
+        self.translation_manager = (
+            TranslationManager()
+        )
+
+        configure_translator(
+            self.translation_manager
+        )
+
+        # ==================================================
+        # AI
+        # ==================================================
+
+        (
+            self.ai_manager,
+            self.ai_analyzer,
+        ) = create_ai_stack()
+
+        # ==================================================
+        # Core Domain Services
+        # ==================================================
+
+        self.case_service = CaseService(
+            session
+        )
+
+        self.source_service = SourceService(
+            session
+        )
+
+        # ==================================================
+        # Unified Search
+        # ==================================================
+
+        # --------------------------------------------------
+        # Search persistence
+        # --------------------------------------------------
+
+        self.search_index_repository = (
+            SearchIndexRepository(
+                session
+            )
+        )
+
+        self.search_embedding_repository = (
+            SearchEmbeddingRepository(
+                session
+            )
+        )
+
+        self.search_semantic_chunk_repository = (
+            SearchSemanticChunkRepository(
+                self.session
+            )
+        )
+
+        self.search_semantic_chunk_embedding_repository = (
+            SearchSemanticChunkEmbeddingRepository(
+                self.session
+            )
+        )
+
+        self.message_semantic_chunk_builder = (
+            MessageSemanticChunkBuilder()
+        )
+
+
+        # --------------------------------------------------
+        # Search index construction
+        # --------------------------------------------------
+
+        self.search_index_builder = (
+            SearchIndexBuilder(
+                session=session,
+                repository=(
+                    self.search_index_repository
+                ),
+            )
+        )
+
+        self.message_semantic_chunk_builder = (
+            MessageSemanticChunkBuilder()
+        )
+
+        # --------------------------------------------------
+        # Embedding provider
+        # --------------------------------------------------
+
+        self.embedding_service = (
+            OllamaEmbeddingService()
+        )
+
+        self.search_embedding_indexer = (
+            SearchEmbeddingIndexer(
+                search_index_repository=(
+                    self.search_index_repository
+                ),
+                search_embedding_repository=(
+                    self.search_embedding_repository
+                ),
+                embedding_service=(
+                    self.embedding_service
+                ),
+            )
+        )
+
+        self.search_indexing_service = (
+            SearchIndexingService(
+                search_index_builder=(
+                    self.search_index_builder
+                ),
+                search_index_repository=(
+                    self.search_index_repository
+                ),
+                search_embedding_repository=(
+                    self.search_embedding_repository
+                ),
+                search_embedding_indexer=(
+                    self.search_embedding_indexer
+                ),
+            )
+        )
+
+        self.search_semantic_chunk_embedding_indexer = (
+            SearchSemanticChunkEmbeddingIndexer(
+                chunk_repository=(
+                    self.search_semantic_chunk_repository
+                ),
+                embedding_repository=(
+                    self.search_semantic_chunk_embedding_repository
+                ),
+                embedding_service=(
+                    self.embedding_service
+                ),
+            )
+        )
+
+        # --------------------------------------------------
+        # Lexical / BM25
+        # --------------------------------------------------
+
+        self.lexical_search_retriever = (
+            LexicalSearchRetriever(
+                repository=(
+                    self.search_index_repository
+                ),
+            )
+        )
+
+        # --------------------------------------------------
+        # Fuzzy
+        # --------------------------------------------------
+
+        self.fuzzy_search_service = (
+            FuzzySearchService()
+        )
+
+        self.fuzzy_search_retriever = (
+            FuzzySearchRetriever(
+                repository=(
+                    self.search_index_repository
+                ),
+                fuzzy_search_service=(
+                    self.fuzzy_search_service
+                ),
+            )
+        )
+
+        # --------------------------------------------------
+        # Semantic / pgvector
+        # --------------------------------------------------
+
+        self.semantic_search_retriever = (
+            SemanticSearchRetriever(
+                repository=(
+                    self.search_embedding_repository
+                ),
+                embedding_service=(
+                    self.embedding_service
+                ),
+            )
+        )
+
+
+
+
+        # ==================================================
+        # Search-aware Domain Services
+        # ==================================================
+
+        self.evidence_service = EvidenceService(
+            session,
+            search_indexing_service=(
+                self.search_indexing_service
+            ),
+        )
+
+        self.evidence_link_service = (
+            EvidenceLinkService(
+                session
+            )
+        )
+
+        # ==================================================
+        # Image Services
+        # ==================================================
+
+        self.image_analysis_service = (
+            ImageAnalysisService(
+                evidence_service=(
+                    self.evidence_service
+                ),
+            )
+        )
+
+        self.image_comparison_service = (
+            ImageComparisonService(
+                evidence_service=(
+                    self.evidence_service
+                ),
+                image_analysis_service=(
+                    self.image_analysis_service
+                ),
+            )
+        )
+
+        self.image_similarity_search_service = (
+            ImageSimilaritySearchService(
+                evidence_service=(
+                    self.evidence_service
+                ),
+                image_comparison_service=(
+                    self.image_comparison_service
+                ),
+            )
+        )
+
+        self.face_profile_repository = (
+            FaceProfileRepository(
+                session
+            )
+        )
+
+        self.face_embedding_repository = (
+            FaceEmbeddingRepository(
+                session
+            )
+        )
+
+        self.face_memory_service = (
+            FaceMemoryService(
+                profile_repository=(
+                    self.face_profile_repository
+                ),
+                embedding_repository=(
+                    self.face_embedding_repository
+                ),
+            )
+        )
+
+        self.face_analysis_service = (
+            FaceAnalysisService(
+                image_analysis_service=(
+                    self.image_analysis_service
+                ),
+                face_memory_service=(
+                    self.face_memory_service
+                ),
+            )
+        )
+
+        self.entity_service = EntityService(
+            session
+        )
+
+        self.unified_extraction_service = (
+            UnifiedExtractionService(
+                session=session,
+                entity_service=(
+                    self.entity_service
+                ),
+                evidence_service=(
+                    self.evidence_service
+                ),
+                evidence_link_service=(
+                    self.evidence_link_service
+                ),
+            )
+        )
+
+        self.relationship_service = (
+            RelationshipService(
+                session
+            )
+        )
+
+        self.entity_graph_service = (
+            EntityGraphService(
+                session
+            )
+        )
+
+        self.timeline_service = TimelineService(
+            session
+        )
+
+        self.report_service = ReportService(
+            session
+        )
+
+        self.message_service = MessageService(
+            session,
+            search_indexing_service=(
+                self.search_indexing_service
+            ),
+        )
+
+        self.message_semantic_chunk_service = (
+            MessageSemanticChunkService(
+                message_repository=(
+                    self.message_service.repository
+                ),
+                chunk_repository=(
+                    self.search_semantic_chunk_repository
+                ),
+                chunk_builder=(
+                    self.message_semantic_chunk_builder
+                ),
+            )
+        )
+
+        self.document_service = DocumentService(
+            session,
+            search_indexing_service=(
+                self.search_indexing_service
+            ),
+        )
+
+        self.artifact_service = ArtifactService(
+            session,
+            search_indexing_service=(
+                self.search_indexing_service
+            ),
+        )
+
+        self.file_processing_router = (
+            FileProcessingRouter()
+        )
+
+        self.semantic_chunk_retriever = (
+            SemanticChunkRetriever(
+                repository=(
+                    self.search_semantic_chunk_embedding_repository
+                ),
+                message_repository=(
+                    self.message_service.repository
+                ),
+                embedding_service=(
+                    self.embedding_service
+                ),
+            )
+        )
+
+        # --------------------------------------------------
+        # Structured Entity / Evidence retrieval
+        # --------------------------------------------------
+
+        self.structured_search_retriever = (
+            StructuredSearchRetriever(
+                entity_repository=(
+                    self.entity_service.repository
+                ),
+                evidence_repository=(
+                    self.evidence_service.repository
+                ),
+            )
+        )
+
+        # --------------------------------------------------
+        # Composite Semantic
+        # --------------------------------------------------
+
+        self.composite_semantic_retriever = (
+            CompositeSemanticRetriever(
+                embedding_service=(
+                    self.embedding_service
+                ),
+                message_retriever=(
+                    self.semantic_chunk_retriever
+                ),
+                object_retriever=(
+                    self.semantic_search_retriever
+                ),
+            )
+        )
+
+        # --------------------------------------------------
+        # Unified orchestration + RRF + explanations
+        # --------------------------------------------------
+
+        self.search_confidence_service = (
+            SearchConfidenceService()
+        )
+
+        self.search_explanation_service = (
+            SearchExplanationService()
+        )
+
+        self.unified_search_service = (
+            UnifiedSearchService(
+                retrievers=[
+                    self.structured_search_retriever,
+                    self.lexical_search_retriever,
+                    self.fuzzy_search_retriever,
+                    self.composite_semantic_retriever,
+                ],
+                search_confidence_service=(
+                    self.search_confidence_service
+                ),
+                search_explanation_service=(
+                    self.search_explanation_service
+                ),
+            )
+        )
+
+        # ==================================================
+        # AI / RAG Retrieval
+        # ==================================================
+
+        self.investigation_rag_retrieval_service = (
+            InvestigationRAGRetrievalService(
+                unified_search_service=(
+                    self.unified_search_service
+                ),
+            )
+        )
+
+        self.investigation_rag_context_builder = (
+            InvestigationRAGContextBuilder()
+        )
+
+        # ==================================================
+        # Collector
+        # ==================================================
+
+        self.telegram_collector = (
+            TelegramCollector()
+        )
+
+        # ==================================================
+        # Collection
+        # ==================================================
+
+        self.collection_service = (
+            CollectionService(
+                source_service=(
+                    self.source_service
+                ),
+                evidence_service=(
+                    self.evidence_service
+                ),
+                message_service=(
+                    self.message_service
+                ),
+                document_service=(
+                    self.document_service
+                ),
+                artifact_service=(
+                    self.artifact_service
+                ),
+            )
+        )
+
+
+
+        self.file_import_service = (
+            FileImportService(
+                collection_service=(
+                    self.collection_service
+                ),
+                evidence_service=(
+                    self.evidence_service
+                ),
+                file_processing_router=(
+                    self.file_processing_router
+                ),
+                search_indexing_service=(
+                    self.search_indexing_service
+                ),
+            )
+        )
+
+
+
+        self.file_import_controller = (
+            FileImportController(
+                container=self,
+                file_import_service=(
+                    self.file_import_service
+                ),
+            )
+        )
+
+        # ==================================================
+        # AI Workspace and validation
+        # ==================================================
+
+        self.ai_workspace_service = (
+            AIWorkspaceService(
+                case_service=(
+                    self.case_service
+                ),
+            )
+        )
+
+        self.investigation_ai_service = (
+            InvestigationAIService(
+                workspace_service=(
+                    self.ai_workspace_service
+                ),
+            )
+        )
+
+        # ==================================================
+        # AI Investigation execution
+        # ==================================================
+
+        self.ai_execution_service = (
+            AIExecutionService(
+                session=session,
+                ai_manager=(
+                    self.ai_manager
+                ),
+            )
+        )
+
+        # ==================================================
+        # AI / RAG Prompt Layer
+        # ==================================================
+
+        # Reuse the exact PromptManager instance already
+        # owned by the existing AI execution service.
+        self.prompt_manager = (
+            self.ai_execution_service.prompt_manager
+        )
+
+        self.investigation_rag_prompt_service = (
+            InvestigationRAGPromptService(
+                prompt_manager=(
+                    self.prompt_manager
+                ),
+            )
+        )
+
+        # ==================================================
+        # AI / RAG Investigation Summary
+        # ==================================================
+
+        self.investigation_rag_summary_service = (
+            InvestigationRAGSummaryService(
+                retrieval_service=(
+                    self.investigation_rag_retrieval_service
+                ),
+                context_builder=(
+                    self.investigation_rag_context_builder
+                ),
+                prompt_service=(
+                    self.investigation_rag_prompt_service
+                ),
+                ai_execution_service=(
+                    self.ai_execution_service
+                ),
+            )
+        )
+
+        # ==================================================
+        # AI / RAG Conclusions
+        # ==================================================
+
+        self.investigation_rag_conclusions_service = (
+            InvestigationRAGConclusionsService(
+                retrieval_service=(
+                    self.investigation_rag_retrieval_service
+                ),
+                context_builder=(
+                    self.investigation_rag_context_builder
+                ),
+                prompt_manager=(
+                    self.prompt_manager
+                ),
+                ai_execution_service=(
+                    self.ai_execution_service
+                ),
+            )
+        )
+
+        # ==================================================
+        # AI / RAG Grounded Evidence Citations
+        # ==================================================
+
+        self.investigation_rag_grounded_citation_service = (
+            InvestigationRAGGroundedCitationService()
+        )
+
+        # ==================================================
+        # Unified Analytical Context
+        # ==================================================
+
+        self.investigation_unified_analytical_context_service = (
+            InvestigationUnifiedAnalyticalContextService()
+        )
+
+        # ==================================================
+        # Telegram Entity Import
+        # ==================================================
+
+        self.telegram_entity_mapper_service = (
+            TelegramEntityMapperService()
+        )
+
+        self.telegram_entity_import_service = (
+            TelegramEntityImportService(
+                entity_service=(
+                    self.entity_service
+                ),
+                mapper=(
+                    self.telegram_entity_mapper_service
+                ),
+            )
+        )
+
+
+        # ==================================================
+        # Telegram Relationship Import
+        # ==================================================
+
+        self.telegram_interaction_service = (
+            TelegramInteractionService()
+        )
+
+        self.telegram_relationship_import_service = (
+            TelegramRelationshipImportService(
+                relationship_service=(
+                    self.relationship_service
+                ),
+                interaction_service=(
+                    self.telegram_interaction_service
+                ),
+                entity_service=(
+                    self.entity_service
+                ),
+            )
+        )
+
+        # ==================================================
+        # Telegram Timeline Import
+        # ==================================================
+
+        self.telegram_timeline_mapper_service = (
+            TelegramTimelineMapperService()
+        )
+
+        self.telegram_timeline_import_service = (
+            TelegramTimelineImportService(
+                mapper=(
+                    self.telegram_timeline_mapper_service
+                ),
+                timeline_service=(
+                    self.timeline_service
+                ),
+                entity_service=(
+                    self.entity_service
+                ),
+            )
+        )
+
+        # ==================================================
+        # Investigation Summary
+        # ==================================================
+
+        self.investigation_summary_builder = (
+            InvestigationSummaryBuilder(
+                message_service=(
+                    self.message_service
+                ),
+                entity_service=(
+                    self.entity_service
+                ),
+                relationship_service=(
+                    self.relationship_service
+                ),
+                timeline_service=(
+                    self.timeline_service
+                ),
+            )
+        )
+
+        self.telegram_report_import_service = (
+            TelegramReportImportService(
+                summary_builder=(
+                    self.investigation_summary_builder
+                ),
+                report_service=(
+                    self.report_service
+                ),
+            )
+        )
+
+        # ==================================================
+        # Telegram Import
+        # ==================================================
+
+        self.telegram_import_service = (
+            TelegramImportService(
+                collector=(
+                    self.telegram_collector
+                ),
+                extraction_service=(
+                    self.unified_extraction_service
+                ),
+                collection_service=(
+                    self.collection_service
+                ),
+                source_service=(
+                    self.source_service
+                ),
+                entity_import_service=(
+                    self.telegram_entity_import_service
+                ),
+                relationship_import_service=(
+                    self.telegram_relationship_import_service
+                ),
+                timeline_import_service=(
+                    self.telegram_timeline_import_service
+                ),
+                report_import_service=(
+                    self.telegram_report_import_service
+                ),
+                search_indexing_service=(
+                    self.search_indexing_service
+                ),
+            )
+        )
+
+        # ==================================================
+        # OSINT Infrastructure
+        # ==================================================
+
+        self.osint_manager = (
+            OsintManager()
+        )
+
+        # M021.16.5.2C1 User Scanner runtime registration
+        from app.osint.connectors.user_scanner_connector import (
+            UserScannerConnector,
+        )
+
+        self.osint_manager.registry.register(
+            UserScannerConnector()
+        )
+
+        # M021.16.5.1 Gravatar runtime registration
+        from app.osint.connectors.gravatar_connector import (
+            GravatarConnector,
+        )
+
+        self.osint_manager.registry.register(
+            GravatarConnector()
+        )
+
+        self.osint_pipeline = (
+            OsintPipeline(
+                manager=(
+                    self.osint_manager
+                ),
+            )
+        )
+
+        self.osint_target_builder = (
+            OsintTargetBuilder()
+        )
+
+        self.osint_enrichment_execution_service = (
+            OsintEnrichmentExecutionService(
+                pipeline=(
+                    self.osint_pipeline
+                ),
+            )
+        )
+
+        self.osint_finding_persistence_service = (
+            OsintFindingPersistenceService(
+                source_service=(
+                    self.source_service
+                ),
+                evidence_service=(
+                    self.evidence_service
+                ),
+                entity_service=(
+                    self.entity_service
+                ),
+                evidence_link_service=(
+                    self.evidence_link_service
+                ),
+            )
+        )
+
+        # ==================================================
+        # M022 Registry Intelligence
+        # ==================================================
+
+        self.registry_provider_registry = RegistryProviderRegistry()
+        self.gleif_registry_http_client = GleifRegistryHttpClient()
+        self.gleif_registry_provider = GleifRegistryProvider(
+            client=self.gleif_registry_http_client
+        )
+        self.registry_provider_registry.register(
+            self.gleif_registry_provider
+        )
+        self.registry_persistence_service = RegistryPersistenceService(
+            source_service=self.source_service,
+            evidence_service=self.evidence_service,
+            entity_service=self.entity_service,
+            evidence_link_service=self.evidence_link_service,
+            search_indexing_service=self.search_indexing_service,
+        )
+        self.registry_intelligence_service = RegistryIntelligenceService(
+            registry=self.registry_provider_registry,
+            persistence_service=self.registry_persistence_service,
+        )
+
+        # ==================================================
+        # Open-Web Discovery / Enrichment
+        # M021.10
+        # ==================================================
+
+        self.open_web_provider_registry = (
+            OpenWebProviderRegistry()
+        )
+
+
+        self.common_crawl_http_client = (
+            CommonCrawlHttpClient()
+        )
+
+
+        self.common_crawl_raw_index_client = (
+            CommonCrawlRawIndexClient()
+        )
+        self.common_crawl_metadata_client = (
+            CommonCrawlMetadataClient(
+                primary=self.common_crawl_http_client,
+                raw_index=self.common_crawl_raw_index_client,
+            )
+        )
+
+        self.common_crawl_open_web_provider = (
+            CommonCrawlOpenWebProvider(
+                client=(
+                    self.common_crawl_metadata_client
+                ),
+            )
+        )
+
+        self.open_web_provider_registry.register(
+            self.common_crawl_open_web_provider
+        )
+
+        # M021.16.7.3 — exact PHONE Open-Web discovery.
+        # GDELT only discovers candidate public news URLs; every candidate is
+        # re-fetched through bounded Live Web and exact-phone verified before
+        # it can enter extraction/persistence.
+        self.gdelt_phone_exact_open_web_provider = (
+            GdeltPhoneExactOpenWebProvider()
+        )
+        self.open_web_provider_registry.register(
+            self.gdelt_phone_exact_open_web_provider
+        )
+
+        self.searxng_phone_exact_open_web_provider = (
+            SearxngPhoneExactOpenWebProvider()
+        )
+        self.open_web_provider_registry.register(
+            self.searxng_phone_exact_open_web_provider
+        )
+
+        self.targeted_phone_public_sources_provider = (
+            TargetedPhonePublicSourcesProvider()
+        )
+        self.open_web_provider_registry.register(
+            self.targeted_phone_public_sources_provider
+        )
+
+        self.live_web_open_web_provider = (
+            LiveWebOpenWebProvider()
+        )
+
+        self.open_web_provider_registry.register(
+            self.live_web_open_web_provider
+        )
+
+        # M021.16.5.2A GDELT exact-email Open-Web registration
+        from app.osint.open_web.providers.gdelt_exact_email import (
+            GdeltExactEmailOpenWebProvider,
+        )
+
+        self.gdelt_exact_email_open_web_provider = (
+            GdeltExactEmailOpenWebProvider(
+                live_web_provider=self.live_web_open_web_provider,
+            )
+        )
+
+        self.open_web_provider_registry.register(
+            self.gdelt_exact_email_open_web_provider
+        )
+
+        # M021.16.5.2B Brave exact-email Open-Web registration
+        from app.osint.open_web.providers.brave_exact_email import (
+            BraveExactEmailOpenWebProvider,
+        )
+
+        self.brave_exact_email_open_web_provider = (
+            BraveExactEmailOpenWebProvider(
+                live_web_provider=self.live_web_open_web_provider,
+            )
+        )
+
+        self.open_web_provider_registry.register(
+            self.brave_exact_email_open_web_provider
+        )
+
+        self.open_web_discovery_service = (
+            OpenWebDiscoveryService(
+                registry=(
+                    self.open_web_provider_registry
+                ),
+            )
+        )
+
+        self.open_web_identifier_extraction_bridge = (
+            OpenWebIdentifierExtractionBridge(
+                extraction_service=(
+                    self.unified_extraction_service
+                ),
+            )
+        )
+
+        self.common_crawl_warc_content_client = (
+            CommonCrawlWarcContentClient()
+        )
+
+        self.common_crawl_content_hydrator = (
+            CommonCrawlContentHydrator(
+                client=self.common_crawl_warc_content_client,
+                max_documents=3,
+                timeout=20,
+            )
+        )
+
+        self.open_web_enrichment_service = (
+            OpenWebEnrichmentService(
+                discovery_service=(
+                    self.open_web_discovery_service
+                ),
+                extraction_bridge=(
+                    self.open_web_identifier_extraction_bridge
+                ),
+                persistence_service=(
+                    self.osint_finding_persistence_service
+                ),
+                content_hydrator=(
+                    self.common_crawl_content_hydrator
+                ),
+            )
+        )
+
+        self.osint_enrichment_service = (
+            OsintEnrichmentService(
+                execution_service=(
+                    self.osint_enrichment_execution_service
+                ),
+                persistence_service=(
+                    self.osint_finding_persistence_service
+                ),
+            )
+        )
+
+        self.investigation_target_enrichment_service = (
+            InvestigationTargetEnrichmentService(
+                execution_service=(
+                    self.osint_enrichment_execution_service
+                ),
+                persistence_service=(
+                    self.osint_finding_persistence_service
+                ),
+            )
+        )
+
+        self.osint_recursive_enrichment_service = (
+            OsintRecursiveEnrichmentService(
+                enrichment_service=(
+                    self.osint_enrichment_service
+                ),
+            )
+        )
+
+
+        self.open_web_recursive_pivot_service = (
+            OpenWebRecursivePivotService(
+                recursive_service=(
+                    self.osint_recursive_enrichment_service
+                ),
+            )
+        )
+
+        # ==================================================
+        # Workflow
+        # ==================================================
+
+        self.workflow = (
+            InvestigationWorkflow()
+        )
+
+        # ==================================================
+        # Investigation Entity Resolution / Evidence Analysis
+        # ==================================================
+
+        self.entity_resolution_pipeline = (
+            EntityResolutionPipeline(
+                session
+            )
+        )
+
+        self.investigation_entity_resolution_analysis_service = (
+            InvestigationEntityResolutionAnalysisService(
+                entity_service=(
+                    self.entity_service
+                ),
+                entity_resolution_pipeline=(
+                    self.entity_resolution_pipeline
+                ),
+            )
+        )
+
+        self.evidence_source_reliability_scoring_service = (
+            SourceReliabilityScoringService()
+        )
+
+        self.investigation_evidence_analysis_service = (
+            InvestigationEvidenceAnalysisService(
+                evidence_service=(
+                    self.evidence_service
+                ),
+                source_reliability_scoring_service=(
+                    self.evidence_source_reliability_scoring_service
+                ),
+            )
+        )
+
+        # ==================================================
+        # Investigation Graph Analysis
+        # ==================================================
+
+        self.unified_graph_analysis_service = (
+            UnifiedGraphAnalysisService()
+        )
+
+        self.graph_explainability_service = (
+            GraphExplainabilityService()
+        )
+
+        self.investigation_graph_analysis_service = (
+            InvestigationGraphAnalysisService(
+                entity_graph_service=(
+                    self.entity_graph_service
+                ),
+                unified_graph_analysis_service=(
+                    self.unified_graph_analysis_service
+                ),
+                graph_explainability_service=(
+                    self.graph_explainability_service
+                ),
+            )
+        )
+
+        # ==================================================
+        # Investigation Temporal Analysis
+        # ==================================================
+
+        self.unified_temporal_analysis_service = (
+            UnifiedTemporalAnalysisService()
+        )
+
+        self.investigation_temporal_analysis_service = (
+            InvestigationTemporalAnalysisService(
+                timeline_service=(
+                    self.timeline_service
+                ),
+                unified_temporal_analysis_service=(
+                    self.unified_temporal_analysis_service
+                ),
+            )
+        )
+
+        # ==================================================
+        # Investigation Anomaly Analysis
+        # ==================================================
+
+        self.investigation_entity_feature_extraction_service = (
+            InvestigationEntityFeatureExtractionService()
+        )
+
+        self.unified_anomaly_analysis_service = (
+            UnifiedAnomalyAnalysisService()
+        )
+
+        self.investigation_anomaly_analysis_service = (
+            InvestigationAnomalyAnalysisService(
+                investigation_graph_analysis_service=(
+                    self.investigation_graph_analysis_service
+                ),
+                investigation_temporal_analysis_service=(
+                    self.investigation_temporal_analysis_service
+                ),
+                entity_feature_extraction_service=(
+                    self.investigation_entity_feature_extraction_service
+                ),
+                unified_anomaly_analysis_service=(
+                    self.unified_anomaly_analysis_service
+                ),
+            )
+        )
+
+        # ==================================================
+        # Investigation Entity Clustering
+        # ==================================================
+
+        self.investigation_entity_clustering_service = (
+            InvestigationEntityClusteringService(
+                investigation_graph_analysis_service=(
+                    self.investigation_graph_analysis_service
+                ),
+                investigation_temporal_analysis_service=(
+                    self.investigation_temporal_analysis_service
+                ),
+                entity_feature_extraction_service=(
+                    self.investigation_entity_feature_extraction_service
+                ),
+            )
+        )
+
+        # ==================================================
+        # Investigation Multimodal Analysis
+        # ==================================================
+
+        self.multimodal_image_aggregation_service = (
+            MultimodalImageAggregationService()
+        )
+
+        self.investigation_multimodal_analysis_service = (
+            InvestigationMultimodalAnalysisService(
+                evidence_service=(
+                    self.evidence_service
+                ),
+                image_aggregation_service=(
+                    self.multimodal_image_aggregation_service
+                ),
+                audio_transcription_service=(
+                    self.file_processing_router
+                    .audio_processor
+                    .transcription_service
+                ),
+                video_transcription_service=(
+                    self.file_processing_router
+                    .video_processor
+                    .transcription_service
+                ),
+                video_frame_analysis_service=(
+                    self.file_processing_router
+                    .video_processor
+                    .frame_analysis_service
+                ),
+            )
+        )
+
+        # ==================================================
+        # Investigation Analysis Orchestrator
+        # ==================================================
+
+        self.investigation_analysis_orchestrator = (
+            InvestigationAnalysisOrchestrator(
+                case_service=(
+                    self.case_service
+                ),
+                investigation_entity_resolution_analysis_service=(
+                    self.investigation_entity_resolution_analysis_service
+                ),
+                investigation_evidence_analysis_service=(
+                    self.investigation_evidence_analysis_service
+                ),
+                investigation_graph_analysis_service=(
+                    self.investigation_graph_analysis_service
+                ),
+                investigation_temporal_analysis_service=(
+                    self.investigation_temporal_analysis_service
+                ),
+                investigation_anomaly_analysis_service=(
+                    self.investigation_anomaly_analysis_service
+                ),
+                investigation_entity_clustering_service=(
+                    self.investigation_entity_clustering_service
+                ),
+                investigation_multimodal_analysis_service=(
+                    self.investigation_multimodal_analysis_service
+                ),
+                investigation_rag_retrieval_service=(
+                    self.investigation_rag_retrieval_service
+                ),
+                investigation_rag_context_builder=(
+                    self.investigation_rag_context_builder
+                ),
+                investigation_rag_summary_service=(
+                    self.investigation_rag_summary_service
+                ),
+                investigation_rag_conclusions_service=(
+                    self.investigation_rag_conclusions_service
+                ),
+                investigation_rag_grounded_citation_service=(
+                    self.investigation_rag_grounded_citation_service
+                ),
+                investigation_unified_analytical_context_service=(
+                    self.investigation_unified_analytical_context_service
+                ),
+            )
+        )
+
+        # ==================================================
+        # Investigation Analysis Runner
+        # ==================================================
+
+        self.investigation_analysis_runner = (
+            InvestigationAnalysisRunner(
+                orchestrator=(
+                    self.investigation_analysis_orchestrator
+                ),
+            )
+        )
+
+        # ==================================================
+        # Workspace Services
+        # ==================================================
+
+        self.case_workspace_service = (
+            CaseWorkspaceService(
+                case_service=(
+                    self.case_service
+                ),
+                evidence_service=(
+                    self.evidence_service
+                ),
+                entity_service=(
+                    self.entity_service
+                ),
+                entity_graph_service=(
+                    self.entity_graph_service
+                ),
+                message_service=(
+                    self.message_service
+                ),
+                relationship_service=(
+                    self.relationship_service
+                ),
+                timeline_service=(
+                    self.timeline_service
+                ),
+                report_service=(
+                    self.report_service
+                ),
+            )
+        )
+
+
+        self.import_workspace_service = (
+            ImportWorkspaceService(
+                case_service=(
+                    self.case_service
+                ),
+                telegram_import_service=(
+                    self.telegram_import_service
+                ),
+            )
+        )
+
+        self.osint_workspace_service = (
+            OsintWorkspaceService(
+                pipeline=(
+                    self.osint_pipeline
+                ),
+                target_builder=(
+                    self.osint_target_builder
+                ),
+            )
+        )
+
+        # ==================================================
+        # Workspace Container
+        # ==================================================
+
+        self.workspaces = (
+            ApplicationWorkspaces(
+                case_workspace=(
+                    self.case_workspace_service
+                ),
+                ai_workspace=(
+                    self.ai_workspace_service
+                ),
+                import_workspace=(
+                    self.import_workspace_service
+                ),
+                osint_workspace=(
+                    self.osint_workspace_service
+                ),
+            )
+        )
+
+        # ==================================================
+        # Application Service
+        # ==================================================
+
+        self.application_service = (
+            InvestigationApplicationService(
+                workflow=(
+                    self.workflow
+                ),
+                workspaces=(
+                    self.workspaces
+                ),
+                investigation_ai_service=(
+                    self.investigation_ai_service
+                ),
+            )
+        )
+
+        # ==================================================
+        # Controllers
+        # ==================================================
+
+        self.case_controller = (
+            CaseController(
+                container=self,
+                case_service=(
+                    self.case_service
+                ),
+                workspace_service=(
+                    self.case_workspace_service
+                ),
+            )
+        )
+
+        self.workspace_controller = (
+            WorkspaceController(
+                container=self,
+                workspace_service=(
+                    self.case_workspace_service
+                ),
+            )
+        )
+
+        self.ai_controller = (
+            AIAnalysisController(
+                investigation_service=(
+                    self.investigation_ai_service
+                ),
+                execution_service=(
+                    self.ai_execution_service
+                ),
+                analyzer=(
+                    self.ai_analyzer
+                ),
+            )
+        )
+
+        self.import_controller = (
+            ImportController(
+                import_service=(
+                    self.import_workspace_service
+                ),
+            )
+        )
+
+        self.osint_controller = (
+            OsintController(
+                osint_service=(
+                    self.osint_workspace_service
+                ),
+            )
+        )
+
+        self.image_gps_location_service = (
+            ImageGpsLocationService(
+                evidence_service=self.evidence_service,
+                entity_service=self.entity_service,
+                evidence_link_service=self.evidence_link_service,
+            )
+        )
+
+    # ======================================================
+    # Helpers
+    # ======================================================
+
+    def commit(
+        self,
+    ) -> None:
+        """
+        Commit current transaction.
+        """
+
+        self.session.commit()
+
+    def rollback(
+        self,
+    ) -> None:
+        """
+        Rollback current transaction.
+        """
+
+        self.session.rollback()
+
+    def close(
+        self,
+    ) -> None:
+        """
+        Close database session.
+        """
+
+        self.session.close()
+
+
+====================================================================================================
+FILE: app/interface/desktop/qml/pages/DataWorkspace.qml
+====================================================================================================
+pragma ComponentBehavior: Bound
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
+import "../components"
+import "../theme"
+
+Item {
+    id: root
+    property string pageKey: ""
+    property string eyebrow: "INTELLIGENCE WORKSPACE"
+    property string title: "Workspace"
+    property string subtitle: ""
+    property url iconSource: "../../assets/icons/folder_blue.svg"
+    property string primaryAction: "New item"
+    property string searchPlaceholder: "Filter records..."
+    property string sectionTitle: "Records"
+    property string contextTitle: "Workspace Summary"
+    property var metrics: []
+    property var records: []
+    property var contextItems: []
+    property string emptyText: "No records available"
+    property string emptyTitle: "No records available"
+    property string emptyDescription: "Records will appear here when they are available."
+    property string filteredEmptyTitle: "No matching records"
+    property string filteredEmptyDescription: "Try a different search term or clear the current filter."
+    property bool actionEnabled: false
+    property string actionReason: ""
+    signal primaryActionRequested()
+    signal recordActivated(string recordId)
+    signal recordOptionsRequested(string recordId, string recordTitle)
+    property string filterText: ""
+    property bool loading: false
+    property bool hasMore: false
+    property bool updatingRecords: false
+    property bool recordsInteractive: root.pageKey === "cases"
+    property var liveData: ({ metrics: [], records: [], contextItems: [], emptyText: "No records available", actionEnabled: false, actionReason: "" })
+
+    function conciseRecordDetail(record) {
+        var detail = String(record.detail || "").replace(/\s+/g, " ").trim()
+        if (root.pageKey !== "evidence")
+            return detail
+        var looksLikePath = /^[A-Za-z]:[\\/]/.test(detail) || /^[/\\]{1,2}[^/\\]/.test(detail)
+        var looksLikeRawMetadata = /(^|[;,\s])(sha256|storage_path|evidence_key|connector_metadata|raw_metadata)\s*[:=]/i.test(detail)
+        if (!detail || detail === String(record.title || "") || looksLikePath || looksLikeRawMetadata)
+            return String(record.status || "Evidence") + " evidence"
+        return detail
+    }
+
+    function resolvedEmptyTitle() {
+        if (root.emptyText.indexOf("Unable") === 0)
+            return "Unable to load records"
+        if (root.filterText.trim().length > 0)
+            return root.filteredEmptyTitle
+        return root.emptyTitle
+    }
+
+    function resolvedEmptyDescription() {
+        if (root.emptyText.indexOf("Unable") === 0)
+            return root.emptyText
+        if (root.filterText.trim().length > 0)
+            return root.filteredEmptyDescription
+        return root.emptyDescription
+    }
+
+    function reloadData() {
+        if (!root.pageKey)
+            return
+        const previousY = recordsView.contentY
+        const previousRecords = root.records
+        root.updatingRecords = true
+        root.liveData = desktopBridge.pageData(root.pageKey, root.filterText)
+        root.metrics = root.liveData.metrics || []
+        root.records = root.liveData.records || []
+        root.contextItems = root.liveData.contextItems || []
+        root.emptyText = root.liveData.emptyText || "No records available"
+        root.actionEnabled = Boolean(root.liveData.actionEnabled)
+        root.actionReason = root.liveData.actionReason || ""
+        root.loading = Boolean(root.liveData.loading)
+        root.hasMore = Boolean(root.liveData.hasMore)
+        if (previousRecords.length > 0 && root.records.length >= previousRecords.length
+                && root.records[0].id === previousRecords[0].id)
+            recordsView.contentY = previousY
+        root.updatingRecords = false
+    }
+
+    Timer { id: filterTimer; interval: 250; repeat: false; onTriggered: root.reloadData() }
+    onFilterTextChanged: {
+        if (root.pageKey === "search" && root.filterText.length === 0)
+            desktopBridge.search("")
+        filterTimer.restart()
+    }
+
+    Connections {
+        target: desktopBridge
+        function onChanged() { if (root.visible) root.reloadData() }
+    }
+
+    opacity: 0
+    Component.onCompleted: {
+        reloadData()
+        appear.start()
+    }
+    NumberAnimation {
+        id: appear
+        target: root
+        property: "opacity"
+        from: 0
+        to: 1
+        duration: Motion.page
+        easing.type: Easing.OutCubic
+    }
+
+    ColumnLayout {
+        anchors.fill: parent
+        anchors.leftMargin: Spacing.page
+        anchors.rightMargin: Spacing.page
+        anchors.topMargin: 18
+        anchors.bottomMargin: 26
+        spacing: Spacing.panelGap
+
+        Item {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 75
+
+            Text {
+                x: 1
+                y: 0
+                text: root.eyebrow
+                color: Theme.textMuted
+                font.pixelSize: 10
+                font.weight: Font.Medium
+                font.letterSpacing: 1.7
+            }
+            Text {
+                x: 1
+                y: 20
+                text: root.title
+                color: Theme.textPrimary
+                font.pixelSize: 30
+                font.weight: Font.DemiBold
+            }
+            Text {
+                x: 2
+                y: 57
+                text: root.subtitle
+                color: Theme.textSecondary
+                font.pixelSize: 13
+            }
+
+            AppButton {
+                objectName: "primaryActionButton"
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                width: 142
+                height: 38
+                text: "+   " + root.primaryAction
+                primary: true
+                enabled: root.actionEnabled
+                ToolTip.visible: hovered && !enabled && root.actionReason.length > 0
+                ToolTip.delay: 450
+                ToolTip.text: root.actionReason
+                onClicked: root.primaryActionRequested()
+            }
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 112
+            spacing: Spacing.panelGap
+
+            Repeater {
+                model: root.metrics
+                delegate: StatCard {
+                    id: metricCard
+                    required property var modelData
+                    Layout.fillWidth: true
+                    title: metricCard.modelData.title
+                    value: metricCard.modelData.value
+                    delta: metricCard.modelData.delta
+                    subtext: metricCard.modelData.subtext
+                    iconSource: root.iconSource
+                    accentColor: metricCard.modelData.color
+                    chartType: metricCard.modelData.chart || "bars"
+                }
+            }
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            spacing: Spacing.panelGap
+
+            Panel {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                Layout.preferredWidth: 850
+                title: root.sectionTitle
+                iconSource: root.iconSource
+                actionText: ""
+
+                Item {
+                    anchors.fill: parent
+
+                    Item {
+                        width: parent.width
+                        height: 62
+                        Rectangle {
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.leftMargin: 16
+                            anchors.rightMargin: 16
+                            anchors.verticalCenter: parent.verticalCenter
+                            height: 38
+                            radius: 7
+                            color: "#0d1c28"
+                            border.color: Theme.border
+                            Image {
+                                anchors.left: parent.left
+                                anchors.leftMargin: 13
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 18
+                                height: 18
+                                source: "../../assets/icons/search.svg"
+                            }
+                            TextInput {
+                                id: filterInput
+                                anchors.left: parent.left
+                                anchors.leftMargin: 43
+                                anchors.right: parent.right
+                                anchors.rightMargin: 12
+                                anchors.verticalCenter: parent.verticalCenter
+                                color: Theme.textPrimary
+                                font.pixelSize: 12
+                                selectionColor: Theme.accent
+                                onTextChanged: root.filterText = text
+                                Keys.onReturnPressed: {
+                                    if (root.pageKey === "search")
+                                        desktopBridge.search(text)
+                                }
+                            }
+                            Text {
+                                anchors.left: parent.left
+                                anchors.leftMargin: 43
+                                anchors.verticalCenter: parent.verticalCenter
+                                visible: filterInput.text.length === 0
+                                text: root.searchPlaceholder
+                                color: Theme.textMuted
+                                font.pixelSize: 12
+                            }
+                        }
+                    }
+
+                    ListView {
+                        id: recordsView
+                        objectName: "recordsView"
+                        y: 62
+                        width: parent.width
+                        height: parent.height - 62
+                        clip: true
+                        boundsBehavior: Flickable.StopAtBounds
+                        cacheBuffer: 320
+                        reuseItems: true
+                        model: root.records
+                        delegate: Rectangle {
+                            id: recordRow
+                            required property var modelData
+                            width: recordsView.width
+                            height: 64
+                            clip: true
+                            activeFocusOnTab: root.recordsInteractive
+                            color: recordMouse.pressed ? "#182e3e" : (recordMouse.containsMouse ? "#142735" : "transparent")
+                            border.width: activeFocus ? 1 : 0
+                            border.color: activeFocus ? Theme.borderHover : "transparent"
+                            Behavior on color { ColorAnimation { duration: Motion.hover } }
+                            Keys.onReturnPressed: root.recordActivated(String(recordRow.modelData.id || ""))
+                            Keys.onSpacePressed: root.recordActivated(String(recordRow.modelData.id || ""))
+
+                            Rectangle {
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.bottom: parent.bottom
+                                height: 1
+                                color: Theme.divider
+                            }
+                            Rectangle {
+                                x: 17
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 36
+                                height: 36
+                                radius: 8
+                                color: recordRow.modelData.tint || "#142b47"
+                                Image {
+                                    anchors.centerIn: parent
+                                    width: 21
+                                    height: 21
+                                    source: root.iconSource
+                                }
+                            }
+                            Text {
+                                objectName: "recordTitle"
+                                x: 65
+                                y: 12
+                                width: Math.max(80, parent.width - 302)
+                                text: String(recordRow.modelData.title || "Untitled record")
+                                color: Theme.textPrimary
+                                elide: Text.ElideRight
+                                font.pixelSize: 13
+                                font.weight: Font.Medium
+                                maximumLineCount: 1
+                                wrapMode: Text.NoWrap
+                            }
+                            Text {
+                                objectName: "recordDetail"
+                                x: 65
+                                y: 34
+                                width: Math.max(80, parent.width - 302)
+                                text: root.conciseRecordDetail(recordRow.modelData)
+                                color: Theme.textMuted
+                                elide: Text.ElideRight
+                                font.pixelSize: 10
+                                maximumLineCount: 1
+                                wrapMode: Text.NoWrap
+                            }
+                            Rectangle {
+                                anchors.right: parent.right
+                                anchors.rightMargin: root.recordsInteractive ? 48 : 18
+                                y: 9
+                                width: Math.min(174, Math.max(72, statusLabel.implicitWidth + 22))
+                                height: 24
+                                radius: 6
+                                color: recordRow.modelData.tint || "#142b47"
+                                border.color: recordRow.modelData.color || Theme.accent
+                                Text {
+                                    id: statusLabel
+                                    objectName: "recordTypeBadgeText"
+                                    anchors.fill: parent
+                                    anchors.leftMargin: 10
+                                    anchors.rightMargin: 10
+                                    text: String(recordRow.modelData.status || "Record")
+                                    color: recordRow.modelData.color || Theme.accent
+                                    font.pixelSize: 10
+                                    horizontalAlignment: Text.AlignHCenter
+                                    verticalAlignment: Text.AlignVCenter
+                                    elide: Text.ElideRight
+                                    maximumLineCount: 1
+                                }
+                            }
+                            Text {
+                                id: metaLabel
+                                objectName: "recordMeta"
+                                anchors.right: parent.right
+                                anchors.rightMargin: root.recordsInteractive ? 48 : 18
+                                y: 39
+                                width: 174
+                                text: root.pageKey === "evidence" && String(recordRow.modelData.meta || "") === "SHA-256"
+                                    ? "HASHED · SHA-256"
+                                    : String(recordRow.modelData.meta || "")
+                                color: Theme.textMuted
+                                font.pixelSize: 9
+                                elide: Text.ElideRight
+                                horizontalAlignment: Text.AlignRight
+                                maximumLineCount: 1
+                                wrapMode: Text.NoWrap
+                            }
+                            MouseArea {
+                                id: recordMouse
+                                anchors.fill: parent
+                                enabled: root.recordsInteractive
+                                hoverEnabled: true
+                                cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                onPressed: recordRow.forceActiveFocus()
+                                onClicked: root.recordActivated(String(recordRow.modelData.id || ""))
+                            }
+                            Text {
+                                id: optionsLabel
+                                anchors.right: parent.right
+                                anchors.rightMargin: 17
+                                anchors.verticalCenter: parent.verticalCenter
+                                visible: root.recordsInteractive
+                                activeFocusOnTab: visible
+                                text: "•••"
+                                color: activeFocus || optionsMouse.containsMouse ? Theme.textPrimary : Theme.textSecondary
+                                font.pixelSize: 11
+                                Keys.onReturnPressed: root.recordOptionsRequested(String(recordRow.modelData.id || ""), String(recordRow.modelData.title || ""))
+                                Keys.onSpacePressed: root.recordOptionsRequested(String(recordRow.modelData.id || ""), String(recordRow.modelData.title || ""))
+                                MouseArea {
+                                    id: optionsMouse
+                                    anchors.fill: parent
+                                    anchors.margins: -10
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onPressed: optionsLabel.forceActiveFocus()
+                                    onClicked: function(mouse) {
+                                        mouse.accepted = true
+                                        root.recordOptionsRequested(
+                                            String(recordRow.modelData.id || ""),
+                                            String(recordRow.modelData.title || "")
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+                        onContentYChanged: {
+                            if (!root.updatingRecords && root.hasMore && !root.loading && contentY + height >= contentHeight - 180)
+                                desktopBridge.loadMore(root.pageKey)
+                        }
+                    }
+
+                    Item {
+                        y: 62
+                        width: parent.width
+                        height: root.records.length === 0 ? parent.height - y : 0
+                        visible: root.records.length === 0
+                        EmptyState {
+                            anchors.fill: parent
+                            anchors.bottomMargin: 18
+                            iconSource: root.iconSource
+                            title: root.resolvedEmptyTitle()
+                            description: root.resolvedEmptyDescription()
+                        }
+                    }
+                }
+            }
+
+            Panel {
+                Layout.fillHeight: true
+                Layout.preferredWidth: 400
+                Layout.maximumWidth: 440
+                title: root.contextTitle
+                iconSource: "../../assets/icons/chart.svg"
+
+                Column {
+                    anchors.fill: parent
+                    Repeater {
+                        model: root.contextItems
+                        delegate: Rectangle {
+                            id: contextRow
+                            required property var modelData
+                            width: parent.width
+                            height: 62
+                            color: "transparent"
+                            Rectangle {
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.bottom: parent.bottom
+                                height: 1
+                                color: Theme.divider
+                            }
+                            Rectangle {
+                                x: 17
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 8
+                                height: 8
+                                radius: 4
+                                color: contextRow.modelData.color
+                            }
+                            Text {
+                                x: 39
+                                y: 13
+                                width: parent.width - 58
+                                text: contextRow.modelData.title
+                                color: Theme.textPrimary
+                                elide: Text.ElideRight
+                                font.pixelSize: 12
+                                font.weight: Font.Medium
+                            }
+                            Text {
+                                x: 39
+                                y: 35
+                                width: parent.width - 58
+                                text: contextRow.modelData.detail
+                                color: Theme.textMuted
+                                elide: Text.ElideRight
+                                font.pixelSize: 10
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+====================================================================================================
+FILE: app/interface/desktop/qml/components/Panel.qml
+====================================================================================================
+import QtQuick
+import "../theme"
+
+Rectangle {
+    id: root
+    property string title: "Panel"
+    property string subtitle: ""
+    property url iconSource
+    property string actionText: ""
+    property int headerHeight: Spacing.panelHeader
+    property bool actionButton: false
+    property bool showMenu: false
+    property bool headerDivider: true
+    default property alias contentData: content.data
+
+    radius: Spacing.radius
+    color: Theme.surface
+    border.color: Theme.border
+    border.width: 1
+
+    Item {
+        id: header
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        height: root.headerHeight
+
+        Image {
+            anchors.left: parent.left
+            anchors.leftMargin: 18
+            anchors.top: parent.top
+            anchors.topMargin: root.subtitle === "" ? 15 : 18
+            width: 24
+            height: 24
+            source: root.iconSource
+            visible: root.iconSource.toString().length > 0
+        }
+        Text {
+            anchors.left: parent.left
+            anchors.leftMargin: root.iconSource.toString().length > 0 ? 54 : 18
+            anchors.top: parent.top
+            anchors.topMargin: root.subtitle === "" ? 16 : 17
+            text: root.title
+            color: Theme.textPrimary
+            font.pixelSize: Typography.sectionTitle
+            font.weight: Font.DemiBold
+        }
+        Text {
+            anchors.left: parent.left
+            anchors.leftMargin: 54
+            anchors.top: parent.top
+            anchors.topMargin: 44
+            text: root.subtitle
+            color: Theme.textMuted
+            font.pixelSize: Typography.secondary
+            visible: root.subtitle !== ""
+        }
+
+        Rectangle {
+            id: actionSurface
+            anchors.right: parent.right
+            anchors.rightMargin: root.showMenu ? 52 : 16
+            anchors.top: parent.top
+            anchors.topMargin: root.subtitle === "" ? 12 : 17
+            width: root.actionButton ? 174 : actionLabel.implicitWidth
+            height: root.actionButton ? 38 : 28
+            radius: 7
+            color: root.actionButton ? (actionMouse.containsMouse ? Theme.surfaceHover : "#132635") : "transparent"
+            border.color: root.actionButton ? Theme.border : "transparent"
+            visible: root.actionText !== ""
+            Behavior on color { ColorAnimation { duration: Motion.hover } }
+
+            Text {
+                id: actionLabel
+                anchors.centerIn: parent
+                text: root.actionText
+                color: actionMouse.containsMouse ? Theme.textPrimary : Theme.textSecondary
+                font.pixelSize: 11
+            }
+            MouseArea {
+                id: actionMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+            }
+        }
+
+        Text {
+            anchors.right: parent.right
+            anchors.rightMargin: 17
+            anchors.verticalCenter: actionSurface.verticalCenter
+            text: "•••"
+            color: Theme.textSecondary
+            font.pixelSize: 14
+            visible: root.showMenu
+        }
+
+        Rectangle {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            height: 1
+            color: Theme.divider
+            visible: root.headerDivider
+        }
+    }
+
+    Item {
+        id: content
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: header.bottom
+        anchors.bottom: parent.bottom
+    }
+}
+
+
+====================================================================================================
+FILE: app/interface/desktop/qml/components/StatCard.qml
+====================================================================================================
+import QtQuick
+import "../theme"
+
+Rectangle {
+    id: root
+    property string title: "Active Cases"
+    property string value: "3"
+    property string subtext: "1 new case this week"
+    property string delta: "50%"
+    property url iconSource
+    property color accentColor: Theme.accent
+    property bool negative: false
+    property string chartType: "line"
+
+    implicitHeight: 122
+    radius: Spacing.radius
+    color: mouse.containsMouse ? Theme.surfaceHover : Theme.surface
+    border.color: mouse.containsMouse ? Theme.borderHover : Theme.border
+    border.width: 1
+
+    transform: Translate {
+        y: mouse.containsMouse ? -2 : 0
+        Behavior on y { NumberAnimation { duration: Motion.hover; easing.type: Easing.OutCubic } }
+    }
+    Behavior on color { ColorAnimation { duration: Motion.hover } }
+    Behavior on border.color { ColorAnimation { duration: Motion.hover } }
+
+    Rectangle {
+        id: iconBox
+        x: 17
+        y: 17
+        width: 58
+        height: 58
+        radius: 9
+        color: Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.14)
+        Image {
+            anchors.centerIn: parent
+            width: 31
+            height: 31
+            source: root.iconSource
+        }
+    }
+
+    Text {
+        x: 84
+        y: 21
+        text: root.title
+        color: Theme.textSecondary
+        font.pixelSize: 14
+    }
+
+    Row {
+        x: 84
+        y: 44
+        spacing: 14
+        Text {
+            text: root.value
+            color: Theme.textPrimary
+            font.pixelSize: Typography.cardValue
+            font.weight: Font.DemiBold
+        }
+        Text {
+            anchors.baseline: parent.children[0].baseline
+            text: "↑ " + root.delta
+            visible: root.delta.length > 0
+            color: root.negative ? Theme.danger : Theme.success
+            font.pixelSize: 13
+            font.weight: Font.DemiBold
+        }
+    }
+
+    Text {
+        x: 17
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: 12
+        text: root.subtext
+        color: Theme.textMuted
+        font.pixelSize: 11
+    }
+
+    Canvas {
+        visible: root.chartType !== "none"
+        anchors.right: parent.right
+        anchors.rightMargin: 17
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: 22
+        width: 86
+        height: 42
+
+        onPaint: {
+            var ctx = getContext("2d")
+            ctx.clearRect(0, 0, width, height)
+            ctx.strokeStyle = root.accentColor
+            ctx.fillStyle = Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.32)
+            ctx.lineWidth = 1.6
+            if (root.chartType === "bars") {
+                var values = [10, 17, 25, 34, 28]
+                for (var i = 0; i < values.length; ++i)
+                    ctx.fillRect(8 + i * 15, height - values[i], 7, values[i])
+            } else {
+                var ys = [33, 29, 23, 25, 16, 11, 15, 9]
+                ctx.beginPath()
+                for (var j = 0; j < ys.length; ++j) {
+                    var px = 3 + j * (width - 6) / (ys.length - 1)
+                    if (j === 0) ctx.moveTo(px, ys[j]); else ctx.lineTo(px, ys[j])
+                }
+                ctx.stroke()
+            }
+        }
+    }
+
+    MouseArea {
+        id: mouse
+        anchors.fill: parent
+        hoverEnabled: true
+        cursorShape: Qt.ArrowCursor
+    }
+}
+
+
+====================================================================================================
+FILE: app/interface/desktop/qml/components/StatusBadge.qml
+====================================================================================================
+FILE NOT FOUND
+
+
+====================================================================================================
+FILE: app/interface/desktop/qml/theme/Theme.qml
+====================================================================================================
+pragma Singleton
+import QtQuick
+
+QtObject {
+    readonly property color background: "#08141f"
+    readonly property color sidebar: "#0a1823"
+    readonly property color chrome: "#101e2b"
+    readonly property color surface: "#10202d"
+    readonly property color surfaceRaised: "#132533"
+    readonly property color surfaceHover: "#152938"
+    readonly property color border: "#263b4d"
+    readonly property color borderHover: "#35536b"
+    readonly property color divider: "#203444"
+    readonly property color textPrimary: "#f4f7fb"
+    readonly property color textSecondary: "#9aafc2"
+    readonly property color textMuted: "#72899e"
+    readonly property color accent: "#4385fa"
+    readonly property color accentSoft: "#1d3551"
+    readonly property color cyan: "#3dc4ee"
+    readonly property color success: "#45d898"
+    readonly property color warning: "#f4b638"
+    readonly property color danger: "#f25d68"
+    readonly property color purple: "#9565ef"
+}

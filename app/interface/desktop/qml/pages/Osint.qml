@@ -11,10 +11,13 @@ Item {
     property string activeTab: "findings"
     property var runData: desktopBridge.osintRun || ({})
     property var summary: runData.summary || ({})
+    property var progress: runData.progress || ({})
     property bool hasRun: Boolean(runData.hasRun)
+    property bool running: String(runData.status || "") === "running"
 
     function runStatusLabel() {
         const status = String(root.runData.status || "")
+        if (status === "running") return "Running"
         if (status === "completed") return "Completed"
         if (status === "completed_with_errors") return "Completed with warnings"
         if (status === "failed") return "Failed"
@@ -23,6 +26,7 @@ Item {
 
     function runStatusShort() {
         const status = String(root.runData.status || "")
+        if (status === "running") return "Running"
         if (status === "completed") return "Complete"
         if (status === "completed_with_errors") return "Warnings"
         if (status === "failed") return "Failed"
@@ -31,6 +35,7 @@ Item {
 
     function runStatusColor() {
         const status = String(root.runData.status || "")
+        if (status === "running") return Theme.accent
         if (status === "completed") return Theme.success
         if (status === "completed_with_errors") return Theme.warning
         if (status === "failed") return Theme.danger
@@ -39,10 +44,47 @@ Item {
 
     function runStatusTint() {
         const status = String(root.runData.status || "")
+        if (status === "running") return Theme.accentSoft
         if (status === "completed") return "#12362f"
         if (status === "completed_with_errors") return "#3b3015"
         if (status === "failed") return "#3a1e26"
         return "#1a2b37"
+    }
+
+    function stopReasonLabel() {
+        const reason = String(root.runData.stopReason || root.progress.stopReason || "")
+        if (reason === "queue_exhausted") return "Queue exhausted"
+        if (reason === "max_depth_reached") return "Depth limit reached"
+        if (reason === "new_entity_budget_reached") return "Entity budget reached"
+        if (reason === "max_targets_reached") return "Target limit reached"
+        if (reason === "time_budget_reached") return "Time budget reached"
+        return reason.length > 0 ? reason.replace(/_/g, " ") : "—"
+    }
+
+    function runningDescription() {
+        const target = String(root.progress.targetValue || root.runData.targetValue || "")
+        const typeName = String(root.progress.targetType || root.runData.targetType || "target")
+            .replace(/_/g, " ").toUpperCase()
+        const depthValue = root.progress.depth
+        const depthText = depthValue === undefined || depthValue === null
+            ? ""
+            : " · depth " + Number(depthValue)
+        const processed = Number(root.summary.targetsProcessed || 0)
+        const queued = Number(root.summary.queuedTargets || 0)
+        return "Recursive enrichment: " + typeName + " · " + target + depthText
+                + ". " + processed + " target(s) processed, " + queued + " queued."
+    }
+
+    function currentPivotLabel() {
+        const target = String(root.progress.targetValue || "")
+        if (target.length === 0) return "—"
+        const typeName = String(root.progress.targetType || "target")
+            .replace(/_/g, " ").toUpperCase()
+        const depthValue = root.progress.depth
+        const depthText = depthValue === undefined || depthValue === null
+            ? ""
+            : " · D" + Number(depthValue)
+        return typeName + " · " + target + depthText
     }
 
     function tabCount(tabName) {
@@ -88,7 +130,12 @@ Item {
             const error = String(row.error || "").trim()
             if (error.length > 0) return error
             const goal = String(row.goal || "").replace(/_/g, " ")
-            return goal.length > 0 ? goal : "OSINT connector"
+            const target = String(row.targetValue || "")
+            const depth = Number(row.depth || 0)
+            const prefix = goal.length > 0 ? goal : "OSINT connector"
+            return target.length > 0
+                ? (prefix + " · " + target + " · depth " + depth)
+                : prefix
         }
         return String(row.detail || "")
     }
@@ -105,7 +152,13 @@ Item {
                     + "  ·  L " + Number(row.leadCount || 0)
                     + "  ·  " + String(row.meta || "")
         }
-        return String(row.meta || "")
+        const base = String(row.meta || "")
+        if (root.activeTab === "findings" || root.activeTab === "leads") {
+            const target = String(row.targetValue || "")
+            if (target.length > 0)
+                return base + " · D" + Number(row.depth || 0) + " · " + target
+        }
+        return base
     }
 
     function detailValue(key, fallback) {
@@ -173,13 +226,30 @@ Item {
                 anchors.bottom: parent.bottom
                 width: 154
                 height: 38
-                text: "+   Run Collection"
+                text: root.running ? "Running…" : "+   Run Collection"
                 primary: true
-                enabled: desktopBridge.hasCurrentCase
+                enabled: desktopBridge.hasCurrentCase && !desktopBridge.osintBusy
                 ToolTip.visible: hovered && !enabled
                 ToolTip.delay: 450
-                ToolTip.text: "Select an investigation before running OSINT collection."
+                ToolTip.text: desktopBridge.osintBusy
+                    ? "An OSINT collection is already running."
+                    : "Select an investigation before running OSINT collection."
                 onClicked: collectionDialog.open()
+            }
+
+            AppButton {
+                objectName: "registryIntelligenceButton"
+                anchors.right: runButton.left
+                anchors.rightMargin: 10
+                anchors.bottom: parent.bottom
+                width: 174
+                height: 38
+                text: "Registry Intelligence"
+                enabled: !desktopBridge.registryBusy
+                ToolTip.visible: hovered
+                ToolTip.delay: 450
+                ToolTip.text: "Search official business and court registries."
+                onClicked: desktopBridge.openRegistry()
             }
         }
 
@@ -218,10 +288,13 @@ Item {
                 title: "Findings"
                 value: root.hasRun ? String(root.summary.findings || 0) : "0"
                 delta: ""
-                subtext: root.hasRun
-                    ? (String(root.summary.evidenceCreated || 0) + " new evidence · "
-                       + String(root.summary.entitiesCreated || 0) + " new entities")
-                    : "Confirmed/extracted results from last run"
+                subtext: root.running
+                    ? (String(root.summary.targetsProcessed || 0) + " targets · "
+                       + String(root.summary.queuedTargets || 0) + " queued")
+                    : root.hasRun
+                        ? (String(root.summary.evidenceCreated || 0) + " new evidence · "
+                           + String(root.summary.entitiesCreated || 0) + " new entities")
+                        : "Confirmed/extracted results from last run"
                 iconSource: "../../assets/icons/document_blue.svg"
                 accentColor: Theme.success
                 chartType: "none"
@@ -399,6 +472,7 @@ Item {
                             cacheBuffer: 320
                             reuseItems: true
                             model: root.itemsForTab()
+                            visible: !root.running
 
                             delegate: Rectangle {
                                 id: resultRow
@@ -501,7 +575,19 @@ Item {
                             anchors.top: tabsBar.bottom
                             anchors.bottom: parent.bottom
                             anchors.margins: 18
-                            visible: resultsView.count === 0
+                            visible: root.running
+                            iconSource: "../../assets/icons/globe_blue.svg"
+                            title: "Collection in progress"
+                            description: root.runningDescription()
+                        }
+
+                        EmptyState {
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.top: tabsBar.bottom
+                            anchors.bottom: parent.bottom
+                            anchors.margins: 18
+                            visible: !root.running && resultsView.count === 0
                             iconSource: "../../assets/icons/document_blue.svg"
                             title: root.emptyTitleForTab()
                             description: root.emptyDescriptionForTab()
@@ -550,10 +636,16 @@ Item {
                             Repeater {
                                 model: [
                                     { label: "INVESTIGATION", value: root.detailValue("caseTitle", "Unknown investigation") },
-                                    { label: "TARGET", value: root.detailValue("targetValue", "—") },
-                                    { label: "TYPE", value: root.detailValue("targetType", "—").replace(/_/g, " ").toUpperCase() },
+                                    { label: "ROOT TARGET", value: root.detailValue("targetValue", "—") },
+                                    { label: "ROOT TYPE", value: root.detailValue("targetType", "—").replace(/_/g, " ").toUpperCase() },
                                     { label: "STARTED", value: root.detailValue("startedLabel", "—") },
                                     { label: "DURATION", value: root.detailValue("durationText", "—") },
+                                    { label: "TARGETS PROCESSED", value: String(root.summary.targetsProcessed || 0) },
+                                    { label: "QUEUED TARGETS", value: String(root.summary.queuedTargets || 0) },
+                                    { label: "PIVOTS DISCOVERED", value: String(root.summary.candidatesDiscovered || 0) },
+                                    { label: "PIVOTS QUEUED", value: String(root.summary.candidatesEnqueued || 0) },
+                                    { label: "CURRENT PIVOT", value: root.currentPivotLabel() },
+                                    { label: "STOP REASON", value: root.running ? "Running" : root.stopReasonLabel() },
                                     { label: "CONNECTORS", value: String(root.summary.connectors || 0) },
                                     { label: "SUCCEEDED / PARTIAL", value: String(root.summary.successful || 0) + " / " + String(root.summary.partial || 0) },
                                     { label: "PERSISTED FINDINGS", value: String(root.summary.persistedFindings || 0) },
@@ -614,11 +706,15 @@ Item {
         objectName: "runCollectionDialog"
         width: 470
         title: "Run OSINT collection"
-        description: "Collect external intelligence and persist supported findings into the selected investigation."
+        description: "Run bounded recursive OSINT enrichment and persist supported findings into the selected investigation."
         primaryText: "Run Collection"
         bodyHeight: 232
 
         onAccepted: {
+            if (desktopBridge.osintBusy) {
+                return
+            }
+
             if (!desktopBridge.hasCurrentCase) {
                 open()
                 return
@@ -688,7 +784,7 @@ Item {
                 color: Theme.textMuted
                 font.pixelSize: 10
                 text: desktopBridge.hasCurrentCase
-                    ? ("Results will be stored in “" + desktopBridge.currentCaseTitle + "”.")
+                    ? ("Results and safe persisted pivots will be stored in “" + desktopBridge.currentCaseTitle + "”.")
                     : "Select an investigation before running collection."
             }
 

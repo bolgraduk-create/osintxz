@@ -1,17 +1,22 @@
 import QtQuick
+import "../components"
+import "../theme"
 
 DataWorkspace {
+    id: root
     pageKey: "reports"
     eyebrow: "INTELLIGENCE REPORTING"
     title: "Reports"
-    subtitle: desktopBridge.currentCaseTitle ? "Reports in " + desktopBridge.currentCaseTitle + "." : "Review reports stored across investigations."
-    iconSource: "../../assets/icons/chart.svg"
+    subtitle: desktopBridge.hasCurrentCase
+        ? "Reports in " + desktopBridge.currentCaseTitle + "."
+        : "Stored investigation reports."
+    iconSource: "../../assets/icons/document_blue.svg"
     primaryAction: "New Report"
     searchPlaceholder: "Filter reports..."
     sectionTitle: "Report Library"
     contextTitle: "Report Scope"
-    emptyTitle: desktopBridge.hasCurrentCase ? "No reports for this investigation yet" : "No reports yet"
-    emptyDescription: desktopBridge.hasCurrentCase
-        ? "Reports created through the existing investigation workflow will appear here."
-        : "Reports from stored investigations will appear here."
+    emptyTitle: "No reports yet"
+    emptyDescription: "Generated investigation reports will appear here."
+    recordsInteractive: true
+    onRecordActivated: function(recordId) { desktopBridge.openReport(recordId) }
 }

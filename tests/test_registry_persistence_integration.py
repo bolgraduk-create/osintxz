@@ -13,7 +13,7 @@ from app.models.evidence import Evidence
 from app.models.evidence_entity import EvidenceEntity
 from app.models.source import Source
 from app.registry_intelligence.contracts import (
-    RegistryDomain, RegistryQuery, RegistryQueryKind, RegistryRecord,
+    RegistryDomain, RegistryEntityKind, RegistryQuery, RegistryQueryKind, RegistryRecord,
     RegistryProviderResult, RegistryResultStatus, RegistrySearchResult,
 )
 from app.services.entity_service import EntityService
@@ -106,9 +106,59 @@ def test_changed_record_keeps_old_evidence_and_same_organization(runtime):
 
 
 def test_court_record_does_not_infer_person_or_organization(runtime):
-    _, case_id, service = runtime
-    result = service.persist(case_id=case_id, result=search(record(domain=RegistryDomain.COURT)))
-    assert result.evidences_created == 1 and result.entities_created == 0
+    session, case_id, service = runtime
+    court_record = record(
+        provider="ua_edrsr",
+        domain=RegistryDomain.COURT,
+        entity_kind=RegistryEntityKind.COURT_DECISION,
+        record_id="decision:123456789",
+        display_name="Court decision · case 761/1234/26",
+        country="UA",
+        jurisdiction="UA",
+        registration_id=None,
+        lei=None,
+        legal_form=None,
+        legal_address=None,
+        headquarters_address=None,
+        source_url="https://reyestr.court.gov.ua/Review/123456789",
+        identifiers={
+            "EDRSR_DOC_ID": "123456789",
+            "CASE_NUMBER": "761/1234/26",
+        },
+        metadata={
+            "dataset_year": 2026,
+            "case_number": "761/1234/26",
+            "legal_outcome": "unknown",
+            "legal_outcome_inference_prohibited": True,
+            "person_identity_inference_prohibited": True,
+        },
+        sensitive_legal_data=True,
+    )
+    court_search = RegistrySearchResult(
+        query=RegistryQuery(
+            RegistryDomain.COURT,
+            RegistryQueryKind.CASE_NUMBER,
+            "761/1234/26",
+            country="UA",
+            sources=("ua_edrsr",),
+            entity_kind=RegistryEntityKind.COURT_CASE,
+        ),
+        records=[court_record],
+        provider_results=[RegistryProviderResult(
+            provider="ua_edrsr",
+            status=RegistryResultStatus.SUCCESS,
+            records=[court_record],
+        )],
+    )
+    result = service.persist(case_id=case_id, result=court_search)
+
+    assert result.errors == []
+    assert result.evidences_created == 1
+    assert result.entities_created == 0
+    assert result.links_created == 0
+    assert result.records[0].resolution_method == "no_identity_resolution"
+    assert session.scalars(select(Entity)).all() == []
+    assert session.scalars(select(EvidenceEntity)).all() == []
 
 
 def test_candidate_or_failed_provider_is_not_persisted(runtime):

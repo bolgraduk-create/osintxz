@@ -16,7 +16,11 @@ from uuid import UUID
 from app.models.entity import Entity, EntityType
 from app.models.evidence import Evidence, EvidenceType
 from app.models.source import Source, SourceType
-from app.registry_intelligence.contracts import RegistryDomain, RegistrySearchResult
+from app.registry_intelligence.contracts import (
+    RegistryDomain,
+    RegistryEntityKind,
+    RegistrySearchResult,
+)
 
 
 def _json(value) -> str:
@@ -25,6 +29,22 @@ def _json(value) -> str:
 
 def _digest(value) -> str:
     return hashlib.sha256(_json(value).encode("utf-8")).hexdigest()
+
+
+def _registry_snapshot_payload(record) -> dict:
+    """Return the stable content identity for one registry record.
+
+    ``retrieved_at`` describes the observation event, not the registry record
+    content. Including it in the evidence snapshot digest would create a new
+    Evidence row every time the same unchanged record is fetched.
+
+    All substantive registry fields (including provenance, identifiers,
+    source type, trust and provider metadata) remain part of the digest so a
+    real upstream record change still creates a new immutable snapshot.
+    """
+    payload = asdict(record)
+    payload.pop("retrieved_at", None)
+    return payload
 
 
 @dataclass(slots=True)
@@ -62,6 +82,8 @@ class RegistryPersistenceService:
                    if s.source_type is SourceType.API and not s.is_deleted}
         organizations = [e for e in self.entity_service.repository.get_case_entities_by_type(
             case_id, EntityType.ORGANIZATION) if not e.is_deleted]
+        persons = [e for e in self.entity_service.repository.get_case_entities_by_type(
+            case_id, EntityType.PERSON) if not e.is_deleted]
         seen = set()
         # Admit only records returned by usable provider results. Aggregated candidates
         # alone cannot be injected into persistence as verified registry records.
@@ -80,8 +102,24 @@ class RegistryPersistenceService:
                 if not all(math.isfinite(float(v)) and 0 <= float(v) <= 1
                            for v in (record.confidence, record.reliability)):
                     raise ValueError("Registry confidence/reliability must be within 0..1.")
+                if record.domain is RegistryDomain.COURT:
+                    if record.entity_kind not in {
+                        RegistryEntityKind.COURT_CASE,
+                        RegistryEntityKind.COURT_DECISION,
+                    }:
+                        raise ValueError("Court registry records must use a court entity kind.")
+                    if not record.sensitive_legal_data:
+                        raise ValueError("Court registry records must be marked as sensitive legal data.")
+                    if record.metadata.get("person_identity_inference_prohibited") is not True:
+                        raise ValueError(
+                            "Court registry record is missing the person-identity inference guardrail."
+                        )
+                    if record.metadata.get("legal_outcome_inference_prohibited") is not True:
+                        raise ValueError(
+                            "Court registry record is missing the legal-outcome inference guardrail."
+                        )
                 data = asdict(record)
-                snapshot_key = _digest(data)
+                snapshot_key = _digest(_registry_snapshot_payload(record))
                 lei = (record.lei or "").strip().upper()
                 if lei and not re.fullmatch(r"[A-Z0-9]{18}[0-9]{2}", lei):
                     raise ValueError("Malformed registry LEI.")
@@ -104,60 +142,106 @@ class RegistryPersistenceService:
             evidence = next((e for e in self.evidence_service.repository.get_by_source(source.id)
                              if not e.is_deleted and (e.description or "").startswith(evidence_key + "\n")), None)
             if evidence is None:
+                evidence_metadata = {
+                    "workflow": "registry_intelligence", "provenance_version": 1,
+                    "provider": provider, "record": data,
+                    "retrieved_at": record.retrieved_at or datetime.now(timezone.utc).isoformat(),
+                    "raw_reference": record.raw_reference or record.record_id,
+                    "source_type": record.source_type.value,
+                    "trust_score": record.trust_score,
+                    "sensitive_legal_data": record.sensitive_legal_data,
+                    "query": asdict(result.query), "snapshot_key": snapshot_key,
+                    "verification_method": "public_registry_record",
+                    "ownership_inferred": False,
+                }
+                if record.domain is RegistryDomain.COURT:
+                    evidence_metadata["legal_safety"] = {
+                        "legal_outcome": record.metadata.get("legal_outcome", "unknown"),
+                        "legal_outcome_inference_prohibited": True,
+                        "person_identity_inference_prohibited": True,
+                        "guilt_or_conviction_inference_prohibited": True,
+                        "identity_resolution": "not_attempted",
+                    }
                 evidence = self.evidence_service.create_evidence(
                     case_id=case_id, source_id=source.id, evidence_type=EvidenceType.METADATA,
                     title=record.display_name[:255], value=(record.source_url or record.record_id)[:1024],
                     description=evidence_key + "\n" + "\n".join(filter(None, [
-                        record.display_name, record.lei, record.registration_id,
+                        record.display_name,
+                        record.identifiers.get("CASE_NUMBER"),
+                        record.identifiers.get("EDRSR_DOC_ID"),
+                        record.lei, record.registration_id,
                         record.legal_address, record.headquarters_address,
                     ])),
-                    metadata_json=_json({
-                        "workflow": "registry_intelligence", "provenance_version": 1,
-                        "provider": provider, "record": data,
-                        "retrieved_at": datetime.now(timezone.utc).isoformat(),
-                        "query": asdict(result.query), "snapshot_key": snapshot_key,
-                        "verification_method": "public_registry_record",
-                        "ownership_inferred": False,
-                    }),
+                    metadata_json=_json(evidence_metadata),
                 )
                 out.evidences_created += 1
 
             entities, method = [], None
-            if record.domain is RegistryDomain.BUSINESS:
+            if record.domain is RegistryDomain.COURT:
+                # A court record is evidence about a document/case, not proof that a
+                # named person is the same investigation Entity and not proof of guilt.
+                # Identity linking remains an explicit later analyst/resolution step.
+                method = "no_identity_resolution"
+            elif record.domain is RegistryDomain.BUSINESS:
                 record_key = _digest([provider, record.domain.value, record_id])
-                identity = "registry:lei:" + lei if lei else "registry:record:" + record_key
+                is_person_record = record.entity_kind is RegistryEntityKind.SOLE_TRADER
+                entity_type = EntityType.PERSON if is_person_record else EntityType.ORGANIZATION
+                pool = persons if is_person_record else organizations
+
                 # LEI is global; provider record IDs are namespaced. Names and
-                # unscoped registration IDs are never identity keys.
-                organization = None
-                for candidate in organizations:
+                # unscoped registration IDs are never cross-provider identity keys.
+                identity = (
+                    "registry:lei:" + lei
+                    if lei and not is_person_record
+                    else "registry:record:" + record_key
+                )
+                matched = None
+                for candidate in pool:
                     metadata = self._metadata(candidate)
                     known = metadata.get("registry_identity", {})
                     known_lei = known.get("lei")
-                    if lei and known_lei and lei != known_lei:
+                    if lei and not is_person_record and known_lei and lei != known_lei:
                         continue
-                    if (lei and known_lei == lei) or record_key in known.get("record_keys", []):
-                        organization = candidate
+                    if (
+                        (lei and not is_person_record and known_lei == lei)
+                        or record_key in known.get("record_keys", [])
+                    ):
+                        matched = candidate
                         break
-                method = "exact_lei" if lei else "exact_provider_record_id"
-                if organization is None:
-                    organization, created = self.entity_service.resolve_or_create_entity(
-                        case_id=case_id, entity_type=EntityType.ORGANIZATION,
-                        value=record.display_name[:512], normalized_value=identity,
-                        confidence=min(record.confidence, record.reliability),
-                        description="Organization observed in a public registry; no ownership inference.",
+
+                method = "exact_lei" if lei and not is_person_record else "exact_provider_record_id"
+                if matched is None:
+                    matched, created = self.entity_service.resolve_or_create_entity(
+                        case_id=case_id,
+                        entity_type=entity_type,
+                        value=record.display_name[:512],
+                        normalized_value=identity,
+                        confidence=min(record.confidence, record.reliability, record.trust_score),
+                        description=(
+                            "Sole trader observed in a public registry; identity confirmed by provider record, "
+                            "not by name alone."
+                            if is_person_record
+                            else "Organization observed in a public registry; no ownership inference."
+                        ),
                     )
                     out.entities_created += int(created)
-                    organizations.append(organization)
-                metadata = self._metadata(organization)
+                    pool.append(matched)
+
+                metadata = self._metadata(matched)
                 known = metadata.setdefault("registry_identity", {})
                 keys = known.setdefault("record_keys", [])
                 if record_key not in keys:
                     keys.append(record_key)
-                if lei:
+                if lei and not is_person_record:
                     known["lei"] = lei
+                if record.registration_id:
+                    registrations = known.setdefault("registration_ids", {})
+                    registrations[provider] = record.registration_id
                 metadata["resolution_method"] = method
-                self.entity_service.update_metadata(organization.id, _json(metadata))
-                entities.append(organization)
+                metadata["registry_entity_kind"] = record.entity_kind.value
+                self.entity_service.update_metadata(matched.id, _json(metadata))
+                entities.append(matched)
+
                 for address in dict.fromkeys(filter(None, [record.legal_address, record.headquarters_address])):
                     address_key = "registry:address:" + _digest([
                         (record.country or "").strip().upper(),
@@ -165,7 +249,7 @@ class RegistryPersistenceService:
                     ])
                     entity, created = self.entity_service.resolve_or_create_entity(
                         case_id=case_id, entity_type=EntityType.ADDRESS, value=address[:512],
-                        normalized_value=address_key, confidence=min(record.confidence, record.reliability),
+                        normalized_value=address_key, confidence=min(record.confidence, record.reliability, record.trust_score),
                     )
                     entities.append(entity)
                     out.entities_created += int(created)

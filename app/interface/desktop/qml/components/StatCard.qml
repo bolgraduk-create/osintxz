@@ -11,6 +11,8 @@ Rectangle {
     property color accentColor: Theme.accent
     property bool negative: false
     property string chartType: "line"
+    property bool clickable: false
+    signal clicked()
 
     implicitHeight: 122
     radius: Spacing.radius
@@ -113,6 +115,7 @@ Rectangle {
         id: mouse
         anchors.fill: parent
         hoverEnabled: true
-        cursorShape: Qt.ArrowCursor
+        cursorShape: root.clickable ? Qt.PointingHandCursor : Qt.ArrowCursor
+        onClicked: if (root.clickable) root.clicked()
     }
 }

@@ -22,8 +22,15 @@ from app.application.investigation_target_enrichment_service import (
 
 from app.application.registry_intelligence_service import RegistryIntelligenceService
 from app.application.registry_persistence_service import RegistryPersistenceService
+from app.core.config import settings
 from app.infrastructure.registries.gleif_client import GleifRegistryHttpClient
+from app.infrastructure.registries.registry_api_client import RegistryApiHttpClient
+from app.registry_intelligence.countries.ukraine import (
+    UA_EDR_PROVIDER_INFO,
+    UA_EDRSR_PROVIDER_INFO,
+)
 from app.registry_intelligence.providers.gleif import GleifRegistryProvider
+from app.registry_intelligence.providers.remote import RemoteRegistryProvider
 from app.registry_intelligence.registry import RegistryProviderRegistry
 
 from sqlalchemy.orm import Session
@@ -1356,6 +1363,38 @@ class ServiceContainer:
         self.registry_provider_registry.register(
             self.gleif_registry_provider
         )
+
+        # Large national datasets are never synchronized by end-user desktops.
+        # The desktop provider delegates to the central Registry Backend and
+        # receives only bounded normalized matches for the current query.
+        registry_token = (
+            settings.registry_api_token.get_secret_value()
+            if settings.registry_api_token is not None
+            else None
+        )
+        self.registry_api_client = RegistryApiHttpClient(
+            base_url=settings.registry_api_url,
+            token=registry_token,
+            default_timeout=settings.registry_api_timeout,
+        )
+        self.ua_edr_registry_provider = RemoteRegistryProvider(
+            info=UA_EDR_PROVIDER_INFO,
+            client=self.registry_api_client,
+        )
+        self.registry_provider_registry.register(
+            self.ua_edr_registry_provider
+        )
+
+        # Court-decision data follows the same remote-only boundary as EDR:
+        # the desktop never reads the multi-million-row mirror directly.
+        self.ua_edrsr_registry_provider = RemoteRegistryProvider(
+            info=UA_EDRSR_PROVIDER_INFO,
+            client=self.registry_api_client,
+        )
+        self.registry_provider_registry.register(
+            self.ua_edrsr_registry_provider
+        )
+
         self.registry_persistence_service = RegistryPersistenceService(
             source_service=self.source_service,
             evidence_service=self.evidence_service,
@@ -1969,7 +2008,14 @@ class ServiceContainer:
         self,
     ) -> None:
         """
-        Close database session.
+        Close external clients and database session.
         """
 
+        registry_client = getattr(self, "registry_api_client", None)
+        if registry_client is not None:
+            try:
+                registry_client.close()
+            except Exception:
+                pass
         self.session.close()
+

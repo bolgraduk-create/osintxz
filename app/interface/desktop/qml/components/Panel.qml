@@ -7,7 +7,7 @@ Rectangle {
     property string subtitle: ""
     property url iconSource
     property string actionText: ""
-    property int headerHeight: Spacing.panelHeader
+    property int headerHeight: root.subtitle === "" ? Spacing.panelHeader : Math.max(Spacing.panelHeader, 70)
     property bool actionButton: false
     property bool showMenu: false
     property bool headerDivider: true
@@ -38,22 +38,30 @@ Rectangle {
         Text {
             anchors.left: parent.left
             anchors.leftMargin: root.iconSource.toString().length > 0 ? 54 : 18
+            anchors.right: actionSurface.visible ? actionSurface.left : parent.right
+            anchors.rightMargin: actionSurface.visible ? 14 : 18
             anchors.top: parent.top
-            anchors.topMargin: root.subtitle === "" ? 16 : 17
+            anchors.topMargin: root.subtitle === "" ? 16 : 14
             text: root.title
             color: Theme.textPrimary
             font.pixelSize: Typography.sectionTitle
             font.weight: Font.DemiBold
+            elide: Text.ElideRight
+            maximumLineCount: 1
         }
         Text {
             anchors.left: parent.left
-            anchors.leftMargin: 54
+            anchors.leftMargin: root.iconSource.toString().length > 0 ? 54 : 18
+            anchors.right: parent.right
+            anchors.rightMargin: 18
             anchors.top: parent.top
-            anchors.topMargin: 44
+            anchors.topMargin: 40
             text: root.subtitle
             color: Theme.textMuted
             font.pixelSize: Typography.secondary
             visible: root.subtitle !== ""
+            elide: Text.ElideRight
+            maximumLineCount: 1
         }
 
         Rectangle {

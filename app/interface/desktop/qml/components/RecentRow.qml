@@ -8,6 +8,8 @@ Item {
     property string headline: "Finding"
     property string detail: "Detail"
     property string timeText: "2h ago"
+    property bool clickable: false
+    signal clicked()
 
     width: parent ? parent.width : 400
     height: 54
@@ -50,10 +52,27 @@ Item {
     }
     Text {
         anchors.right: parent.right
-        anchors.rightMargin: 16
+        anchors.rightMargin: root.clickable ? 31 : 16
         y: 19
         text: root.timeText
         color: Theme.textMuted
         font.pixelSize: 9
+    }
+    Text {
+        visible: root.clickable
+        anchors.right: parent.right
+        anchors.rightMargin: 14
+        anchors.verticalCenter: parent.verticalCenter
+        text: "›"
+        color: rowMouse.containsMouse ? Theme.accent : Theme.textMuted
+        font.pixelSize: 16
+    }
+    MouseArea {
+        id: rowMouse
+        anchors.fill: parent
+        enabled: root.clickable
+        hoverEnabled: true
+        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+        onClicked: root.clicked()
     }
 }

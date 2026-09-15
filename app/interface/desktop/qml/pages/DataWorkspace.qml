@@ -24,16 +24,20 @@ Item {
     property string emptyDescription: "Records will appear here when they are available."
     property string filteredEmptyTitle: "No matching records"
     property string filteredEmptyDescription: "Try a different search term or clear the current filter."
+    property var categoryItems: []
+    property string selectedCategory: "all"
     property bool actionEnabled: false
     property string actionReason: ""
     signal primaryActionRequested()
+    signal categoryRequested(string categoryKey)
     signal recordActivated(string recordId)
     signal recordOptionsRequested(string recordId, string recordTitle)
     property string filterText: ""
     property bool loading: false
     property bool hasMore: false
     property bool updatingRecords: false
-    property bool recordsInteractive: root.pageKey === "cases"
+    property bool recordsInteractive: root.pageKey === "cases" || root.pageKey === "entities" || root.pageKey === "reports"
+    property bool recordOptionsVisible: root.pageKey === "cases"
     property var liveData: ({ metrics: [], records: [], contextItems: [], emptyText: "No records available", actionEnabled: false, actionReason: "" })
 
     function conciseRecordDetail(record) {
@@ -164,9 +168,69 @@ Item {
             }
         }
 
+        Item {
+            Layout.fillWidth: true
+            Layout.preferredHeight: root.categoryItems.length > 0 ? 44 : 0
+            Layout.minimumHeight: Layout.preferredHeight
+            Layout.maximumHeight: Layout.preferredHeight
+            visible: root.categoryItems.length > 0
+            clip: true
+
+            Flickable {
+                anchors.fill: parent
+                contentWidth: categoryRow.width
+                contentHeight: height
+                boundsBehavior: Flickable.StopAtBounds
+                flickableDirection: Flickable.HorizontalFlick
+                clip: true
+
+                Row {
+                    id: categoryRow
+                    height: parent.height
+                    spacing: 8
+
+                    Repeater {
+                        model: root.categoryItems
+                        delegate: Rectangle {
+                            id: categoryChip
+                            required property var modelData
+                            property bool selected: String(categoryChip.modelData.key) === root.selectedCategory
+                            width: Math.max(82, chipText.implicitWidth + 28)
+                            height: 34
+                            anchors.verticalCenter: parent.verticalCenter
+                            radius: 8
+                            color: selected ? Theme.accentSoft : (chipMouse.containsMouse ? Theme.surfaceHover : Theme.surface)
+                            border.width: 1
+                            border.color: selected ? Theme.accent : Theme.border
+
+                            Text {
+                                id: chipText
+                                anchors.centerIn: parent
+                                text: String(categoryChip.modelData.label || categoryChip.modelData.key)
+                                    + (categoryChip.modelData.count === undefined ? "" : "  " + String(categoryChip.modelData.count))
+                                color: categoryChip.selected ? Theme.accent : Theme.textSecondary
+                                font.pixelSize: 10
+                                font.weight: categoryChip.selected ? Font.DemiBold : Font.Medium
+                            }
+
+                            MouseArea {
+                                id: chipMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.categoryRequested(String(categoryChip.modelData.key || "all"))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         RowLayout {
             Layout.fillWidth: true
             Layout.preferredHeight: 112
+            Layout.minimumHeight: 112
+            Layout.maximumHeight: 112
             spacing: Spacing.panelGap
 
             Repeater {
@@ -283,6 +347,21 @@ Item {
                                 height: 1
                                 color: Theme.divider
                             }
+                            CircularAvatar {
+                                id: personAvatar
+                                x: 17
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 36
+                                height: 36
+                                visible: root.pageKey === "entities"
+                                    && String(recordRow.modelData.entityType || "").toLowerCase() === "person"
+                                source: String(recordRow.modelData.avatarUrl || "")
+                                fallbackSource: "../../assets/icons/users_purple.svg"
+                                backgroundColor: recordRow.modelData.tint || "#2a2140"
+                                borderColor: recordRow.modelData.color || "#a98be9"
+                                borderWidth: 1
+                                inset: source.toString().length > 0 ? 1 : 0
+                            }
                             Rectangle {
                                 x: 17
                                 anchors.verticalCenter: parent.verticalCenter
@@ -290,6 +369,7 @@ Item {
                                 height: 36
                                 radius: 8
                                 color: recordRow.modelData.tint || "#142b47"
+                                visible: !personAvatar.visible
                                 Image {
                                     anchors.centerIn: parent
                                     width: 21
@@ -366,18 +446,30 @@ Item {
                             MouseArea {
                                 id: recordMouse
                                 anchors.fill: parent
-                                enabled: root.recordsInteractive
+                                enabled: root.recordsInteractive && Boolean(recordRow.modelData.interactive !== false)
                                 hoverEnabled: true
                                 cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                                 onPressed: recordRow.forceActiveFocus()
                                 onClicked: root.recordActivated(String(recordRow.modelData.id || ""))
                             }
                             Text {
+                                id: entityActionHint
+                                anchors.right: parent.right
+                                anchors.rightMargin: 18
+                                anchors.verticalCenter: parent.verticalCenter
+                                visible: root.pageKey === "entities" && Boolean(recordRow.modelData.interactive !== false)
+                                text: String(recordRow.modelData.url || "").length > 0 ? "↗" : "›"
+                                color: recordMouse.containsMouse ? Theme.accent : Theme.textSecondary
+                                font.pixelSize: 18
+                                font.weight: Font.Medium
+                            }
+
+                            Text {
                                 id: optionsLabel
                                 anchors.right: parent.right
                                 anchors.rightMargin: 17
                                 anchors.verticalCenter: parent.verticalCenter
-                                visible: root.recordsInteractive
+                                visible: root.recordOptionsVisible
                                 activeFocusOnTab: visible
                                 text: "•••"
                                 color: activeFocus || optionsMouse.containsMouse ? Theme.textPrimary : Theme.textSecondary

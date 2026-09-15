@@ -25,12 +25,17 @@ Rectangle {
             Image {
                 id: logo
                 anchors.left: parent.left
-                anchors.leftMargin: 6
+                anchors.leftMargin: 4
                 anchors.verticalCenter: parent.verticalCenter
-                anchors.verticalCenterOffset: -6
-                width: 54; height: 54
-                source: "../../assets/icons/logo_triangle.svg"
+                anchors.verticalCenterOffset: -5
+                width: 56; height: 60
+                source: "../../assets/icons/logo_shirt_mark.png"
                 fillMode: Image.PreserveAspectFit
+                smooth: true
+                mipmap: true
+                antialiasing: true
+                sourceSize.width: 512
+                sourceSize.height: 512
             }
 
             Column {

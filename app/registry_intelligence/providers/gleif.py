@@ -1,6 +1,6 @@
 import re
 import httpx
-from app.registry_intelligence.contracts import RegistryDomain, RegistryProviderInfo, RegistryProviderResult, RegistryQuery, RegistryQueryKind, RegistryRecord, RegistryResultStatus
+from app.registry_intelligence.contracts import RegistryAccessMode, RegistryDomain, RegistryEntityKind, RegistryProviderInfo, RegistryProviderResult, RegistryQuery, RegistryQueryKind, RegistryRecord, RegistryResultStatus, RegistrySourceType
 from app.registry_intelligence.provider import RegistryProvider
 
 class GleifRegistryProvider(RegistryProvider):
@@ -8,7 +8,7 @@ class GleifRegistryProvider(RegistryProvider):
 
     def __init__(self, *, client) -> None:
         self.client = client
-        self._info = RegistryProviderInfo(name="gleif", display_name="GLEIF Global LEI Index", domains=frozenset({RegistryDomain.BUSINESS}), query_kinds=frozenset({RegistryQueryKind.NAME, RegistryQueryKind.LEI, RegistryQueryKind.REGISTRATION_ID}), global_scope=True, public_data_only=True, requires_credentials=False, default_enabled=True, priority=10)
+        self._info = RegistryProviderInfo(name="gleif", display_name="GLEIF Global LEI Index", domains=frozenset({RegistryDomain.BUSINESS}), query_kinds=frozenset({RegistryQueryKind.NAME, RegistryQueryKind.LEI, RegistryQueryKind.REGISTRATION_ID}), global_scope=True, public_data_only=True, requires_credentials=False, default_enabled=True, priority=10, access_mode=RegistryAccessMode.API, source_type=RegistrySourceType.OFFICIAL_API, trust_score=0.97)
 
     @property
     def info(self) -> RegistryProviderInfo:
@@ -66,7 +66,7 @@ class GleifRegistryProvider(RegistryProvider):
         registration_id = str(entity.get("registeredAs") or "").strip() or None
         legal_form_data = entity.get("legalForm") if isinstance(entity.get("legalForm"), dict) else {}
         legal_form = str(legal_form_data.get("id") or legal_form_data.get("other") or "").strip() or None
-        return RegistryRecord(provider="gleif", domain=RegistryDomain.BUSINESS, record_id=lei, display_name=name, country=str(legal_address.get("country") or "").strip().upper() or None, jurisdiction=str(entity.get("jurisdiction") or "").strip() or None, status=str(entity.get("status") or registration.get("status") or "").strip() or None, registration_id=registration_id, lei=lei, legal_form=legal_form, legal_address=self._addr(legal_address), headquarters_address=self._addr(headquarters), source_url=f"https://api.gleif.org/api/v1/lei-records/{lei}", confidence=0.96, reliability=0.97, identifiers={"LEI": lei, **({"REGISTRATION_ID": registration_id} if registration_id else {})}, metadata={"registration_status": registration.get("status"), "corroboration_level": registration.get("corroborationLevel")})
+        return RegistryRecord(provider="gleif", domain=RegistryDomain.BUSINESS, record_id=lei, display_name=name, entity_kind=RegistryEntityKind.COMPANY, source_type=RegistrySourceType.OFFICIAL_API, trust_score=0.97, raw_reference=lei, country=str(legal_address.get("country") or "").strip().upper() or None, jurisdiction=str(entity.get("jurisdiction") or "").strip() or None, status=str(entity.get("status") or registration.get("status") or "").strip() or None, registration_id=registration_id, lei=lei, legal_form=legal_form, legal_address=self._addr(legal_address), headquarters_address=self._addr(headquarters), source_url=f"https://api.gleif.org/api/v1/lei-records/{lei}", confidence=0.96, reliability=0.97, identifiers={"LEI": lei, **({"REGISTRATION_ID": registration_id} if registration_id else {})}, metadata={"registration_status": registration.get("status"), "corroboration_level": registration.get("corroborationLevel")})
 
     @staticmethod
     def _addr(value) -> str | None:
