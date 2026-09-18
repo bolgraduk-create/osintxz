@@ -1,0 +1,33 @@
+{
+  "name": "OSINTXZ R13.12 Exposure Federation Core",
+  "baseline_commit": "b1426c026dbbf3715eca4951b7945f2f1096c146",
+  "database_migration": false,
+  "new_dependencies": false,
+  "new_files": [
+    "app/intelligence_sources/adapters/hibp_breach.py",
+    "app/intelligence_sources/adapters/intelligencex.py",
+    "app/intelligence_sources/adapters/tor_public.py",
+    "app/exposure_intelligence/__init__.py",
+    "app/exposure_intelligence/contracts.py",
+    "app/exposure_intelligence/service.py",
+    "app/exposure_intelligence/persistence.py",
+    "tests/test_r13_12_exposure_federation.py"
+  ],
+  "patched_files": [
+    "app/intelligence_sources/adapters/base.py",
+    "app/intelligence_sources/adapters/registry.py",
+    "app/intelligence_sources/adapters/service.py",
+    "app/intelligence_sources/builtin_sources.py",
+    "app/core/config.py",
+    "app/core/service_container.py",
+    ".env.example"
+  ],
+  "security_properties": {
+    "raw_secret_persistence": false,
+    "intelx_raw_content_fetch": false,
+    "intelx_preview_fetch": false,
+    "tor_auth_bypass": false,
+    "tor_direct_fallback": false,
+    "automatic_identity_inference_from_exposure": false
+  }
+}

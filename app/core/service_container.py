@@ -34,6 +34,36 @@ from app.intelligence_sources.adapters.canada_corporations import CanadaFederalC
 from app.intelligence_sources.adapters.charity_uk import UkCharityCommissionAdapter
 from app.intelligence_sources.adapters.france_enterprises import FranceEnterpriseSearchAdapter
 from app.intelligence_sources.adapters.poland_regon import PolandRegonAdapter
+from app.intelligence_sources.adapters.hibp_breach import HibpBreachAdapter
+from app.intelligence_sources.adapters.intelligencex import (
+    IntelligenceXMetadataAdapter,
+    IntelligenceXSearchClient,
+)
+from app.intelligence_sources.adapters.tor_public import TorPublicOnionAdapter
+from app.intelligence_sources.adapters.hibp_extended import (
+    HibpExtendedClient,
+    HibpPasteAdapter,
+    HibpVerifiedDomainAdapter,
+    HibpStealerLogEmailAdapter,
+    HibpStealerLogEmailDomainAdapter,
+    HibpStealerLogWebsiteDomainAdapter,
+)
+from app.intelligence_sources.adapters.github_secret_scanning import (
+    GitHubSecretScanningAdapter,
+    GitHubSecretScanningClient,
+)
+from app.darkweb_intelligence.ahmia import AhmiaDirectoryClient
+from app.darkweb_intelligence.discovery import DarkWebDiscoveryService
+from app.intelligence_sources.adapters.onion_discovery import TorOnionDiscoveryAdapter
+from app.intelligence_sources.adapters.wikidata_search import WikidataEntitySearchAdapter
+from app.intelligence_sources.adapters.orcid_public import OrcidPublicAdapter
+from app.intelligence_sources.adapters.nvd_cve import NvdCveAdapter
+from app.intelligence_sources.adapters.openfda import OpenFdaAdapter
+from app.intelligence_sources.adapters.fec import OpenFecAdapter
+from app.intelligence_sources.adapters.icij_offshore import IcijOffshoreLeaksAdapter
+from app.intelligence_sources.adapters.nppes_npi import NppesNpiAdapter
+from app.exposure_intelligence.service import ExposureFederationService
+from app.exposure_intelligence.persistence import ExposurePersistenceService
 from app.intelligence_sources.adapters.registry import RemoteSourceAdapterRegistry
 from app.intelligence_sources.adapters.ror import RorAdapter
 from app.intelligence_sources.adapters.service import RemoteSourceAdapterService
@@ -1418,6 +1448,25 @@ class ServiceContainer:
             data_sanitizer=IntelligenceDataSanitizer(),
         )
 
+        # R13.12 — metadata-only Intelligence X search client.
+        self.intelligencex_search_client = IntelligenceXSearchClient(
+            api_key=settings.intelligencex_api_key,
+            base_url=settings.intelligencex_api_url,
+        )
+        self.hibp_extended_client = HibpExtendedClient(
+            api_key=settings.haveibeenpwned_api_key,
+        )
+        self.github_secret_scanning_client = GitHubSecretScanningClient(
+            token=settings.github_secret_scanning_token,
+        )
+
+        # R13.14 — bounded public onion discovery + Ahmia safety metadata.
+        self.ahmia_directory_client = AhmiaDirectoryClient()
+        self.darkweb_discovery_service = DarkWebDiscoveryService(
+            page_service=self.darkweb_intelligence_service,
+            ahmia_client=self.ahmia_directory_client,
+        )
+
         # R13.9 — Remote Adapter Pack 1.
         self.remote_source_adapter_registry = RemoteSourceAdapterRegistry()
         self.remote_source_adapter_registry.register(NorwayBrregAdapter())
@@ -1452,8 +1501,67 @@ class ServiceContainer:
             PolandRegonAdapter(user_key=settings.poland_regon_api_key)
         )
 
+        # R13.12 — Exposure Federation adapters. They are explicit-selection
+        # adapters, so generic federation queries do not consume contract APIs
+        # or fetch onion pages unexpectedly.
+        self.remote_source_adapter_registry.register(
+            HibpBreachAdapter(service=self.breach_intelligence_service)
+        )
+        self.remote_source_adapter_registry.register(
+            IntelligenceXMetadataAdapter(client=self.intelligencex_search_client)
+        )
+        self.remote_source_adapter_registry.register(
+            TorPublicOnionAdapter(service=self.darkweb_intelligence_service)
+        )
+
+        # R13.13 — leak/paste and verified-scope exposure adapters.
+        self.remote_source_adapter_registry.register(
+            HibpPasteAdapter(client=self.hibp_extended_client)
+        )
+        self.remote_source_adapter_registry.register(
+            HibpVerifiedDomainAdapter(client=self.hibp_extended_client)
+        )
+        self.remote_source_adapter_registry.register(
+            HibpStealerLogEmailAdapter(client=self.hibp_extended_client)
+        )
+        self.remote_source_adapter_registry.register(
+            HibpStealerLogEmailDomainAdapter(client=self.hibp_extended_client)
+        )
+        self.remote_source_adapter_registry.register(
+            HibpStealerLogWebsiteDomainAdapter(client=self.hibp_extended_client)
+        )
+        self.remote_source_adapter_registry.register(
+            GitHubSecretScanningAdapter(client=self.github_secret_scanning_client)
+        )
+        self.remote_source_adapter_registry.register(
+            TorOnionDiscoveryAdapter(service=self.darkweb_discovery_service)
+        )
+
+        # R13.15 — Free Public Data Mega Pack 1.
+        self.remote_source_adapter_registry.register(WikidataEntitySearchAdapter())
+        self.remote_source_adapter_registry.register(OrcidPublicAdapter())
+        self.remote_source_adapter_registry.register(
+            NvdCveAdapter(api_key=settings.nvd_api_key)
+        )
+        self.remote_source_adapter_registry.register(
+            OpenFdaAdapter(api_key=settings.openfda_api_key)
+        )
+        self.remote_source_adapter_registry.register(
+            OpenFecAdapter(api_key=settings.fec_api_key)
+        )
+        self.remote_source_adapter_registry.register(IcijOffshoreLeaksAdapter())
+        self.remote_source_adapter_registry.register(NppesNpiAdapter())
+
         self.remote_source_adapter_service = RemoteSourceAdapterService(
             registry=self.remote_source_adapter_registry
+        )
+        self.exposure_intelligence_service = ExposureFederationService(
+            remote_service=self.remote_source_adapter_service
+        )
+        self.exposure_persistence_service = ExposurePersistenceService(
+            source_service=self.source_service,
+            evidence_service=self.evidence_service,
+            data_sanitizer=IntelligenceDataSanitizer(),
         )
 
         # M022 Registry Intelligence

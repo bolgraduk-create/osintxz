@@ -32,4 +32,5 @@ class RemoteSourceAdapterRegistry:
             for adapter in self.all()
             if adapter.supports(query)
             and (not requested or adapter.source_code in requested)
+            and (requested or adapter.automatic_enabled)
         )

@@ -31,6 +31,16 @@ class RemoteSourceAdapter(ABC):
     def configured(self) -> bool:
         return True
 
+    @property
+    def automatic_enabled(self) -> bool:
+        """Whether an adapter may run in an unscoped generic federation query.
+
+        Contract, paid, privacy-sensitive, or side-effect-prone adapters can
+        return False and still be executed when explicitly named in
+        RemoteSourceQuery.sources.
+        """
+        return True
+
     def supports(self, query: RemoteSourceQuery) -> bool:
         if query.capability not in self.capabilities:
             return False

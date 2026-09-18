@@ -21,6 +21,7 @@ class RemoteSourceQuery:
     limit: int = 20
     timeout: int = 30
     sources: tuple[str, ...] = ()
+    verified_scope: bool = False
 
     def __post_init__(self) -> None:
         value = self.value.strip()

@@ -1,0 +1,17 @@
+{
+  "stage": "R13.15",
+  "name": "Free Public Data Mega Pack 1",
+  "baseline": "R13.14",
+  "database_migration": false,
+  "new_adapters": [
+    "wikidata_search",
+    "orcid_public",
+    "nvd_cve_api",
+    "openfda",
+    "us_fec",
+    "icij_offshore_leaks",
+    "us_nppes_npi"
+  ],
+  "new_test_file": "tests/test_r13_15_free_public_data_pack.py",
+  "new_tests": 14
+}

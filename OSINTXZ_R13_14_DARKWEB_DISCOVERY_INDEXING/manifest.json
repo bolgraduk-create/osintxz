@@ -1,0 +1,22 @@
+{
+  "stage": "R13.14",
+  "name": "Dark Web Discovery & Indexing",
+  "requires": "R13.13 successful baseline",
+  "database_migration": false,
+  "new_files": [
+    "app/darkweb_intelligence/discovery_contracts.py",
+    "app/darkweb_intelligence/ahmia.py",
+    "app/darkweb_intelligence/discovery.py",
+    "app/intelligence_sources/adapters/onion_discovery.py",
+    "tests/test_r13_14_darkweb_discovery_indexing.py"
+  ],
+  "replaced_files": [
+    "app/exposure_intelligence/contracts.py",
+    "app/exposure_intelligence/service.py",
+    "app/exposure_intelligence/persistence.py"
+  ],
+  "patched_files": [
+    "app/intelligence_sources/builtin_sources.py",
+    "app/core/service_container.py"
+  ]
+}

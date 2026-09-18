@@ -51,7 +51,15 @@ class RemoteSourceAdapterService:
                         metadata={"failure_isolated": True},
                     )
 
-            result = self.sanitizer.sanitize(result).value
+            sanitized = self.sanitizer.sanitize(result)
+            result = sanitized.value
+            result.metadata = dict(result.metadata)
+            if sanitized.redacted_count:
+                result.metadata["secret_fields_redacted"] = (
+                    int(result.metadata.get("secret_fields_redacted") or 0)
+                    + sanitized.redacted_count
+                )
+            result.metadata["raw_secret_values_stored"] = False
             out.provider_results.append(result)
 
             if not result.usable:

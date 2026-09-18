@@ -1,0 +1,37 @@
+{
+  "stage": "R13.13",
+  "name": "Leak / Paste / Exposure Source Pack",
+  "requires": "R13.12 successfully installed",
+  "database_migration": false,
+  "new_sources": [
+    "hibp_pastes",
+    "hibp_verified_domain",
+    "hibp_stealer_logs_email",
+    "hibp_stealer_logs_email_domain",
+    "hibp_stealer_logs_website_domain",
+    "github_secret_scanning"
+  ],
+  "new_files": [
+    "app/intelligence_sources/adapters/hibp_extended.py",
+    "app/intelligence_sources/adapters/github_secret_scanning.py",
+    "tests/test_r13_13_leak_paste_source_pack.py"
+  ],
+  "replaced_files": [
+    "app/exposure_intelligence/contracts.py",
+    "app/exposure_intelligence/service.py"
+  ],
+  "patched_files": [
+    "app/intelligence_sources/adapters/contracts.py",
+    "app/intelligence_sources/builtin_sources.py",
+    "app/core/config.py",
+    "app/core/service_container.py",
+    ".env.example"
+  ],
+  "safety": {
+    "raw_secret_storage": false,
+    "paste_body_fetch": false,
+    "github_hide_secret": true,
+    "verified_scope_required_for_sensitive_domain_workflows": true
+  },
+  "new_tests": 12
+}

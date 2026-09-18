@@ -201,6 +201,18 @@ class Settings(BaseSettings):
     hybrid_analysis_api_key: str | None = None
 
     intelligencex_api_key: str | None = None
+    # Use the API instance assigned to your Intelligence X account/license.
+    intelligencex_api_url: str = "https://2.intelx.io"
+    # Optional token used only for repository-scoped GitHub Secret Scanning.
+    # The adapter always requests hide_secret=true and requires verified_scope.
+    github_secret_scanning_token: str | None = None
+
+    # R13.15 — optional free/public API keys. All adapters work without these
+    # values; keys only increase quota where the upstream service supports it.
+    nvd_api_key: str | None = None
+    openfda_api_key: str | None = None
+    fec_api_key: str | None = None
+
     openalex_api_key: str | None = None
     sam_gov_api_key: str | None = None
     trade_gov_api_key: str | None = None
