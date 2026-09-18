@@ -1,0 +1,20 @@
+{
+  "name": "OSINTXZ OpenCorporates R5 patch",
+  "target_repository": "bolgraduk-create/osintxz",
+  "target_branch_snapshot": "main",
+  "supports_local_vies_patch": true,
+  "database_migration_required": false,
+  "new_dependency_required": false,
+  "api_token_required_by_upstream": true,
+  "api_token_added_by_patch": false,
+  "new_files": [
+    "app/infrastructure/registries/opencorporates_client.py",
+    "app/registry_intelligence/providers/opencorporates.py",
+    "tests/test_registry_opencorporates.py"
+  ],
+  "patched_files": [
+    "app/core/config.py",
+    ".env.example",
+    "app/core/service_container.py"
+  ]
+}

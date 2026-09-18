@@ -13,6 +13,7 @@ import math
 import re
 from uuid import UUID
 
+from app.intelligence_sources.policy import IntelligenceDataSanitizer
 from app.models.entity import Entity, EntityType
 from app.models.evidence import Evidence, EvidenceType
 from app.models.source import Source, SourceType
@@ -68,7 +69,9 @@ class RegistryPersistenceResult:
 
 class RegistryPersistenceService:
     def __init__(self, *, source_service, evidence_service, entity_service,
-                 evidence_link_service, search_indexing_service=None) -> None:
+                 evidence_link_service, search_indexing_service=None,
+                 data_sanitizer: IntelligenceDataSanitizer | None = None) -> None:
+        self.data_sanitizer = data_sanitizer or IntelligenceDataSanitizer()
         self.source_service = source_service
         self.evidence_service = evidence_service
         self.entity_service = entity_service
@@ -89,6 +92,9 @@ class RegistryPersistenceService:
         # alone cannot be injected into persistence as verified registry records.
         admitted = {r.identity_key for p in result.provider_results if p.usable for r in p.records}
         for record in result.records:
+            # Defense in depth: sanitize again at the persistence boundary so
+            # direct RegistryPersistenceService callers cannot store raw secrets.
+            record = self.data_sanitizer.sanitize(record).value
             if record.identity_key not in admitted or record.identity_key in seen:
                 out.skipped_records += 1
                 continue

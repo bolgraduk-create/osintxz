@@ -1,0 +1,13 @@
+{
+  "name": "OSINTXZ R13.9 Remote Adapter Pack 1",
+  "active_adapters": [
+    "no_brreg_entities",
+    "cz_ares",
+    "crossref",
+    "ror",
+    "openalex"
+  ],
+  "openalex_credential": "OPENALEX_API_KEY",
+  "database_migration_required": false,
+  "new_dependency_required": false
+}

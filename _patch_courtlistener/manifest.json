@@ -1,0 +1,23 @@
+{
+  "name": "OSINTXZ CourtListener R10 patch",
+  "target_repository": "bolgraduk-create/osintxz",
+  "target_api": "CourtListener Legal Search API v4",
+  "local_prerequisites": [
+    "existing Registry Intelligence core",
+    "R7 VIES compatible",
+    "R5 OpenCorporates compatible"
+  ],
+  "database_migration_required": false,
+  "new_dependency_required": false,
+  "api_token_added_by_patch": false,
+  "new_files": [
+    "app/infrastructure/registries/courtlistener_client.py",
+    "app/registry_intelligence/providers/courtlistener.py",
+    "tests/test_registry_courtlistener.py"
+  ],
+  "patched_files": [
+    "app/core/config.py",
+    ".env.example",
+    "app/core/service_container.py"
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "name": "OSINTXZ R13 Poland KRS",
+  "country": "PL",
+  "source": "Krajowy Rejestr S\u0105dowy Open API",
+  "source_type": "official_open_data",
+  "requires_credentials": false,
+  "database_migration_required": false,
+  "new_dependency_required": false,
+  "supported_queries": [
+    "BUSINESS + REGISTRATION_ID"
+  ],
+  "new_files": [
+    "app/infrastructure/registries/poland_krs_client.py",
+    "app/registry_intelligence/providers/poland_krs.py",
+    "tests/test_registry_poland_krs.py"
+  ],
+  "patched_files": [
+    "app/core/service_container.py"
+  ]
+}

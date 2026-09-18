@@ -21,15 +21,57 @@ from app.application.investigation_target_enrichment_service import (
 )
 
 from app.application.registry_intelligence_service import RegistryIntelligenceService
+from app.intelligence_sources.adapters.ares import CzechAresAdapter
+from app.intelligence_sources.adapters.brreg import NorwayBrregAdapter
+from app.intelligence_sources.adapters.crossref import CrossrefAdapter
+from app.intelligence_sources.adapters.openalex import OpenAlexAdapter
+from app.intelligence_sources.adapters.csl import TradeCslAdapter
+from app.intelligence_sources.adapters.sam_gov import SamGovEntityAdapter
+from app.intelligence_sources.adapters.sec_edgar import SecEdgarAdapter
+from app.intelligence_sources.adapters.ted import TedSearchAdapter
+from app.intelligence_sources.adapters.australia_abn import AustraliaAbnLookupAdapter
+from app.intelligence_sources.adapters.canada_corporations import CanadaFederalCorporationsAdapter
+from app.intelligence_sources.adapters.charity_uk import UkCharityCommissionAdapter
+from app.intelligence_sources.adapters.france_enterprises import FranceEnterpriseSearchAdapter
+from app.intelligence_sources.adapters.poland_regon import PolandRegonAdapter
+from app.intelligence_sources.adapters.registry import RemoteSourceAdapterRegistry
+from app.intelligence_sources.adapters.ror import RorAdapter
+from app.intelligence_sources.adapters.service import RemoteSourceAdapterService
 from app.application.registry_persistence_service import RegistryPersistenceService
 from app.core.config import settings
+from app.breach_intelligence.catalog import register_hibp_sources
+from app.darkweb_intelligence.catalog import register_darkweb_sources
+from app.darkweb_intelligence.service import DarkWebIntelligenceService
+from app.darkweb_intelligence.tor_client import TorOnionHttpClient
+from app.breach_intelligence.hibp_client import HibpHttpClient
+from app.breach_intelligence.service import BreachIntelligenceService
+from app.intelligence_sources.catalog import IntelligenceSourceCatalog
+from app.intelligence_sources.builtin_sources import register_massive_remote_sources
+from app.intelligence_sources.policy import IntelligenceDataSanitizer
 from app.infrastructure.registries.gleif_client import GleifRegistryHttpClient
+from app.infrastructure.registries.vies_client import ViesRegistryHttpClient
+from app.infrastructure.registries.opencorporates_client import OpenCorporatesHttpClient
+from app.infrastructure.registries.courtlistener_client import CourtListenerHttpClient
+from app.infrastructure.registries.recap_client import (
+    CourtListenerRecapHttpClient,
+    PacerPaidFetchGuard,
+)
+from app.infrastructure.registries.companies_house_client import CompaniesHouseHttpClient
+from app.infrastructure.registries.poland_krs_client import PolandKrsHttpClient
 from app.infrastructure.registries.registry_api_client import RegistryApiHttpClient
 from app.registry_intelligence.countries.ukraine import (
     UA_EDR_PROVIDER_INFO,
     UA_EDRSR_PROVIDER_INFO,
 )
 from app.registry_intelligence.providers.gleif import GleifRegistryProvider
+from app.registry_intelligence.providers.vies import ViesRegistryProvider
+from app.registry_intelligence.providers.opencorporates import OpenCorporatesRegistryProvider
+from app.registry_intelligence.providers.courtlistener import CourtListenerRegistryProvider
+from app.registry_intelligence.providers.recap import (
+    CourtListenerRecapRegistryProvider,
+)
+from app.registry_intelligence.providers.companies_house import CompaniesHouseRegistryProvider
+from app.registry_intelligence.providers.poland_krs import PolandKrsRegistryProvider
 from app.registry_intelligence.providers.remote import RemoteRegistryProvider
 from app.registry_intelligence.registry import RegistryProviderRegistry
 
@@ -1352,6 +1394,68 @@ class ServiceContainer:
         )
 
         # ==================================================
+        # R13.6 — Breach Intelligence / HIBP.
+        self.intelligence_source_catalog = IntelligenceSourceCatalog()
+        register_hibp_sources(self.intelligence_source_catalog)
+
+        register_darkweb_sources(self.intelligence_source_catalog)
+        self.remote_source_coverage = register_massive_remote_sources(
+            self.intelligence_source_catalog
+        )
+        self.tor_onion_http_client = TorOnionHttpClient(
+            proxy_url=settings.darkweb_tor_socks_proxy,
+        )
+        self.darkweb_intelligence_service = DarkWebIntelligenceService(
+            client=self.tor_onion_http_client,
+            data_sanitizer=IntelligenceDataSanitizer(),
+        )
+
+        self.hibp_http_client = HibpHttpClient(
+            api_key=settings.haveibeenpwned_api_key
+        )
+        self.breach_intelligence_service = BreachIntelligenceService(
+            hibp_client=self.hibp_http_client,
+            data_sanitizer=IntelligenceDataSanitizer(),
+        )
+
+        # R13.9 — Remote Adapter Pack 1.
+        self.remote_source_adapter_registry = RemoteSourceAdapterRegistry()
+        self.remote_source_adapter_registry.register(NorwayBrregAdapter())
+        self.remote_source_adapter_registry.register(CzechAresAdapter())
+        self.remote_source_adapter_registry.register(CrossrefAdapter())
+        self.remote_source_adapter_registry.register(RorAdapter())
+        self.remote_source_adapter_registry.register(
+            OpenAlexAdapter(api_key=settings.openalex_api_key)
+        )
+        self.remote_source_adapter_registry.register(
+            SecEdgarAdapter(user_agent=settings.sec_edgar_user_agent)
+        )
+        self.remote_source_adapter_registry.register(TedSearchAdapter())
+        self.remote_source_adapter_registry.register(
+            SamGovEntityAdapter(api_key=settings.sam_gov_api_key)
+        )
+        self.remote_source_adapter_registry.register(
+            TradeCslAdapter(api_key=settings.trade_gov_api_key)
+        )
+
+        self.remote_source_adapter_registry.register(FranceEnterpriseSearchAdapter())
+        self.remote_source_adapter_registry.register(
+            AustraliaAbnLookupAdapter(authentication_guid=settings.abn_lookup_guid)
+        )
+        self.remote_source_adapter_registry.register(
+            CanadaFederalCorporationsAdapter(api_key=settings.canada_corporations_api_key)
+        )
+        self.remote_source_adapter_registry.register(
+            UkCharityCommissionAdapter(api_key=settings.uk_charity_commission_api_key)
+        )
+        self.remote_source_adapter_registry.register(
+            PolandRegonAdapter(user_key=settings.poland_regon_api_key)
+        )
+
+        self.remote_source_adapter_service = RemoteSourceAdapterService(
+            registry=self.remote_source_adapter_registry
+        )
+
         # M022 Registry Intelligence
         # ==================================================
 
@@ -1362,6 +1466,86 @@ class ServiceContainer:
         )
         self.registry_provider_registry.register(
             self.gleif_registry_provider
+        )
+
+        # R7 — EU VIES exact VAT-number validation.
+        self.vies_registry_http_client = ViesRegistryHttpClient()
+        self.vies_registry_provider = ViesRegistryProvider(
+            client=self.vies_registry_http_client
+        )
+        self.registry_provider_registry.register(
+            self.vies_registry_provider
+        )
+
+        # R5 — OpenCorporates aggregator (optional API token).
+        opencorporates_token = (
+            settings.opencorporates_api_token.get_secret_value()
+            if settings.opencorporates_api_token is not None
+            else None
+        )
+        self.opencorporates_http_client = OpenCorporatesHttpClient(
+            api_token=opencorporates_token
+        )
+        self.opencorporates_registry_provider = OpenCorporatesRegistryProvider(
+            client=self.opencorporates_http_client
+        )
+        self.registry_provider_registry.register(
+            self.opencorporates_registry_provider
+        )
+
+        # R10 — CourtListener US case law (API v4, token-gated).
+        courtlistener_token = (
+            settings.courtlistener_api_token.get_secret_value()
+            if settings.courtlistener_api_token is not None
+            else None
+        )
+        self.courtlistener_http_client = CourtListenerHttpClient(
+            api_token=courtlistener_token
+        )
+        self.courtlistener_registry_provider = CourtListenerRegistryProvider(
+            client=self.courtlistener_http_client
+        )
+        self.registry_provider_registry.register(
+            self.courtlistener_registry_provider
+        )
+
+        # R11 — free RECAP archive search + hard PACER purchase guard.
+        self.courtlistener_recap_http_client = CourtListenerRecapHttpClient(
+            api_token=courtlistener_token
+        )
+        self.courtlistener_recap_registry_provider = (
+            CourtListenerRecapRegistryProvider(
+                client=self.courtlistener_recap_http_client
+            )
+        )
+        self.registry_provider_registry.register(
+            self.courtlistener_recap_registry_provider
+        )
+        self.pacer_paid_fetch_guard = PacerPaidFetchGuard()
+
+        # R12 — UK Companies House official Public Data API.
+        companies_house_api_key = (
+            settings.companies_house_api_key.get_secret_value()
+            if settings.companies_house_api_key is not None
+            else None
+        )
+        self.companies_house_http_client = CompaniesHouseHttpClient(
+            api_key=companies_house_api_key
+        )
+        self.companies_house_registry_provider = CompaniesHouseRegistryProvider(
+            client=self.companies_house_http_client
+        )
+        self.registry_provider_registry.register(
+            self.companies_house_registry_provider
+        )
+
+        # R13 — Poland KRS official Open API.
+        self.poland_krs_http_client = PolandKrsHttpClient()
+        self.poland_krs_registry_provider = PolandKrsRegistryProvider(
+            client=self.poland_krs_http_client
+        )
+        self.registry_provider_registry.register(
+            self.poland_krs_registry_provider
         )
 
         # Large national datasets are never synchronized by end-user desktops.

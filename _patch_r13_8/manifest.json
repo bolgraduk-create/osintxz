@@ -1,0 +1,20 @@
+{
+  "name": "OSINTXZ R13.8 Massive Remote Source Catalog",
+  "requires": [
+    "R13.5",
+    "R13.6",
+    "R13.7"
+  ],
+  "database_migration_required": false,
+  "new_dependency_required": false,
+  "minimum_catalog_sources": 45,
+  "new_files": [
+    "app/intelligence_sources/coverage.py",
+    "app/intelligence_sources/builtin_sources.py",
+    "tests/test_massive_remote_source_catalog.py"
+  ],
+  "patched_files": [
+    "app/intelligence_sources/__init__.py",
+    "app/core/service_container.py"
+  ]
+}

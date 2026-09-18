@@ -1,0 +1,18 @@
+{
+  "name": "OSINTXZ R13.11 Remote Adapter Pack 3",
+  "active_adapters": [
+    "fr_sirene",
+    "au_abn_lookup",
+    "ca_federal_corporations",
+    "uk_charity_commission",
+    "pl_regon"
+  ],
+  "database_migration_required": false,
+  "new_dependency_required": false,
+  "credential_gated": [
+    "au_abn_lookup",
+    "ca_federal_corporations",
+    "uk_charity_commission",
+    "pl_regon"
+  ]
+}

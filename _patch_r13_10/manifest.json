@@ -1,0 +1,24 @@
+{
+  "name": "OSINTXZ R13.10 Remote Adapter Pack 2",
+  "requires": [
+    "R13.9 Remote Adapter Pack 1"
+  ],
+  "active_adapters": [
+    "us_sec_edgar",
+    "eu_ted_search",
+    "us_sam_entities",
+    "us_trade_csl"
+  ],
+  "configuration": [
+    "SEC_EDGAR_USER_AGENT",
+    "SAM_GOV_API_KEY",
+    "TRADE_GOV_API_KEY"
+  ],
+  "database_migration_required": false,
+  "new_dependency_required": false,
+  "safety": {
+    "csl_identity_inference": false,
+    "sam_cui_requested": false,
+    "bulk_downloads": false
+  }
+}

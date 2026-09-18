@@ -1,0 +1,19 @@
+{
+  "name": "OSINTXZ R13.11 Remote Adapter Pack 3",
+  "active_adapters": [
+    "fr_sirene",
+    "au_abn_lookup",
+    "ca_federal_corporations",
+    "uk_charity_commission",
+    "pl_regon"
+  ],
+  "credentials": {
+    "fr_sirene": null,
+    "au_abn_lookup": "ABN_LOOKUP_GUID",
+    "ca_federal_corporations": "CANADA_CORPORATIONS_API_KEY",
+    "uk_charity_commission": "CHARITY_COMMISSION_API_KEY",
+    "pl_regon": "REGON_BIR_USER_KEY"
+  },
+  "database_migration_required": false,
+  "new_dependency_required": false
+}

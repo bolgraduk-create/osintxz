@@ -142,6 +142,28 @@ class Settings(BaseSettings):
     registry_backend_port: int = 8011
 
     # ======================================================
+    # External Registry Credentials
+    # ======================================================
+
+    # Optional. OpenCorporates currently requires an API token.
+    # If absent, the provider remains registered but is blocked by the
+    # existing RegistryQueryRouter credential-access policy.
+    opencorporates_api_token: SecretStr | None = None
+
+    # Optional token for CourtListener API v4 automatic access.
+    courtlistener_api_token: SecretStr | None = None
+
+    # ======================================================
+    # UK Companies House
+    # ======================================================
+
+    # Optional official Companies House Public Data API key.
+    # Without it, the provider remains registered but the existing
+    # RegistryQueryRouter blocks automatic execution.
+    companies_house_api_key: SecretStr | None = None
+
+
+    # ======================================================
     # PostgreSQL
     # ======================================================
 
@@ -167,9 +189,26 @@ class Settings(BaseSettings):
 
     haveibeenpwned_api_key: str | None = None
 
+
+    # ======================================================
+    # Dark Web / Tor
+    # ======================================================
+
+    # Local Tor SOCKS endpoint only. R13.7 never falls back to a direct
+    # internet connection when a .onion request cannot be completed.
+    darkweb_tor_socks_proxy: str = "socks5h://127.0.0.1:9050"
+
     hybrid_analysis_api_key: str | None = None
 
     intelligencex_api_key: str | None = None
+    openalex_api_key: str | None = None
+    sam_gov_api_key: str | None = None
+    trade_gov_api_key: str | None = None
+    sec_edgar_user_agent: str | None = None
+    abn_lookup_guid: str | None = None
+    canada_corporations_api_key: str | None = None
+    uk_charity_commission_api_key: str | None = None
+    poland_regon_api_key: str | None = None
 
     urlscan_api_key: str | None = None
 

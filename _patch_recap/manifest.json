@@ -1,0 +1,11 @@
+{
+  "name": "OSINTXZ R11 RECAP/PACER safety patch",
+  "target_repository": "bolgraduk-create/osintxz",
+  "prerequisite": "R10 CourtListener installed and verified",
+  "courtlistener_api": "v4 search type=d",
+  "recap_free_archive_search": true,
+  "paid_pacer_fetch_enabled": false,
+  "pacer_credentials_added": false,
+  "database_migration_required": false,
+  "new_dependency_required": false
+}

@@ -5,6 +5,7 @@ from app.application.registry_persistence_service import (
     RegistryPersistenceResult,
     RegistryPersistenceService,
 )
+from app.intelligence_sources.policy import IntelligenceDataSanitizer
 from app.registry_intelligence.contracts import (
     RegistryProviderResult,
     RegistryQuery,
@@ -29,10 +30,12 @@ class RegistryIntelligenceService:
         *,
         persistence_service: RegistryPersistenceService | None = None,
         router: RegistryQueryRouter | None = None,
+        data_sanitizer: IntelligenceDataSanitizer | None = None,
     ) -> None:
         self.registry = registry or RegistryProviderRegistry()
         self.persistence_service = persistence_service
         self.router = router or RegistryQueryRouter()
+        self.data_sanitizer = data_sanitizer or IntelligenceDataSanitizer()
 
     def enrich(self, query: RegistryQuery, *, case_id: UUID) -> RegistryEnrichmentResult:
         if self.persistence_service is None:
@@ -71,7 +74,7 @@ class RegistryIntelligenceService:
                     provider=provider.info.name,
                     records=[
                         replace(
-                            record,
+                            self.data_sanitizer.sanitize(record).value,
                             provider=provider.info.name,
                             source_type=provider.info.source_type,
                             trust_score=min(record.trust_score, provider.info.trust_score),

@@ -1,0 +1,17 @@
+{
+  "name": "OSINTXZ R13.7 Dark Web Intelligence",
+  "requires": [
+    "R13.5 Intelligence Source Federation Core",
+    "R13.6 Breach Intelligence"
+  ],
+  "database_migration_required": false,
+  "new_dependency": "socksio>=1.0.0,<2.0.0",
+  "transport": "local Tor SOCKS5/SOCKS5H",
+  "scope": "explicit public Tor v3 onion GET observations only",
+  "stores_raw_html": false,
+  "stores_page_text": false,
+  "downloads_attachments": false,
+  "follows_redirects": false,
+  "auth_bypass": false,
+  "direct_fallback": false
+}

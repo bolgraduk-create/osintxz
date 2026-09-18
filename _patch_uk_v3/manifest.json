@@ -1,0 +1,27 @@
+{
+  "name": "OSINTXZ R12 UK Companies House",
+  "target_repository": "bolgraduk-create/osintxz",
+  "target_stage": "Registry Intelligence R12",
+  "database_migration_required": false,
+  "new_dependency_required": false,
+  "credential_name": "COMPANIES_HOUSE_API_KEY",
+  "credential_bundled": false,
+  "source_type": "official_api",
+  "country": "GB",
+  "query_kinds": [
+    "name",
+    "registration_id"
+  ],
+  "new_files": [
+    "app/infrastructure/registries/companies_house_client.py",
+    "app/registry_intelligence/providers/companies_house.py",
+    "tests/test_registry_companies_house.py"
+  ],
+  "patched_files": [
+    "app/core/config.py",
+    ".env.example",
+    "app/core/service_container.py"
+  ],
+  "patch_version": "v3",
+  "regression_fix": "Separate malformed input from malformed upstream payload"
+}

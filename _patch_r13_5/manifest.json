@@ -1,0 +1,23 @@
+{
+  "name": "OSINTXZ R13.5 Intelligence Source Federation Core",
+  "target_repository": "bolgraduk-create/osintxz",
+  "database_migration_required": false,
+  "new_dependency_required": false,
+  "purpose": [
+    "cross-subsystem remote source catalog",
+    "access/cost/remote-delivery policy",
+    "data sensitivity policy",
+    "secret-material redaction before output and persistence"
+  ],
+  "new_files": [
+    "app/intelligence_sources/__init__.py",
+    "app/intelligence_sources/contracts.py",
+    "app/intelligence_sources/catalog.py",
+    "app/intelligence_sources/policy.py",
+    "tests/test_intelligence_source_federation.py"
+  ],
+  "patched_files": [
+    "app/application/registry_intelligence_service.py",
+    "app/application/registry_persistence_service.py"
+  ]
+}
