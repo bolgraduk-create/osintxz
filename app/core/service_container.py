@@ -62,6 +62,26 @@ from app.intelligence_sources.adapters.openfda import OpenFdaAdapter
 from app.intelligence_sources.adapters.fec import OpenFecAdapter
 from app.intelligence_sources.adapters.icij_offshore import IcijOffshoreLeaksAdapter
 from app.intelligence_sources.adapters.nppes_npi import NppesNpiAdapter
+from app.intelligence_sources.adapters.github_public import GitHubPublicUserAdapter
+from app.intelligence_sources.adapters.gitlab_public import GitLabPublicUserAdapter
+from app.intelligence_sources.adapters.semantic_scholar import SemanticScholarAdapter
+from app.intelligence_sources.adapters.europe_pmc import EuropePmcAdapter
+from app.intelligence_sources.adapters.library_of_congress import LibraryOfCongressAdapter
+from app.intelligence_sources.adapters.fbi_wanted import FbiWantedAdapter
+from app.intelligence_sources.adapters.first_epss import FirstEpssAdapter
+from app.intelligence_sources.adapters.circl_hashlookup import CirclHashlookupAdapter
+from app.intelligence_sources.adapters.shodan_internetdb import ShodanInternetDbAdapter
+from app.intelligence_sources.adapters.cisa_kev import CisaKevAdapter
+from app.intelligence_sources.adapters.rdap_bootstrap import RdapBootstrapAdapter
+from app.intelligence_sources.adapters.ripestat import RipeStatAdapter
+from app.intelligence_sources.adapters.peeringdb import PeeringDbAdapter
+from app.intelligence_sources.adapters.google_dns import GooglePublicDnsAdapter
+from app.intelligence_sources.adapters.usaspending import UsaSpendingRecipientAdapter
+from app.intelligence_sources.adapters.federal_register import FederalRegisterAdapter
+from app.intelligence_sources.adapters.datacite import DataCiteAdapter
+from app.intelligence_sources.adapters.zenodo_public import ZenodoPublicAdapter
+from app.intelligence_sources.adapters.internet_archive import InternetArchiveMetadataAdapter
+from app.intelligence_sources.adapters.un_sanctions import UnSecurityCouncilSanctionsAdapter
 from app.exposure_intelligence.service import ExposureFederationService
 from app.exposure_intelligence.persistence import ExposurePersistenceService
 from app.intelligence_sources.adapters.registry import RemoteSourceAdapterRegistry
@@ -1551,6 +1571,30 @@ class ServiceContainer:
         )
         self.remote_source_adapter_registry.register(IcijOffshoreLeaksAdapter())
         self.remote_source_adapter_registry.register(NppesNpiAdapter())
+
+        # R13.16 — Low-Footprint Remote Data Mega Pack.
+        self.remote_source_adapter_registry.register(GitHubPublicUserAdapter())
+        self.remote_source_adapter_registry.register(GitLabPublicUserAdapter())
+        self.remote_source_adapter_registry.register(SemanticScholarAdapter())
+        self.remote_source_adapter_registry.register(EuropePmcAdapter())
+        self.remote_source_adapter_registry.register(LibraryOfCongressAdapter())
+        self.remote_source_adapter_registry.register(FbiWantedAdapter())
+        self.remote_source_adapter_registry.register(FirstEpssAdapter())
+        self.remote_source_adapter_registry.register(CirclHashlookupAdapter())
+        self.remote_source_adapter_registry.register(ShodanInternetDbAdapter())
+        self.remote_source_adapter_registry.register(CisaKevAdapter())
+
+        # R13.17 — Low-Footprint Remote Data Mega Pack 2.
+        self.remote_source_adapter_registry.register(RdapBootstrapAdapter())
+        self.remote_source_adapter_registry.register(RipeStatAdapter())
+        self.remote_source_adapter_registry.register(PeeringDbAdapter())
+        self.remote_source_adapter_registry.register(GooglePublicDnsAdapter())
+        self.remote_source_adapter_registry.register(UsaSpendingRecipientAdapter())
+        self.remote_source_adapter_registry.register(FederalRegisterAdapter())
+        self.remote_source_adapter_registry.register(DataCiteAdapter())
+        self.remote_source_adapter_registry.register(ZenodoPublicAdapter())
+        self.remote_source_adapter_registry.register(InternetArchiveMetadataAdapter())
+        self.remote_source_adapter_registry.register(UnSecurityCouncilSanctionsAdapter())
 
         self.remote_source_adapter_service = RemoteSourceAdapterService(
             registry=self.remote_source_adapter_registry

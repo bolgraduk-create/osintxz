@@ -1,0 +1,21 @@
+{
+  "stage": "R13.17",
+  "name": "Low-Footprint Remote Data Mega Pack 2",
+  "requires": "R13.16 installed",
+  "database_migration": false,
+  "bulk_downloads": false,
+  "persistent_dataset_storage": false,
+  "new_sources": [
+    "rdap_bootstrap",
+    "ripestat",
+    "peeringdb_public",
+    "google_public_dns",
+    "usaspending_recipients",
+    "us_federal_register",
+    "datacite_public",
+    "zenodo_public",
+    "internet_archive_metadata",
+    "un_sc_sanctions"
+  ],
+  "new_test_count": 17
+}

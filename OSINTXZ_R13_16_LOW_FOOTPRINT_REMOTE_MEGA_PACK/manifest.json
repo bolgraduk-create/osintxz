@@ -1,0 +1,20 @@
+{
+  "stage": "R13.16",
+  "name": "Low-Footprint Remote Data Mega Pack",
+  "requires": "R13.15 installed",
+  "database_migration": false,
+  "bulk_downloads": false,
+  "new_sources": [
+    "github_public_user",
+    "gitlab_public_user",
+    "semantic_scholar",
+    "europe_pmc",
+    "library_of_congress",
+    "fbi_wanted",
+    "first_epss",
+    "circl_hashlookup",
+    "shodan_internetdb",
+    "cisa_kev"
+  ],
+  "new_test_count": 17
+}
