@@ -535,13 +535,19 @@ def _profile_page_evidence(
         signals.append("Visible page contains profile-specific vocabulary")
         score += 10.0
 
-    strong_anchor = bool(
+    structured_anchor = bool(
         explicit_profile_username
         or structured_person
-        or title_match
-        or (canonical_match and visible_match)
     )
-    verified = bool(score >= 45.0 and strong_anchor)
+    semantic_profile_anchor = bool(
+        title_match
+        and visible_match
+        and (profile_type or profile_vocabulary)
+    )
+    verified = bool(
+        structured_anchor
+        or (score >= 55.0 and semantic_profile_anchor)
+    )
 
     return {
         "verified": verified,
@@ -594,6 +600,8 @@ def _profile_vocabulary_signal(text: str) -> bool:
     markers = (
         "followers", "following", "posts", "joined", "member since",
         "profile", "reputation", "karma", "contributions", "activity",
+        "messages", "reactions", "badges", "likes", "points", "threads",
+        "projects", "answers", "questions",
     )
     return sum(marker in lowered for marker in markers) >= 2
 
