@@ -115,6 +115,13 @@ def assess_result_row(row: dict[str, Any]) -> RelevanceAssessment:
         exact_values.extend(str(v) for v in identifiers.values() if v is not None)
 
     if kind == "username":
+        verification_status = str(row.get("accountVerificationStatus") or "").strip().casefold()
+        if verification_status == "invalid":
+            return RelevanceAssessment(
+                "contradictory", 0.0, (),
+                (str(row.get("accountVerificationReason") or "Independent profile validation indicates the account is absent"),),
+                False, False,
+            )
         wanted = _normalize_exact("username", value)
         identifier_match = any(
             _normalize_exact("username", item) == wanted
