@@ -24,6 +24,7 @@ Item {
     property var selectedAccount: ({})
     property var accountEnrichment: investigationSearchBridge.accountEnrichment || ({})
     property bool accountEnrichmentBusy: investigationSearchBridge.accountEnrichmentBusy
+    property var accountEnrichmentCapability: ({ available: false, reason: "", site: "" })
 
     function itemCount(tab) {
         if (tab === "results") return (resultViewMode === "raw" ? (runData.rawResults || []) : (runData.results || [])).length
@@ -204,6 +205,7 @@ Item {
 
     function openAccountDetails(row) {
         root.selectedAccount = row || ({})
+        root.accountEnrichmentCapability = investigationSearchBridge.accountEnrichmentCapability(root.selectedAccount)
         investigationSearchBridge.clearAccountEnrichment()
         accountDetailsDialog.open()
     }
@@ -985,10 +987,15 @@ Item {
                     anchors.right: openAccountProfileButton.visible ? openAccountProfileButton.left : closeAccountDetailsButton.left
                     anchors.rightMargin: 8
                     anchors.verticalCenter: parent.verticalCenter
-                    width: 112
-                    text: root.accountEnrichmentBusy ? "Enriching…" : "Deep enrich"
-                    primary: true
-                    enabled: !root.accountEnrichmentBusy
+                    width: 122
+                    text: root.accountEnrichmentBusy
+                        ? "Enriching…"
+                        : (root.accountEnrichmentCapability.available ? "Deep enrich" : "Unavailable")
+                    primary: root.accountEnrichmentCapability.available
+                    enabled: root.accountEnrichmentCapability.available && !root.accountEnrichmentBusy
+                    ToolTip.visible: hovered && !root.accountEnrichmentCapability.available
+                    ToolTip.delay: 250
+                    ToolTip.text: String(root.accountEnrichmentCapability.reason || "Maigret deep enrichment is unavailable for this platform.")
                     onClicked: investigationSearchBridge.deepEnrichAccount(root.selectedAccount)
                 }
                 AppButton {
@@ -1165,6 +1172,28 @@ Item {
                             font.weight: Font.DemiBold
                         }
                     }
+
+                    Rectangle {
+                        visible: !root.accountEnrichmentCapability.available && !root.accountEnrichmentBusy
+                        width: parent.width
+                        height: unavailableEnrichmentText.contentHeight + 24
+                        radius: 8
+                        color: Theme.surfaceHover
+                        border.width: 1
+                        border.color: Theme.divider
+                        Text {
+                            id: unavailableEnrichmentText
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.top: parent.top
+                            anchors.margins: 12
+                            text: String(root.accountEnrichmentCapability.reason || "Maigret deep enrichment is unavailable for this platform.")
+                            color: Theme.textMuted
+                            font.pixelSize: 9
+                            wrapMode: Text.Wrap
+                        }
+                    }
+
 
                     Rectangle {
                         visible: root.accountEnrichmentBusy && root.accountEnrichmentMatchesSelectedAccount()
