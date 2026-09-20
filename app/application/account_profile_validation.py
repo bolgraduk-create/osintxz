@@ -33,6 +33,7 @@ _AUTH_PATHS = {
 }
 _STRONG_NOT_FOUND_PATTERNS = (
     r"\buser(?:name)?\s+(?:was\s+)?not\s+found\b",
+    r"\buser(?:name)?\s+[@A-Za-z0-9_.-]{2,128}\s+(?:was\s+)?not\s+found\b",
     r"\bprofile\s+(?:was\s+)?not\s+found\b",
     r"\baccount\s+(?:was\s+)?not\s+found\b",
     r"\bno\s+such\s+(?:user|profile|account)\b",
@@ -310,14 +311,14 @@ def _validate_one_url(
             not_found_marker=marker,
         )
 
-    if marker and not username_seen:
+    if marker:
         return AccountValidation(
             status="invalid",
             reason="Profile page contains a strong not-found/account-absent marker.",
             checked=True,
             status_code=code,
             final_url=final_url,
-            username_seen=False,
+            username_seen=username_seen,
             not_found_marker=marker,
         )
 
@@ -339,7 +340,7 @@ def _validate_one_url(
             username_seen=False,
         )
 
-    if 200 <= code < 400 and username_seen and (final_has_username or original_has_username):
+    if 200 <= code < 400 and username_seen:
         return AccountValidation(
             status="verified",
             reason="Live profile page is reachable and contains the searched username.",
