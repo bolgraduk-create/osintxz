@@ -184,7 +184,17 @@ class OsintEnrichmentExecutionService:
                 entity_budget=shared_entity_budget,
             )
 
-        if finding_limit is None:
+        broad_username_discovery = bool(
+            target_type is OsintTargetType.USERNAME
+            and goal is DiscoveryGoal.ACCOUNT_DISCOVERY
+        )
+        if broad_username_discovery:
+            # Discovery breadth and persistence are different budgets.  The
+            # entity budget still limits what can be persisted/recursed, but it
+            # must not stop Sherlock/Maigret/User Scanner/SocialScan from
+            # reporting the public account observations they found.
+            remaining_finding_budget = max(80, int(finding_limit or 0))
+        elif finding_limit is None:
             remaining_finding_budget = shared_entity_budget.remaining
         else:
             remaining_finding_budget = min(
@@ -208,9 +218,12 @@ class OsintEnrichmentExecutionService:
         records: list[ConnectorExecutionRecord] = []
 
         for capability in route.connectors:
-            if remaining_finding_budget <= 0:
+            if remaining_finding_budget <= 0 and not broad_username_discovery:
                 break
 
+            connector_finding_limit = (
+                80 if broad_username_discovery else remaining_finding_budget
+            )
             request = ConnectorRequest(
                 target=OsintTarget(
                     target_type=target_type,
@@ -222,7 +235,7 @@ class OsintEnrichmentExecutionService:
                 save_raw_output=save_raw_output,
                 include_metadata=include_metadata,
                 include_related=include_related,
-                limit=remaining_finding_budget,
+                limit=connector_finding_limit,
             )
 
             runtime_name = self._resolve_runtime_connector_name(capability)
@@ -249,14 +262,15 @@ class OsintEnrichmentExecutionService:
 
             result = self._enforce_result_limit(
                 result,
-                remaining_finding_budget,
+                connector_finding_limit,
             )
 
-            remaining_finding_budget = max(
-                0,
-                remaining_finding_budget
-                - result.total_findings,
-            )
+            if not broad_username_discovery:
+                remaining_finding_budget = max(
+                    0,
+                    remaining_finding_budget
+                    - result.total_findings,
+                )
 
             records.append(
                 ConnectorExecutionRecord(
