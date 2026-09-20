@@ -176,6 +176,24 @@ def consolidate_result_rows(
             continue
         item = annotate_relevant_row(item)
         if bool(item.get("accountRelation")):
+            verification_status = str(
+                item.get("accountVerificationStatus") or ""
+            ).strip().casefold()
+            if verification_status in {"reported", "unreachable"}:
+                item["visibilityTier"] = "possible"
+                item["visibilityScore"] = max(
+                    45.0,
+                    float(item.get("contextRelevanceScore") or 0.0),
+                )
+                item["visibilityReason"] = str(
+                    item.get("accountVerificationReason")
+                    or "Provider-reported account requires analyst review."
+                )
+                possible_rows.append(item)
+                continue
+            if verification_status == "invalid":
+                suppressed += 1
+                continue
             related_accounts.append(dict(item))
         identity_status = str(item.get("identityStatus") or "")
         if identity_status and identity_status != "not_applicable":
