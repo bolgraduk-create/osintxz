@@ -235,7 +235,7 @@ _CAPABILITIES = (
             "proxy features disabled and accepts only explicit Registered/"
             "Found results."
         ),
-        manager_default_registered=False,
+        manager_default_registered=True,
     ),
     _c(
         "local_phone_connector", "LocalPhoneConnector", "Local Phone",
