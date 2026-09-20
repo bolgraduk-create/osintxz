@@ -224,6 +224,9 @@ def consolidate_result_rows(
     )
     related_accounts.sort(
         key=lambda row: (
+            {"verified": 0, "reported": 1, "unreachable": 2}.get(
+                str(row.get("accountVerificationStatus") or "reported").casefold(), 3
+            ),
             -float(row.get("score") or 0.0),
             -int(row.get("corroborationCount") or 0),
             str(row.get("title") or "").casefold(),
@@ -388,6 +391,11 @@ def _account_observation(row: dict[str, Any]) -> dict[str, Any] | None:
         "status": _clean_text(row.get("status")),
         "confidence": row.get("confidence"),
         "reliability": row.get("reliability"),
+        "verificationStatus": _clean_text(row.get("accountVerificationStatus")) or "reported",
+        "verificationReason": _clean_text(row.get("accountVerificationReason")),
+        "verificationChecked": bool(row.get("accountVerificationChecked")),
+        "verificationHttpStatus": row.get("accountVerificationHttpStatus"),
+        "verificationFinalUrl": _clean_text(row.get("accountVerificationFinalUrl")),
         "metadata": metadata,
     }
 
