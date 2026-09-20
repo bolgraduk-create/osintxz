@@ -52,7 +52,7 @@ def test_live_profile_with_username_is_verified():
         return ProfileFetchResult(
             status_code=200,
             final_url=url,
-            body="<html><title>wixxlexx profile</title><h1>@wixxlexx</h1></html>",
+            body="<html><title>wixxlexx profile</title><h1>@wixxlexx</h1><p>Followers 10 · Posts 4</p></html>",
         )
 
     rows, summary = annotate_account_profile_validation(
@@ -162,7 +162,7 @@ def test_cross_source_same_profile_still_requires_live_validation():
         return ProfileFetchResult(
             status_code=200,
             final_url=url,
-            body="<html><title>wixxlexx · GitHub</title><h1>wixxlexx</h1></html>",
+            body="<html><title>wixxlexx · GitHub</title><h1>wixxlexx</h1><p>Followers 10 · Following 2</p></html>",
         )
 
     url = "https://github.com/wixxlexx"
@@ -294,7 +294,7 @@ def test_live_check_budget_retains_unchecked_account_as_reported():
         return ProfileFetchResult(
             status_code=200,
             final_url=url,
-            body="<html><title>wixxlexx profile</title><h1>wixxlexx</h1></html>",
+            body="<html><title>wixxlexx profile</title><h1>wixxlexx</h1><p>Followers 10 · Posts 4</p></html>",
         )
 
     rows, summary = annotate_account_profile_validation(
