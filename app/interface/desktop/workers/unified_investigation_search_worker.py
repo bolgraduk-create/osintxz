@@ -23,6 +23,9 @@ from app.application.search_quality_engine import (
     annotate_search_quality_rows,
     quality_trace_rows,
 )
+from app.application.account_profile_validation import (
+    annotate_account_profile_validation,
+)
 from app.application.unified_investigation_search import (
     UnifiedSeed,
     UnifiedSeedKind,
@@ -383,6 +386,20 @@ class UnifiedInvestigationSearchWorker(QObject):
                 if not row.get("_identitySignals"):
                     row["_identitySignals"] = extract_identity_signals(row).to_payload()
 
+            # R13.26a.1 — bounded independent validation of username
+            # account URLs.  Invalid profiles remain in Raw/Quality but no
+            # longer qualify for the normal Accounts/Clean presentation.
+            self._emit(
+                "account_validation",
+                "Validating provider-reported account URLs…",
+            )
+            results, account_validation_summary = annotate_account_profile_validation(
+                results,
+                max_live_checks=48,
+                timeout=4.0,
+                workers=8,
+            )
+
             # R13.26a shadow quality assessment.  These annotations are
             # diagnostic only: current consolidation, persistence and pivot
             # decisions remain authoritative until the benchmark proves that
@@ -437,6 +454,7 @@ class UnifiedInvestigationSearchWorker(QObject):
                 ],
                 "qualityTrace": quality_trace,
                 "qualitySummary": quality_summary.to_dict(),
+                "accountValidationSummary": account_validation_summary.to_dict(),
                 "providers": providers,
                 "healthSummary": health_summary,
                 "pivots": [self._snapshot_seed(item, queued=is_exact_recursive_seed(item)) for item in pivots],
@@ -466,6 +484,11 @@ class UnifiedInvestigationSearchWorker(QObject):
                     "qualityDisagreements": quality_summary.disagreements,
                     "qualityWouldExplore": quality_summary.would_explore,
                     "qualityWouldPersist": quality_summary.would_persist,
+                    "accountVerified": account_validation_summary.verified,
+                    "accountReported": account_validation_summary.reported,
+                    "accountUnreachable": account_validation_summary.unreachable,
+                    "accountInvalid": account_validation_summary.invalid,
+                    "accountLiveChecks": account_validation_summary.live_checks,
                     "providers": len(providers),
                     "healthReady": int(health_summary.get("ready") or 0),
                     "healthIssues": int(health_summary.get("issues") or 0),
