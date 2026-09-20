@@ -213,6 +213,42 @@ def test_account_enrichment_worker_flattens_useful_public_fields():
     assert not any(item["key"] in {"headers", "body"} for item in fields)
 
 
+def test_bridge_capability_reports_unsupported_local_maigret_site(monkeypatch):
+    monkeypatch.setattr(
+        MaigretConnector,
+        "_load_local_site_catalog",
+        classmethod(
+            lambda cls: {
+                "GitHub": {
+                    "url": "https://github.com/{username}",
+                    "urlMain": "https://github.com",
+                }
+            }
+        ),
+    )
+
+    bridge = InvestigationSearchBridge(container=object())
+    capability = bridge.accountEnrichmentCapability(
+        {
+            "seed": "wixxlexx",
+            "seedType": "username",
+            "service": "Apple Developer",
+            "url": "https://developer.apple.com/forums/profile/wixxlexx",
+            "accountObservations": [
+                {
+                    "connector": "Sherlock",
+                    "service": "Apple Developer",
+                    "url": "https://developer.apple.com/forums/profile/wixxlexx",
+                }
+            ],
+        }
+    )
+
+    assert capability["available"] is False
+    assert capability["site"] == ""
+    assert "not supported" in capability["reason"].casefold()
+
+
 def test_bridge_prefers_maigret_observation_for_targeted_site():
     account = {
         "service": "Fallback",
@@ -241,7 +277,10 @@ def test_search_qml_exposes_deep_account_enrichment_controls():
         encoding="utf-8"
     )
 
-    assert 'text: root.accountEnrichmentBusy ? "Enriching…" : "Deep enrich"' in text
+    assert '"Deep enrich"' in text
+    assert '"Unavailable"' in text
+    assert "root.accountEnrichmentCapability.available" in text
+    assert "investigationSearchBridge.accountEnrichmentCapability(root.selectedAccount)" in text
     assert "investigationSearchBridge.deepEnrichAccount(root.selectedAccount)" in text
     assert 'text: "DEEP ENRICHMENT"' in text
     assert "root.accountEnrichment.fields || []" in text
