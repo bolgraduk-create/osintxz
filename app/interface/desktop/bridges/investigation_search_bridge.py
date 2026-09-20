@@ -15,6 +15,9 @@ from app.models.entity import EntityType
 from app.interface.desktop.workers.unified_investigation_search_worker import (
     UnifiedInvestigationSearchWorker,
 )
+from app.interface.desktop.workers.account_enrichment_worker import (
+    AccountEnrichmentWorker,
+)
 
 
 LOGGER = logging.getLogger(__name__)
@@ -25,6 +28,7 @@ class InvestigationSearchBridge(QObject):
 
     changed = Signal()
     messageChanged = Signal()
+    accountEnrichmentChanged = Signal()
 
     def __init__(self, container: Any, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -35,6 +39,11 @@ class InvestigationSearchBridge(QObject):
         self._thread: QThread | None = None
         self._worker: UnifiedInvestigationSearchWorker | None = None
         self._context: dict[str, Any] = {}
+        self._account_enrichment: dict[str, Any] = {}
+        self._account_busy = False
+        self._account_thread: QThread | None = None
+        self._account_worker: AccountEnrichmentWorker | None = None
+        self._account_context: dict[str, Any] = {}
 
     @Property("QVariantMap", notify=changed)
     def runData(self) -> dict[str, Any]:
@@ -48,10 +57,20 @@ class InvestigationSearchBridge(QObject):
     def message(self) -> str:
         return self._message
 
+    @Property("QVariantMap", notify=accountEnrichmentChanged)
+    def accountEnrichment(self) -> dict[str, Any]:
+        return dict(self._account_enrichment)
+
+    @Property(bool, notify=accountEnrichmentChanged)
+    def accountEnrichmentBusy(self) -> bool:
+        return self._account_busy
+
     @Slot("QVariantMap", str, "QVariantMap", result=bool)
     def search(self, profile: object, case_id: str, options: object = None) -> bool:
-        if self._busy:
-            self._set_message("An investigation search is already running.")
+        if self._busy or self._account_busy:
+            self._set_message(
+                "Another investigation or account-enrichment task is already running."
+            )
             return False
 
         normalized_case_id = str(case_id or "").strip()
@@ -65,6 +84,8 @@ class InvestigationSearchBridge(QObject):
             self._set_message("Enter at least one known data point before searching.")
             return False
 
+        self._account_enrichment = {}
+        self.accountEnrichmentChanged.emit()
         started_at = datetime.now()
         self._context = {
             "caseId": normalized_case_id,
@@ -142,11 +163,183 @@ class InvestigationSearchBridge(QObject):
 
     @Slot()
     def clear(self) -> None:
-        if self._busy:
+        if self._busy or self._account_busy:
             return
         self._run = {}
+        self._account_enrichment = {}
         self._set_message("")
         self.changed.emit()
+        self.accountEnrichmentChanged.emit()
+
+    @Slot()
+    def clearAccountEnrichment(self) -> None:
+        if self._account_busy:
+            return
+        self._account_enrichment = {}
+        self._account_context = {}
+        self.accountEnrichmentChanged.emit()
+
+    @Slot("QVariantMap", result=bool)
+    def deepEnrichAccount(self, account: object) -> bool:
+        if self._busy or self._account_busy:
+            self._set_message("Another search or account enrichment is already running.")
+            return False
+
+        payload = dict(account) if isinstance(account, dict) else {}
+        if not payload:
+            self._set_message("The selected account payload is unavailable.")
+            return False
+
+        username = self._account_username(payload)
+        observation = self._preferred_maigret_observation(payload)
+        site = str(observation.get("service") or payload.get("service") or "").strip()
+        profile_url = str(observation.get("url") or payload.get("url") or "").strip()
+
+        if not username:
+            self._set_message("Unable to determine the username for this account.")
+            return False
+        if not site:
+            self._set_message(
+                "This account does not expose a Maigret site name for targeted enrichment."
+            )
+            return False
+
+        self._account_context = {
+            "username": username,
+            "site": site,
+            "profileUrl": profile_url,
+        }
+        self._account_enrichment = {
+            "hasRun": True,
+            "status": "running",
+            "username": username,
+            "site": site,
+            "profileUrl": profile_url,
+            "fields": [],
+            "observations": [],
+            "error": "",
+            "durationText": "Running…",
+        }
+        self._account_busy = True
+        self._set_message(f"Deep-enriching {username} on {site}…")
+        self.accountEnrichmentChanged.emit()
+
+        try:
+            thread = QThread(self)
+            worker = AccountEnrichmentWorker(
+                username=username,
+                site=site,
+                profile_url=profile_url,
+                timeout=25,
+            )
+            worker.moveToThread(thread)
+            thread.started.connect(worker.run)
+            worker.succeeded.connect(self._on_account_enrichment_succeeded)
+            worker.failed.connect(self._on_account_enrichment_failed)
+            worker.succeeded.connect(thread.quit)
+            worker.failed.connect(thread.quit)
+            worker.succeeded.connect(worker.deleteLater)
+            worker.failed.connect(worker.deleteLater)
+            thread.finished.connect(self._on_account_enrichment_thread_finished)
+            thread.finished.connect(thread.deleteLater)
+            self._account_thread = thread
+            self._account_worker = worker
+            thread.start()
+            return True
+        except Exception as exc:
+            LOGGER.exception("Unable to start account enrichment worker")
+            self._account_busy = False
+            self._account_thread = None
+            self._account_worker = None
+            self._account_context = {}
+            self._account_enrichment.update(
+                {
+                    "status": "failed",
+                    "error": str(exc),
+                    "durationText": "0.0s",
+                }
+            )
+            self._set_message(f"Unable to start account enrichment: {exc}")
+            self.accountEnrichmentChanged.emit()
+            return False
+
+    @Slot(object)
+    def _on_account_enrichment_succeeded(self, result: object) -> None:
+        payload = result if isinstance(result, dict) else {}
+        snapshot = payload.get("snapshot") if isinstance(payload.get("snapshot"), dict) else {}
+        duration = self._safe_float(payload.get("duration"))
+        data = dict(snapshot)
+        data.update(
+            {
+                "hasRun": True,
+                "status": str(snapshot.get("status") or "success"),
+                "durationSeconds": round(duration, 3),
+                "durationText": f"{duration:.1f}s",
+                "error": str(snapshot.get("error") or ""),
+            }
+        )
+        self._account_enrichment = data
+        self._set_message(
+            f"Account enrichment completed for {data.get('username') or ''} on {data.get('site') or ''}."
+        )
+        self.accountEnrichmentChanged.emit()
+
+    @Slot(object)
+    def _on_account_enrichment_failed(self, result: object) -> None:
+        payload = result if isinstance(result, dict) else {}
+        snapshot = payload.get("snapshot") if isinstance(payload.get("snapshot"), dict) else {}
+        duration = self._safe_float(payload.get("duration"))
+        error = str(payload.get("error") or snapshot.get("error") or "Account enrichment failed.")
+        data = dict(snapshot)
+        data.update(
+            {
+                "hasRun": True,
+                "status": "failed",
+                "durationSeconds": round(duration, 3),
+                "durationText": f"{duration:.1f}s",
+                "error": error,
+            }
+        )
+        self._account_enrichment = data
+        self._set_message(f"Account enrichment failed: {error}")
+        self.accountEnrichmentChanged.emit()
+
+    @Slot()
+    def _on_account_enrichment_thread_finished(self) -> None:
+        self._account_busy = False
+        self._account_worker = None
+        self._account_thread = None
+        self._account_context = {}
+        self.accountEnrichmentChanged.emit()
+
+    @staticmethod
+    def _account_username(payload: dict[str, Any]) -> str:
+        identifiers = payload.get("identifiers")
+        if isinstance(identifiers, dict):
+            for key in ("username", "handle", "user_name"):
+                value = str(identifiers.get(key) or "").strip().lstrip("@")
+                if value:
+                    return value
+        if str(payload.get("seedType") or "").strip().casefold() == "username":
+            value = str(payload.get("seed") or "").strip().lstrip("@")
+            if value:
+                return value
+        return str(payload.get("title") or "").strip().lstrip("@")
+
+    @staticmethod
+    def _preferred_maigret_observation(payload: dict[str, Any]) -> dict[str, Any]:
+        observations = payload.get("accountObservations")
+        if not isinstance(observations, list):
+            observations = []
+        for item in observations:
+            if not isinstance(item, dict):
+                continue
+            if str(item.get("connector") or "").strip().casefold() == "maigret" and str(item.get("service") or "").strip():
+                return dict(item)
+        for item in observations:
+            if isinstance(item, dict) and str(item.get("service") or "").strip():
+                return dict(item)
+        return {}
 
     @Slot(object)
     def _on_progress(self, result: object) -> None:
