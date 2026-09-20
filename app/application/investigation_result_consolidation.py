@@ -319,11 +319,13 @@ def _prepare_row(row: dict[str, Any], *, order: int) -> dict[str, Any]:
     fallback_title = _normalize_text(title)
     fallback_detail = _normalize_text(detail)
     if account_observation:
-        platform = _normalize_text(
-            out.get("service")
-            or (out.get("findingMetadata") or {}).get("service")
+        finding_metadata = (
+            out.get("findingMetadata")
             if isinstance(out.get("findingMetadata"), dict)
-            else out.get("service")
+            else {}
+        )
+        platform = _normalize_text(
+            out.get("service") or finding_metadata.get("service")
         )
         platform = platform or _normalize_text(out.get("source"))
         fallback_key = (family, fallback_title, url or platform or fallback_detail[:180])
