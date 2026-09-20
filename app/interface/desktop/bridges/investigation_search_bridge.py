@@ -294,7 +294,7 @@ class InvestigationSearchBridge(QObject):
         data.update(
             {
                 "hasRun": True,
-                "status": "failed",
+                "status": str(snapshot.get("status") or "failed"),
                 "durationSeconds": round(duration, 3),
                 "durationText": f"{duration:.1f}s",
                 "error": error,
