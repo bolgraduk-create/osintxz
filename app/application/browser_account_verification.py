@@ -16,6 +16,7 @@ Important safety/quality rules:
 from __future__ import annotations
 
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import timedelta
 import importlib.util
@@ -268,9 +269,27 @@ class BrowserAccountVerifier:
 
         @crawler.pre_navigation_hook
         async def _before_navigation(context) -> None:
-            # Static assets are unnecessary for existence verification; keep JS.
+            # Guard every browser HTTP(S) request. This prevents a public URL
+            # from redirecting the verifier into localhost/private literal IPs.
+            # Static media/styles are skipped to keep the browser pass bounded;
+            # JavaScript/XHR remain enabled because SPAs need them.
+            async def _route_guard(route, request) -> None:
+                request_url = str(request.url or "")
+                scheme = urlsplit(request_url).scheme.casefold()
+                if scheme in {"http", "https"}:
+                    safe_url, _reason = _safe_public_url(request_url)
+                    if not safe_url:
+                        await route.abort()
+                        return
+                if str(request.resource_type or "").casefold() in {
+                    "image", "media", "font", "stylesheet"
+                }:
+                    await route.abort()
+                    return
+                await route.continue_()
+
             try:
-                await context.block_requests()
+                await context.page.route("**/*", _route_guard)
             except Exception:
                 pass
 
@@ -759,18 +778,16 @@ def _kind(value: Any) -> str:
 
 
 def _run_async(coro):
-    """Run a Crawlee coroutine from the desktop worker's synchronous thread."""
+    """Run a Crawlee coroutine from a synchronous desktop worker safely."""
     try:
         asyncio.get_running_loop()
     except RuntimeError:
         return asyncio.run(coro)
 
-    # Defensive fallback if this function is ever called from an async host.
-    loop = asyncio.new_event_loop()
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
+    # If an async host ever calls this compatibility layer, execute Crawlee in
+    # an isolated helper thread rather than nesting an event loop.
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(asyncio.run, coro).result()
 
 
 def _summarize(
