@@ -348,6 +348,15 @@ def assess_search_quality_row(
     elif identity_status == "conflicting":
         _append_unique(negative, "Identity signals conflict")
 
+    verification_status = _kind(row.get("accountVerificationStatus"))
+    if family in _ACCOUNT_TYPES:
+        if verification_status == "verified":
+            _append_unique(positive, "Account independently verified")
+        elif verification_status == "reported":
+            _append_unique(negative, "Account is provider-reported but not independently verified")
+        elif verification_status == "unreachable":
+            _append_unique(negative, "Account verification was blocked or unreachable")
+
     hard_reject = _hard_reject_reason(row, relevance_status=relevance.status)
     if hard_reject:
         _append_unique(negative, hard_reject)
@@ -379,6 +388,12 @@ def assess_search_quality_row(
 
     if candidate_only:
         score -= 8.0
+    if family in _ACCOUNT_TYPES and verification_status == "reported":
+        score -= 18.0
+    elif family in _ACCOUNT_TYPES and verification_status == "unreachable":
+        score -= 22.0
+    elif family in _ACCOUNT_TYPES and verification_status == "verified":
+        score += 6.0
     score -= min(15.0, max(0, _safe_int(row.get("depth"))) * 3.0)
     score += min(8.0, max(0, corroboration - 1) * 4.0)
 
@@ -418,9 +433,14 @@ def assess_search_quality_row(
         corroboration=corroboration,
     )
 
+    account_requires_review = bool(
+        family in _ACCOUNT_TYPES
+        and verification_status in {"reported", "unreachable"}
+    )
     would_show = bool(not hard_reject and tier != "noise")
     would_explore = bool(
         not hard_reject
+        and not account_requires_review
         and pivot_score >= 68.0
         and (
             exact_kind
@@ -431,6 +451,7 @@ def assess_search_quality_row(
     would_persist = bool(
         not hard_reject
         and not candidate_only
+        and not account_requires_review
         and persistence_score >= 82.0
     )
 
