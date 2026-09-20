@@ -352,9 +352,11 @@ def assess_search_quality_row(
     if family in _ACCOUNT_TYPES:
         if verification_status == "verified":
             _append_unique(positive, "Account independently verified")
-        elif verification_status == "reported":
-            _append_unique(negative, "Account is provider-reported but not independently verified")
-        elif verification_status == "unreachable":
+        elif verification_status == "likely":
+            _append_unique(positive, "Rendered browser evidence indicates the account likely exists")
+        elif verification_status in {"reported", "uncertain"}:
+            _append_unique(negative, "Account is not independently verified")
+        elif verification_status in {"unreachable", "blocked"}:
             _append_unique(negative, "Account verification was blocked or unreachable")
 
     hard_reject = _hard_reject_reason(row, relevance_status=relevance.status)
@@ -388,10 +390,12 @@ def assess_search_quality_row(
 
     if candidate_only:
         score -= 8.0
-    if family in _ACCOUNT_TYPES and verification_status == "reported":
+    if family in _ACCOUNT_TYPES and verification_status in {"reported", "uncertain"}:
         score -= 18.0
-    elif family in _ACCOUNT_TYPES and verification_status == "unreachable":
+    elif family in _ACCOUNT_TYPES and verification_status in {"unreachable", "blocked"}:
         score -= 22.0
+    elif family in _ACCOUNT_TYPES and verification_status == "likely":
+        score -= 4.0
     elif family in _ACCOUNT_TYPES and verification_status == "verified":
         score += 6.0
     score -= min(15.0, max(0, _safe_int(row.get("depth"))) * 3.0)
@@ -413,7 +417,7 @@ def assess_search_quality_row(
 
     if (
         family in _ACCOUNT_TYPES
-        and verification_status in {"reported", "unreachable"}
+        and verification_status in {"reported", "unreachable", "uncertain", "blocked", "likely"}
         and tier in {"strong", "relevant"}
     ):
         tier = "possible"
@@ -442,7 +446,9 @@ def assess_search_quality_row(
 
     account_requires_review = bool(
         family in _ACCOUNT_TYPES
-        and verification_status in {"reported", "unreachable"}
+        and verification_status in {
+            "reported", "unreachable", "uncertain", "blocked", "likely"
+        }
     )
     would_show = bool(not hard_reject and tier != "noise")
     would_explore = bool(
