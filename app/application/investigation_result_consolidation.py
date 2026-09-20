@@ -179,7 +179,9 @@ def consolidate_result_rows(
             verification_status = str(
                 item.get("accountVerificationStatus") or ""
             ).strip().casefold()
-            if verification_status in {"reported", "unreachable"}:
+            if verification_status in {
+                "reported", "unreachable", "uncertain", "blocked"
+            }:
                 item["visibilityTier"] = "possible"
                 item["visibilityScore"] = max(
                     45.0,
@@ -194,7 +196,22 @@ def consolidate_result_rows(
             if verification_status == "invalid":
                 suppressed += 1
                 continue
-            related_accounts.append(dict(item))
+            # VERIFIED and LIKELY are analyst-facing account results. LIKELY
+            # remains excluded from persistence/pivot decisions by Quality.
+            if verification_status in {"verified", "likely"}:
+                related_accounts.append(dict(item))
+            else:
+                item["visibilityTier"] = "possible"
+                item["visibilityScore"] = max(
+                    45.0,
+                    float(item.get("contextRelevanceScore") or 0.0),
+                )
+                item["visibilityReason"] = str(
+                    item.get("accountVerificationReason")
+                    or "Account availability is unresolved."
+                )
+                possible_rows.append(item)
+                continue
         identity_status = str(item.get("identityStatus") or "")
         if identity_status and identity_status != "not_applicable":
             identity_rows.append(dict(item))
@@ -242,8 +259,15 @@ def consolidate_result_rows(
     )
     related_accounts.sort(
         key=lambda row: (
-            {"verified": 0, "reported": 1, "unreachable": 2}.get(
-                str(row.get("accountVerificationStatus") or "reported").casefold(), 3
+            {
+                "verified": 0,
+                "likely": 1,
+                "reported": 2,
+                "uncertain": 3,
+                "unreachable": 4,
+                "blocked": 5,
+            }.get(
+                str(row.get("accountVerificationStatus") or "reported").casefold(), 9
             ),
             -float(row.get("score") or 0.0),
             -int(row.get("corroborationCount") or 0),
