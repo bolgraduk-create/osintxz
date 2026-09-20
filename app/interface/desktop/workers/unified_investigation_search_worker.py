@@ -1009,7 +1009,8 @@ class UnifiedInvestigationSearchWorker(QObject):
                             # platform does not expose a canonical profile URL.
                             identifiers["username"] = target
                         service = str(
-                            finding_metadata.get("service")
+                            finding.get("source")
+                            or finding_metadata.get("service")
                             or finding_metadata.get("platform")
                             or finding_metadata.get("site_name")
                             or finding_metadata.get("name")
@@ -1030,6 +1031,7 @@ class UnifiedInvestigationSearchWorker(QObject):
                                 "seedType": target_type,
                                 "identifiers": identifiers,
                                 "findingMetadata": finding_metadata,
+                                "service": service,
                                 "confidence": finding.get("confidence"),
                                 "reliability": finding.get("reliability"),
                                 "candidateOnly": False,
