@@ -31,6 +31,87 @@ def test_deep_maigret_command_is_single_site_enrichment(tmp_path):
     assert "--top-sites" not in command
 
 
+def test_site_resolution_accepts_exact_maigret_site(monkeypatch):
+    monkeypatch.setattr(
+        MaigretConnector,
+        "_load_local_site_catalog",
+        classmethod(
+            lambda cls: {
+                "GitHub": {
+                    "url": "https://github.com/{username}",
+                    "urlMain": "https://github.com",
+                }
+            }
+        ),
+    )
+
+    resolved = MaigretConnector.resolve_deep_site(
+        username="texnobreath",
+        suggested_site="GitHub",
+        profile_url="https://github.com/texnobreath",
+    )
+
+    assert resolved["supported"] is True
+    assert resolved["site"] == "GitHub"
+
+
+def test_site_resolution_can_use_profile_url_when_provider_label_differs(monkeypatch):
+    monkeypatch.setattr(
+        MaigretConnector,
+        "_load_local_site_catalog",
+        classmethod(
+            lambda cls: {
+                "GitHub": {
+                    "url": "https://github.com/{username}",
+                    "urlMain": "https://github.com",
+                }
+            }
+        ),
+    )
+
+    resolved = MaigretConnector.resolve_deep_site(
+        username="texnobreath",
+        suggested_site="Github via Sherlock",
+        profile_url="https://github.com/texnobreath/",
+    )
+
+    assert resolved["supported"] is True
+    assert resolved["site"] == "GitHub"
+    assert "URL" in resolved["reason"]
+
+
+def test_unsupported_sherlock_platform_does_not_start_maigret(monkeypatch):
+    monkeypatch.setattr(
+        MaigretConnector,
+        "_load_local_site_catalog",
+        classmethod(
+            lambda cls: {
+                "GitHub": {
+                    "url": "https://github.com/{username}",
+                    "urlMain": "https://github.com",
+                }
+            }
+        ),
+    )
+    connector = MaigretConnector()
+
+    class NeverRunner:
+        def run(self, *args, **kwargs):
+            raise AssertionError("Unsupported site must not start a Maigret process")
+
+    connector.runner = NeverRunner()
+    result = connector.deep_enrich(
+        username="wixxlexx",
+        site="Apple Developer",
+        profile_url="https://developer.apple.com/forums/profile/wixxlexx",
+        timeout=10,
+    )
+
+    assert result.status is ResultStatus.NOT_SUPPORTED
+    assert result.metadata["network_request_started"] is False
+    assert "not supported" in str(result.error).casefold()
+
+
 class _FallbackRunner:
     def __init__(self) -> None:
         self.commands: list[list[str]] = []
@@ -70,6 +151,18 @@ class _FallbackRunner:
 
 
 def test_deep_enrichment_falls_back_when_local_maigret_lacks_enrich(monkeypatch):
+    monkeypatch.setattr(
+        MaigretConnector,
+        "_load_local_site_catalog",
+        classmethod(
+            lambda cls: {
+                "GitHub": {
+                    "url": "https://github.com/{username}",
+                    "urlMain": "https://github.com",
+                }
+            }
+        ),
+    )
     connector = MaigretConnector()
     connector.runner = _FallbackRunner()
     monkeypatch.setattr(
@@ -81,6 +174,7 @@ def test_deep_enrichment_falls_back_when_local_maigret_lacks_enrich(monkeypatch)
     result = connector.deep_enrich(
         username="texnobreath",
         site="GitHub",
+        profile_url="https://github.com/texnobreath",
         timeout=10,
     )
 
