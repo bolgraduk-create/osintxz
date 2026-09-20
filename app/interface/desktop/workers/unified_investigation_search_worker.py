@@ -19,6 +19,10 @@ from app.application.identity_resolution import (
 from app.application.person_name_relevance import match_person_name_record
 from app.application.contextual_relevance import assess_record_against_seed
 from app.application.unified_persistence_relevance import build_unified_finding_gate
+from app.application.search_quality_engine import (
+    annotate_search_quality_rows,
+    quality_trace_rows,
+)
 from app.application.unified_investigation_search import (
     UnifiedSeed,
     UnifiedSeedKind,
@@ -379,7 +383,18 @@ class UnifiedInvestigationSearchWorker(QObject):
                 if not row.get("_identitySignals"):
                     row["_identitySignals"] = extract_identity_signals(row).to_payload()
 
+            # R13.26a shadow quality assessment.  These annotations are
+            # diagnostic only: current consolidation, persistence and pivot
+            # decisions remain authoritative until the benchmark proves that
+            # the new engine is safer and higher-recall.
+            quality_rows, quality_summary = annotate_search_quality_rows(
+                results,
+                search_profile=self.profile,
+            )
+            results = quality_rows
             raw_results = [self._public_result_row(row) for row in results]
+            quality_trace = quality_trace_rows(results, limit=500)
+
             consolidation = consolidate_result_rows(
                 results,
                 seeds=[self._snapshot_seed(item, queued=True) for item in seeds],
@@ -420,6 +435,8 @@ class UnifiedInvestigationSearchWorker(QObject):
                     self._public_result_row(row)
                     for row in (consolidation.possible_rows or [])
                 ],
+                "qualityTrace": quality_trace,
+                "qualitySummary": quality_summary.to_dict(),
                 "providers": providers,
                 "healthSummary": health_summary,
                 "pivots": [self._snapshot_seed(item, queued=is_exact_recursive_seed(item)) for item in pivots],
@@ -442,6 +459,13 @@ class UnifiedInvestigationSearchWorker(QObject):
                     "relatedAccounts": len(consolidation.related_accounts or []),
                     "mentions": len(consolidation.mention_rows or []),
                     "possible": len(consolidation.possible_rows or []),
+                    "qualityStrong": quality_summary.strong,
+                    "qualityRelevant": quality_summary.relevant,
+                    "qualityPossible": quality_summary.possible,
+                    "qualityNoise": quality_summary.noise,
+                    "qualityDisagreements": quality_summary.disagreements,
+                    "qualityWouldExplore": quality_summary.would_explore,
+                    "qualityWouldPersist": quality_summary.would_persist,
                     "providers": len(providers),
                     "healthReady": int(health_summary.get("ready") or 0),
                     "healthIssues": int(health_summary.get("issues") or 0),
