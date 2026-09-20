@@ -9,6 +9,7 @@ from app.application.account_profile_validation import (
 )
 from app.application.contextual_relevance import assess_result_row
 from app.application.search_quality_engine import assess_search_quality_row
+from app.application.investigation_result_consolidation import consolidate_result_rows
 from app.application.unified_persistence_relevance import (
     UnifiedFindingPersistenceGate,
 )
@@ -152,13 +153,17 @@ def test_403_is_unreachable_not_false_negative():
     assert summary.invalid == 0
 
 
-def test_cross_source_same_profile_is_verified_without_live_fetch():
-    called = False
+def test_cross_source_same_profile_still_requires_live_validation():
+    called_urls: list[str] = []
 
     def fetcher(url, timeout, max_bytes):
-        nonlocal called
-        called = True
-        raise AssertionError("Corroborated account should not require live fetch")
+        del timeout, max_bytes
+        called_urls.append(url)
+        return ProfileFetchResult(
+            status_code=200,
+            final_url=url,
+            body="<html><title>wixxlexx · GitHub</title><h1>wixxlexx</h1></html>",
+        )
 
     url = "https://github.com/wixxlexx"
     rows, summary = annotate_account_profile_validation(
@@ -173,9 +178,111 @@ def test_cross_source_same_profile_is_verified_without_live_fetch():
         fetcher=fetcher,
     )
 
-    assert called is False
+    assert called_urls == [url]
     assert all(row["accountVerificationStatus"] == "verified" for row in rows)
+    assert all(row["accountProviderCorroboration"] == 2 for row in rows)
     assert summary.corroborated_without_fetch == 1
+
+
+def test_username_only_inside_script_does_not_verify_profile():
+    def fetcher(url, timeout, max_bytes):
+        del timeout, max_bytes
+        return ProfileFetchResult(
+            status_code=200,
+            final_url=url,
+            body=(
+                "<html><head><title>Community</title></head><body>"
+                "<h1>Welcome</h1>"
+                "<script>window.searchUsername='wixxlexx';</script>"
+                "</body></html>"
+            ),
+        )
+
+    rows, _summary = annotate_account_profile_validation(
+        [_account()],
+        fetcher=fetcher,
+    )
+
+    assert rows[0]["accountVerificationStatus"] == "reported"
+    assert rows[0]["accountVerificationUsernameSeen"] is False
+
+
+def test_title_and_profile_url_are_strong_live_evidence():
+    def fetcher(url, timeout, max_bytes):
+        del timeout, max_bytes
+        return ProfileFetchResult(
+            status_code=200,
+            final_url=url,
+            body=(
+                "<html><head>"
+                "<title>wixxlexx - Example profile</title>"
+                '<link rel="canonical" href="https://example.test/users/wixxlexx">'
+                "</head><body><h1>wixxlexx</h1><p>Followers 10 · Following 2</p></body></html>"
+            ),
+        )
+
+    rows, _summary = annotate_account_profile_validation(
+        [_account()],
+        fetcher=fetcher,
+    )
+
+    row = rows[0]
+    assert row["accountVerificationStatus"] == "verified"
+    assert row["accountVerificationEvidenceScore"] >= 45
+    assert "Page title contains searched username" in row["accountVerificationEvidenceSignals"]
+
+
+def test_reported_account_moves_to_possible_not_clean_or_accounts():
+    row = _account()
+    row.update(
+        {
+            "accountVerificationStatus": "reported",
+            "accountVerificationReason": "Reachable but not independently verified.",
+            "accountVerificationChecked": True,
+        }
+    )
+
+    result = consolidate_result_rows(
+        [row],
+        seeds=[{"kind": "username", "value": "wixxlexx"}],
+    )
+
+    assert result.rows == []
+    assert result.related_accounts == []
+    assert len(result.possible_rows) == 1
+    assert result.possible_rows[0]["accountVerificationStatus"] == "reported"
+
+
+def test_verified_account_remains_in_clean_and_accounts():
+    row = _account()
+    row.update(
+        {
+            "accountVerificationStatus": "verified",
+            "accountVerificationReason": "Live profile-specific evidence matched.",
+            "accountVerificationChecked": True,
+        }
+    )
+
+    result = consolidate_result_rows(
+        [row],
+        seeds=[{"kind": "username", "value": "wixxlexx"}],
+    )
+
+    assert len(result.rows) == 1
+    assert len(result.related_accounts) == 1
+    assert result.possible_rows == []
+
+
+def test_reported_account_is_not_explored_or_persisted_by_quality_shadow():
+    row = _account()
+    row["accountVerificationStatus"] = "reported"
+    row["accountVerificationReason"] = "Insufficient profile evidence."
+
+    assessment = assess_search_quality_row(row)
+
+    assert assessment.would_explore is False
+    assert assessment.would_persist is False
+    assert any("not independently verified" in item for item in assessment.negative_signals)
 
 
 def test_live_check_budget_retains_unchecked_account_as_reported():
