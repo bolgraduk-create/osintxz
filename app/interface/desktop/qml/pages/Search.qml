@@ -715,7 +715,9 @@ Item {
                                     ? Theme.danger
                                     : root.activeTab === "quality"
                                         ? root.statusColor(row.modelData.qualityTier === "noise" ? "failed" : (row.modelData.qualityTier === "possible" ? "possible" : "success"))
-                                        : root.statusColor(root.activeTab === "identity" ? row.modelData.identityStatus : (row.modelData.status || (row.modelData.queued ? "success" : "candidate")))
+                                        : root.activeTab === "accounts"
+                                            ? root.statusColor(row.modelData.accountVerificationStatus || "reported")
+                                            : root.statusColor(root.activeTab === "identity" ? row.modelData.identityStatus : (row.modelData.status || (row.modelData.queued ? "success" : "candidate")))
                             }
 
                             Text {
@@ -768,7 +770,9 @@ Item {
                                 border.width: 1
                                 border.color: root.activeTab === "quality"
                                     ? root.statusColor(row.modelData.qualityTier === "noise" ? "failed" : (row.modelData.qualityTier === "possible" ? "possible" : "success"))
-                                    : root.statusColor(root.activeTab === "identity" ? row.modelData.identityStatus : (row.modelData.status || (row.modelData.queued ? "success" : "candidate")))
+                                    : root.activeTab === "accounts"
+                                        ? root.statusColor(row.modelData.accountVerificationStatus || "reported")
+                                        : root.statusColor(root.activeTab === "identity" ? row.modelData.identityStatus : (row.modelData.status || (row.modelData.queued ? "success" : "candidate")))
                                 Text {
                                     id: badge
                                     anchors.fill: parent
