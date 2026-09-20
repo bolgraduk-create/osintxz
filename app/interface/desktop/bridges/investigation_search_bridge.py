@@ -18,6 +18,7 @@ from app.interface.desktop.workers.unified_investigation_search_worker import (
 from app.interface.desktop.workers.account_enrichment_worker import (
     AccountEnrichmentWorker,
 )
+from app.osint.connectors.maigret_connector import MaigretConnector
 
 
 LOGGER = logging.getLogger(__name__)
@@ -178,6 +179,50 @@ class InvestigationSearchBridge(QObject):
         self._account_enrichment = {}
         self._account_context = {}
         self.accountEnrichmentChanged.emit()
+
+    @Slot("QVariantMap", result="QVariantMap")
+    def accountEnrichmentCapability(self, account: object) -> dict[str, Any]:
+        payload = dict(account) if isinstance(account, dict) else {}
+        if not payload:
+            return {
+                "available": False,
+                "reason": "The selected account payload is unavailable.",
+                "site": "",
+                "username": "",
+            }
+
+        username = self._account_username(payload)
+        observation = self._preferred_maigret_observation(payload)
+        site = str(observation.get("service") or payload.get("service") or "").strip()
+        profile_url = str(observation.get("url") or payload.get("url") or "").strip()
+        if not username:
+            return {
+                "available": False,
+                "reason": "Unable to determine the username for this account.",
+                "site": "",
+                "username": "",
+            }
+        if not site:
+            return {
+                "available": False,
+                "reason": "The provider did not expose a platform name for targeted enrichment.",
+                "site": "",
+                "username": username,
+            }
+
+        resolution = MaigretConnector.resolve_deep_site(
+            username=username,
+            suggested_site=site,
+            profile_url=profile_url,
+        )
+        return {
+            "available": bool(resolution.get("supported")),
+            "reason": str(resolution.get("reason") or ""),
+            "site": str(resolution.get("site") or ""),
+            "username": username,
+            "profileUrl": profile_url,
+            "requestedSite": site,
+        }
 
     @Slot("QVariantMap", result=bool)
     def deepEnrichAccount(self, account: object) -> bool:
