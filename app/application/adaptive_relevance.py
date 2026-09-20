@@ -64,6 +64,13 @@ def classify_suppressed_row(row: dict[str, Any]) -> AdaptiveVisibility:
         for key in ("title", "detail", "meta", "url")
     ).casefold()
 
+    if str(row.get("accountVerificationStatus") or "").strip().casefold() == "invalid":
+        return AdaptiveVisibility(
+            "suppressed",
+            max(0.0, relevance_score),
+            str(row.get("accountVerificationReason") or "Independent profile validation indicates the account is absent"),
+        )
+
     if bool(row.get("identityRejected")) or any(marker in material for marker in _NEGATIVE_MARKERS):
         return AdaptiveVisibility("suppressed", max(0.0, relevance_score), "Explicit mismatch or contradictory evidence")
 
