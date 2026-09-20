@@ -4,6 +4,7 @@ import json
 import re
 import shutil
 import sys
+import importlib.util
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -153,11 +154,114 @@ class MaigretConnector(BaseConnector):
                 )
         return out
 
+    @staticmethod
+    def _canonical_profile_url(value: str) -> str:
+        raw = str(value or "").strip()
+        if not raw:
+            return ""
+        try:
+            parsed = urlsplit(raw)
+        except ValueError:
+            return ""
+        if not parsed.scheme or not parsed.netloc:
+            return ""
+        host = (parsed.hostname or "").casefold()
+        if host.startswith("www."):
+            host = host[4:]
+        path = re.sub(r"/{2,}", "/", parsed.path or "/").rstrip("/") or "/"
+        return f"{parsed.scheme.casefold()}://{host}{path}".casefold()
+
+    @classmethod
+    def _load_local_site_catalog(cls) -> dict[str, dict[str, Any]]:
+        """Load the installed Maigret site's database without network access."""
+        try:
+            spec = importlib.util.find_spec("maigret")
+            locations = list(spec.submodule_search_locations or ()) if spec else []
+            if not locations:
+                return {}
+            db_path = Path(locations[0]) / "resources" / "data.json"
+            data = json.loads(db_path.read_text(encoding="utf-8"))
+            sites = data.get("sites") if isinstance(data, dict) else None
+            return dict(sites) if isinstance(sites, dict) else {}
+        except Exception:
+            return {}
+
+    @classmethod
+    def resolve_deep_site(
+        cls,
+        *,
+        username: str,
+        suggested_site: str,
+        profile_url: str = "",
+    ) -> dict[str, Any]:
+        """Resolve an external provider label/URL to an installed Maigret site.
+
+        We deliberately do not fuzzy-match names.  Sherlock/User Scanner labels
+        are not guaranteed to be Maigret database keys; a wrong fuzzy match can
+        make the deep pass inspect a different service.  Exact site key or an
+        exact profile URL template match is required.
+        """
+        catalog = cls._load_local_site_catalog()
+        if not catalog:
+            return {
+                "supported": False,
+                "site": "",
+                "reason": "Maigret site database is unavailable.",
+            }
+
+        wanted_name = str(suggested_site or "").strip().casefold()
+        for site_name, info in catalog.items():
+            if site_name.casefold() != wanted_name:
+                continue
+            if isinstance(info, dict) and bool(info.get("disabled")):
+                return {
+                    "supported": False,
+                    "site": site_name,
+                    "reason": f"{site_name} is disabled in the installed Maigret database.",
+                }
+            return {
+                "supported": True,
+                "site": site_name,
+                "reason": "Exact Maigret site name.",
+            }
+
+        target_url = cls._canonical_profile_url(profile_url)
+        normalized_username = str(username or "").strip().lstrip("@")
+        if target_url and normalized_username:
+            for site_name, info in catalog.items():
+                if not isinstance(info, dict) or bool(info.get("disabled")):
+                    continue
+                if str(info.get("type") or "username").strip().casefold() != "username":
+                    continue
+                template = str(info.get("url") or "").strip()
+                if not template:
+                    continue
+                expected = template
+                for marker in ("{username}", "{}"):
+                    expected = expected.replace(marker, normalized_username)
+                expected_url = cls._canonical_profile_url(expected)
+                if expected_url and expected_url == target_url:
+                    return {
+                        "supported": True,
+                        "site": site_name,
+                        "reason": "Profile URL matches Maigret site template.",
+                    }
+
+        return {
+            "supported": False,
+            "site": "",
+            "reason": (
+                f"The selected platform '{suggested_site or 'unknown'}' is not "
+                "supported by the installed Maigret site database for targeted enrichment."
+            ),
+        }
+
     def deep_enrich(
         self,
         *,
         username: str,
         site: str,
+        profile_url: str = "",
         timeout: int = 25,
     ) -> OsintResult:
         """Deep-enrich one selected public account without persistence/recursion."""
@@ -169,6 +273,27 @@ class MaigretConnector(BaseConnector):
                 status=ResultStatus.NOT_SUPPORTED,
                 error="Username and Maigret site name are required for deep enrichment.",
             )
+
+        resolution = self.resolve_deep_site(
+            username=normalized_username,
+            suggested_site=normalized_site,
+            profile_url=profile_url,
+        )
+        if not bool(resolution.get("supported")):
+            return OsintResult(
+                connector=self.name,
+                status=ResultStatus.NOT_SUPPORTED,
+                error=str(resolution.get("reason") or "Maigret does not support targeted enrichment for this platform."),
+                metadata={
+                    "deep_enrichment": True,
+                    "requested_site": str(site or "").strip(),
+                    "resolved_site": normalized_site,
+                    "resolved_site": "",
+                    "profile_url": str(profile_url or ""),
+                    "network_request_started": False,
+                },
+            )
+        normalized_site = str(resolution.get("site") or normalized_site)
 
         executable = self.executable()
         if not executable:
@@ -250,7 +375,8 @@ class MaigretConnector(BaseConnector):
                                     "registration_confirmed": True,
                                     "public_data_only": True,
                                     "deep_enrichment": True,
-                                    "requested_site": normalized_site,
+                                    "requested_site": str(site or "").strip(),
+                    "resolved_site": normalized_site,
                                 },
                             )
                         )
@@ -269,7 +395,8 @@ class MaigretConnector(BaseConnector):
                 error=parse_error or ("Maigret deep enrichment timed out; partial data retained." if timed_out else None),
                 metadata={
                     "deep_enrichment": True,
-                    "requested_site": normalized_site,
+                    "requested_site": str(site or "").strip(),
+                    "resolved_site": normalized_site,
                     "accounts_found": len(findings),
                     "timed_out": timed_out,
                     "page_parsing_enabled": True,
@@ -291,7 +418,8 @@ class MaigretConnector(BaseConnector):
             ),
             metadata={
                 "deep_enrichment": True,
-                "requested_site": normalized_site,
+                "requested_site": str(site or "").strip(),
+                    "resolved_site": normalized_site,
                 "timed_out": timed_out,
                 "page_parsing_enabled": True,
                 "secondary_api_enrichment": not enrich_fallback,
