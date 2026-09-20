@@ -198,6 +198,32 @@ class MaigretConnector(BaseConnector):
                 working_directory=temp_path,
                 env={"PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"},
             )
+            enrich_fallback = False
+            enrich_error_text = " ".join(
+                (str(execution.stderr or ""), str(execution.stdout or ""))
+            ).casefold()
+            if (
+                not execution.success
+                and "--enrich" in enrich_error_text
+                and any(
+                    marker in enrich_error_text
+                    for marker in (
+                        "unrecognized", "unknown option", "no such option",
+                        "invalid option", "unexpected argument",
+                    )
+                )
+            ):
+                # Older Maigret builds predate --enrich. Keep page parsing
+                # enabled and retry the same single site without secondary API
+                # enrichment instead of making the UI feature version-fragile.
+                enrich_fallback = True
+                fallback_command = [item for item in command if item != "--enrich"]
+                execution = self.runner.run(
+                    command=fallback_command,
+                    timeout=self._deep_process_budget(timeout),
+                    working_directory=temp_path,
+                    env={"PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"},
+                )
 
             json_files = [path for path in temp_path.rglob("*.json") if path.is_file()]
             data: Any = None
@@ -247,7 +273,8 @@ class MaigretConnector(BaseConnector):
                     "accounts_found": len(findings),
                     "timed_out": timed_out,
                     "page_parsing_enabled": True,
-                    "secondary_api_enrichment": True,
+                    "secondary_api_enrichment": not enrich_fallback,
+                    "enrich_compatibility_fallback": enrich_fallback,
                     "recursive_search": False,
                     "process_budget_seconds": self._deep_process_budget(timeout),
                 },
@@ -267,7 +294,8 @@ class MaigretConnector(BaseConnector):
                 "requested_site": normalized_site,
                 "timed_out": timed_out,
                 "page_parsing_enabled": True,
-                "secondary_api_enrichment": True,
+                "secondary_api_enrichment": not enrich_fallback,
+                "enrich_compatibility_fallback": enrich_fallback,
                 "recursive_search": False,
             },
         )
