@@ -365,9 +365,45 @@ def _prepare_row(row: dict[str, Any], *, order: int) -> dict[str, Any]:
     return out
 
 
+def _account_observation(row: dict[str, Any]) -> dict[str, Any] | None:
+    """Preserve one provider's account details before cross-source fusion."""
+    if not bool(row.get("accountCandidateEligible")):
+        return None
+    metadata = row.get("findingMetadata")
+    metadata = dict(metadata) if isinstance(metadata, dict) else {}
+    service = _clean_text(
+        row.get("service")
+        or metadata.get("service")
+        or metadata.get("platform")
+        or metadata.get("site_name")
+        or metadata.get("name")
+    )
+    return {
+        "connector": _clean_text(row.get("source")) or "Unknown source",
+        "service": service,
+        "lane": _clean_text(row.get("lane")) or "Unknown",
+        "url": _clean_text(row.get("url")),
+        "title": _clean_text(row.get("title")),
+        "detail": _clean_text(row.get("detail")),
+        "status": _clean_text(row.get("status")),
+        "confidence": row.get("confidence"),
+        "reliability": row.get("reliability"),
+        "metadata": metadata,
+    }
+
+
+def _account_observation_key(observation: dict[str, Any]) -> tuple[str, str, str]:
+    return (
+        _normalize_text(observation.get("connector")),
+        _normalize_text(observation.get("service")),
+        _canonical_url(observation.get("url")) or _normalize_text(observation.get("title")),
+    )
+
+
 def _new_group(row: dict[str, Any]) -> dict[str, Any]:
     source = _clean_text(row.get("source")) or "Unknown source"
     lane = _clean_text(row.get("lane")) or "Unknown"
+    account_observation = _account_observation(row)
     return {
         "best": row,
         "rows": [row],
@@ -380,6 +416,7 @@ def _new_group(row: dict[str, Any]) -> dict[str, Any]:
         "identity_signals": IdentitySignals.from_payload(row.get("_identitySignals")),
         "identity_eligible_any": bool(row.get("identityCandidateEligible")),
         "account_eligible_any": bool(row.get("accountCandidateEligible")),
+        "account_observations": [account_observation] if account_observation else [],
     }
 
 
@@ -401,6 +438,15 @@ def _merge_group(group: dict[str, Any], row: dict[str, Any]) -> None:
     group["account_eligible_any"] = bool(
         group.get("account_eligible_any") or row.get("accountCandidateEligible")
     )
+    account_observation = _account_observation(row)
+    if account_observation is not None:
+        existing_keys = {
+            _account_observation_key(item)
+            for item in list(group.get("account_observations") or [])
+            if isinstance(item, dict)
+        }
+        if _account_observation_key(account_observation) not in existing_keys:
+            group.setdefault("account_observations", []).append(account_observation)
     for key, value in dict(row.get("identifiers") or {}).items():
         group["identifiers"].setdefault(key, value)
     group["identity_signals"].merge(
@@ -438,6 +484,11 @@ def _finalize_group(
     )
 
     if bool(group.get("account_eligible_any")):
+        best["accountObservations"] = [
+            dict(item)
+            for item in list(group.get("account_observations") or [])
+            if isinstance(item, dict)
+        ]
         best["accountRelation"] = True
         best["accountRelationLabel"] = "Related account"
         best["identityCandidateEligible"] = False
