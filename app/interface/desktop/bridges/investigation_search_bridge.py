@@ -301,7 +301,10 @@ class InvestigationSearchBridge(QObject):
             }
         )
         self._account_enrichment = data
-        self._set_message(f"Account enrichment failed: {error}")
+        if str(data.get("status") or "").casefold() in {"not_supported", "not_available"}:
+            self._set_message(error)
+        else:
+            self._set_message(f"Account enrichment failed: {error}")
         self.accountEnrichmentChanged.emit()
 
     @Slot()
