@@ -570,6 +570,12 @@ def _hard_reject_reason(
     *,
     relevance_status: str,
 ) -> str:
+    if str(row.get("accountVerificationStatus") or "").strip().casefold() == "invalid":
+        return str(
+            row.get("accountVerificationReason")
+            or "Independent profile validation indicates the account is absent"
+        )
+
     if bool(row.get("identityRejected")):
         return "Explicit identity mismatch"
 
