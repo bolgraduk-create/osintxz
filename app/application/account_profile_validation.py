@@ -480,6 +480,12 @@ def _username_for_row(row: dict[str, Any]) -> str:
 
 
 def _metadata_negative(metadata: dict[str, Any]) -> bool:
+    try:
+        http_status = int(metadata.get("http_status") or metadata.get("status_code") or 0)
+    except (TypeError, ValueError):
+        http_status = 0
+    if http_status in {404, 410}:
+        return True
     if metadata.get("available") is True:
         return True
     for key in ("exists", "claimed", "registered", "used"):
