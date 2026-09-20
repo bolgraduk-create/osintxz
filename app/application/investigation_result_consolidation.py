@@ -292,23 +292,44 @@ def _prepare_row(row: dict[str, Any], *, order: int) -> dict[str, Any]:
     url = _canonical_url(out.get("url"))
     identifiers = _identifier_map(out.get("identifiers"))
 
+    account_observation = bool(
+        _family(out.get("seedType")) == "username"
+        and (
+            is_account_candidate_type(original_type)
+            or _family(original_type) == "username"
+        )
+    )
+
     strong: set[tuple[str, str]] = set()
     for raw_key, raw_value in identifiers.items():
         hint = _identifier_kind(raw_key)
         normalized = _normalize_value(hint, raw_value)
-        if normalized:
+        if normalized and not (account_observation and hint == "username"):
             strong.add((hint, normalized))
 
     title_norm = _normalize_value(family, title)
-    if family in _EXACT_FAMILIES and title_norm:
+    # One username may legitimately exist on many unrelated platforms.  For
+    # account observations, the bare handle is therefore not a dedupe key;
+    # canonical profile URL (or the fallback platform/source context) is.
+    if family in _EXACT_FAMILIES and title_norm and not account_observation:
         strong.add((family, title_norm))
     if url:
         strong.add(("url", url))
 
     fallback_title = _normalize_text(title)
     fallback_detail = _normalize_text(detail)
-    # Keep exact names conservative: no fuzzy or token-based person/org merging.
-    fallback_key = (family, fallback_title, url or fallback_detail[:180])
+    if account_observation:
+        platform = _normalize_text(
+            out.get("service")
+            or (out.get("findingMetadata") or {}).get("service")
+            if isinstance(out.get("findingMetadata"), dict)
+            else out.get("service")
+        )
+        platform = platform or _normalize_text(out.get("source"))
+        fallback_key = (family, fallback_title, url or platform or fallback_detail[:180])
+    else:
+        # Keep exact names conservative: no fuzzy or token-based person/org merging.
+        fallback_key = (family, fallback_title, url or fallback_detail[:180])
 
     structured_person_match = bool(
         _clean_text(out.get("identityMatchedName"))
