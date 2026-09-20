@@ -208,6 +208,16 @@ Item {
         accountDetailsDialog.open()
     }
 
+    function accountEnrichmentMatchesSelectedAccount() {
+        if (!root.accountEnrichment.hasRun) return false
+        const selectedUrl = String(root.selectedAccount.url || "").replace(/\/$/, "").toLowerCase()
+        const enrichmentUrl = String(root.accountEnrichment.profileUrl || "").replace(/\/$/, "").toLowerCase()
+        if (selectedUrl.length > 0 && enrichmentUrl.length > 0) return selectedUrl === enrichmentUrl
+        const selectedUsername = String(root.selectedAccount.seed || root.selectedAccount.title || "").replace(/^@/, "").toLowerCase()
+        const enrichmentUsername = String(root.accountEnrichment.username || "").replace(/^@/, "").toLowerCase()
+        return selectedUsername.length > 0 && selectedUsername === enrichmentUsername
+    }
+
     opacity: 0
     Component.onCompleted: appear.start()
     NumberAnimation {
@@ -1144,7 +1154,7 @@ Item {
                             font.letterSpacing: 1.1
                         }
                         Text {
-                            visible: Boolean(root.accountEnrichment.hasRun)
+                            visible: root.accountEnrichmentMatchesSelectedAccount()
                             text: root.accountEnrichmentBusy
                                 ? "RUNNING"
                                 : String(root.accountEnrichment.status || "UNKNOWN").toUpperCase()
@@ -1157,7 +1167,7 @@ Item {
                     }
 
                     Rectangle {
-                        visible: root.accountEnrichmentBusy
+                        visible: root.accountEnrichmentBusy && root.accountEnrichmentMatchesSelectedAccount()
                         width: parent.width
                         height: 62
                         radius: 8
@@ -1176,7 +1186,7 @@ Item {
                     }
 
                     Rectangle {
-                        visible: Boolean(root.accountEnrichment.hasRun) && !root.accountEnrichmentBusy
+                        visible: root.accountEnrichmentMatchesSelectedAccount() && !root.accountEnrichmentBusy
                         width: parent.width
                         height: enrichmentSummaryColumn.height + 24
                         radius: 8
@@ -1221,7 +1231,7 @@ Item {
                     }
 
                     Repeater {
-                        model: root.accountEnrichment.fields || []
+                        model: root.accountEnrichmentMatchesSelectedAccount() ? (root.accountEnrichment.fields || []) : []
                         delegate: Rectangle {
                             id: enrichmentFieldRow
                             required property var modelData
