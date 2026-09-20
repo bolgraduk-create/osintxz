@@ -176,10 +176,19 @@ def consolidate_result_rows(
             continue
         item = annotate_relevant_row(item)
         if bool(item.get("accountRelation")):
+            # Account verification is a live unified-search stage.  Lower-level
+            # callers (unit tests, stored intelligence and non-username account
+            # records) may legitimately reach consolidation without those
+            # annotations.  Preserve the pre-validation contract in that case
+            # instead of interpreting a missing status as a failed check.
+            has_verification = "accountVerificationStatus" in item
             verification_status = str(
                 item.get("accountVerificationStatus") or ""
             ).strip().casefold()
-            if verification_status in {
+
+            if not has_verification:
+                related_accounts.append(dict(item))
+            elif verification_status in {
                 "reported", "unreachable", "uncertain", "blocked"
             }:
                 item["visibilityTier"] = "possible"
@@ -193,14 +202,16 @@ def consolidate_result_rows(
                 )
                 possible_rows.append(item)
                 continue
-            if verification_status == "invalid":
+            elif verification_status == "invalid":
                 suppressed += 1
                 continue
-            # VERIFIED and LIKELY are analyst-facing account results. LIKELY
-            # remains excluded from persistence/pivot decisions by Quality.
-            if verification_status in {"verified", "likely"}:
+            elif verification_status in {"verified", "likely"}:
+                # VERIFIED and LIKELY are analyst-facing account results.
+                # LIKELY remains excluded from automatic persistence/pivots.
                 related_accounts.append(dict(item))
             else:
+                # Unknown future verification states fail open to review rather
+                # than disappearing or being treated as confirmed.
                 item["visibilityTier"] = "possible"
                 item["visibilityScore"] = max(
                     45.0,
