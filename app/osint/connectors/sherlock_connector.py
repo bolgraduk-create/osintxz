@@ -96,7 +96,9 @@ class SherlockConnector(BaseConnector):
                         confidence=0.94,
                         reliability=0.90,
                         metadata={
-                            "registration_confirmed": True,
+                            "provider_reported_claimed": True,
+                            "registration_confirmed": False,
+                            "requires_account_verification": True,
                             "partial_stdout_recovery": True,
                             "public_data_only": True,
                         },
@@ -165,7 +167,13 @@ class SherlockConnector(BaseConnector):
                                     source=str(item.get("name") or item.get("site") or "Sherlock"),
                                     confidence=0.97,
                                     reliability=0.93,
-                                    metadata={**item, "registration_confirmed": True, "public_data_only": True},
+                                    metadata={
+                                        **item,
+                                        "provider_reported_claimed": True,
+                                        "registration_confirmed": False,
+                                        "requires_account_verification": True,
+                                        "public_data_only": True,
+                                    },
                                 )
                             )
             except Exception as exc:
