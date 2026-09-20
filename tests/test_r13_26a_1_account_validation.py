@@ -294,7 +294,7 @@ def test_live_check_budget_retains_unchecked_account_as_reported():
         return ProfileFetchResult(
             status_code=200,
             final_url=url,
-            body="<h1>wixxlexx</h1>",
+            body="<html><title>wixxlexx profile</title><h1>wixxlexx</h1></html>",
         )
 
     rows, summary = annotate_account_profile_validation(
