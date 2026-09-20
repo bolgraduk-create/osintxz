@@ -79,7 +79,7 @@ Item {
     function rowDetail(row) {
         if (activeTab === "identity") return String(row.identitySummary || row.detail || "No independent identity signals available")
         if (activeTab === "candidates") return String(row.detail || "Candidate result kept for analyst review")
-        if (activeTab === "possible") return String(row.detail || row.visibilityReason || "Potentially useful result; analyst review required")
+        if (activeTab === "possible") return String(row.accountVerificationReason || row.visibilityReason || row.detail || "Potentially useful result; analyst review required")
         if (activeTab === "accounts") return String(row.accountVerificationReason || row.detail || "Online account linked by an exact username/account signal")
         if (activeTab === "quality") return String(row.qualitySummary || row.detail || "Shadow quality assessment")
         if (activeTab === "mentions") return String(row.mentionSummary || row.detail || "Multiple known-person signals occur in this source")
@@ -111,7 +111,10 @@ Item {
             return "Alignment " + score + (sources > 1 ? " · " + sources + " sources" : " · " + String(row.source || ""))
         }
         if (activeTab === "candidates") return String(row.source || "") + (row.meta ? " · " + String(row.meta) : "")
-        if (activeTab === "possible") return String(row.source || "") + " · visibility " + Number(row.visibilityScore || row.contextRelevanceScore || 0).toFixed(0) + (row.visibilityReason ? " · " + String(row.visibilityReason) : "")
+        if (activeTab === "possible") {
+            const verification = row.accountVerificationStatus ? " · " + String(row.accountVerificationStatus).toUpperCase() : ""
+            return String(row.source || "") + verification + " · visibility " + Number(row.visibilityScore || row.contextRelevanceScore || 0).toFixed(0) + (row.visibilityReason ? " · " + String(row.visibilityReason) : "")
+        }
         if (activeTab === "accounts") {
             const httpText = row.accountVerificationHttpStatus ? " · HTTP " + String(row.accountVerificationHttpStatus) : ""
             return String(row.source || "") + httpText + (row.url ? " · " + String(row.url) : "")
