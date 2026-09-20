@@ -176,6 +176,51 @@ class _FakeBrowserVerifier:
         return mapping, summary
 
 
+def test_consolidation_preserves_legacy_account_rows_without_validation_annotations():
+    row = _row()
+    row.pop("accountVerificationStatus", None)
+    row.pop("accountVerificationReason", None)
+    row.pop("accountVerificationChecked", None)
+
+    result = consolidate_result_rows(
+        [row],
+        seeds=[{"kind": "username", "value": "wixxlexx"}],
+    )
+
+    assert len(result.rows) == 1
+    assert len(result.related_accounts) == 1
+    assert result.possible_rows == []
+
+
+def test_non_username_account_relation_is_not_forced_through_browser_validation():
+    row = {
+        "lane": "Federation",
+        "source": "github_public_user",
+        "title": "Linus Torvalds",
+        "type": "public_user",
+        "seed": "Linus Torvalds",
+        "seedType": "person_name",
+        "candidateOnly": True,
+        "identityCandidateEligible": True,
+        "identityMatchScore": 100.0,
+        "identityMatchReason": "full_name_match",
+        "_identitySignals": {
+            "names": ["Linus Torvalds"],
+            "usernames": ["torvalds"],
+        },
+        "contextRelevanceStatus": "relevant",
+        "contextRelevanceScore": 100.0,
+        "contextRelevanceKeepClean": True,
+        "contextRelevancePivotAllowed": False,
+    }
+
+    result = consolidate_result_rows([row])
+
+    assert {item["title"] for item in result.related_accounts} == {
+        "Linus Torvalds"
+    }
+
+
 def test_browser_likely_promotes_reported_account_without_claiming_verified():
     verifier = _FakeBrowserVerifier(
         BrowserVerificationResult(
