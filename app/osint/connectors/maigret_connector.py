@@ -79,6 +79,39 @@ class MaigretConnector(BaseConnector):
         return max(3, min(6, max(3, int(request_timeout or 15) // 3)))
 
     @staticmethod
+    def _deep_process_budget(request_timeout: int) -> int:
+        return max(25, min(70, int(request_timeout or 25) * 2))
+
+    @classmethod
+    def build_deep_enrichment_command(
+        cls,
+        *,
+        executable: str,
+        username: str,
+        site: str,
+        output_dir: Path,
+        timeout: int,
+    ) -> list[str]:
+        """Build a single-site Maigret enrichment pass.
+
+        Unlike the fast discovery pass this intentionally keeps page parsing
+        enabled and requests Maigret's secondary API/JSON enrichment.  It is
+        only used after an analyst selects one already-discovered account.
+        """
+        return [
+            executable,
+            username,
+            "--site", site,
+            "--json", "simple",
+            "--folderoutput", str(output_dir),
+            "--no-color", "--no-progressbar", "--no-autoupdate",
+            "--timeout", str(max(4, min(12, int(timeout or 25)))),
+            "--retries", "0",
+            "--no-recursion",
+            "--enrich",
+        ]
+
+    @staticmethod
     def _owner_url(username: str, url: str) -> bool:
         wanted = str(username or "").strip().lstrip("@").casefold()
         try:
@@ -119,6 +152,125 @@ class MaigretConnector(BaseConnector):
                     )
                 )
         return out
+
+    def deep_enrich(
+        self,
+        *,
+        username: str,
+        site: str,
+        timeout: int = 25,
+    ) -> OsintResult:
+        """Deep-enrich one selected public account without persistence/recursion."""
+        normalized_username = str(username or "").strip().lstrip("@")
+        normalized_site = str(site or "").strip()
+        if not normalized_username or not normalized_site:
+            return OsintResult(
+                connector=self.name,
+                status=ResultStatus.NOT_SUPPORTED,
+                error="Username and Maigret site name are required for deep enrichment.",
+            )
+
+        executable = self.executable()
+        if not executable:
+            return OsintResult(
+                connector=self.name,
+                status=ResultStatus.NOT_AVAILABLE,
+                error="Maigret is not installed in the project Python environment.",
+                metadata={
+                    "install_hint": r".\\.venv\\Scripts\\python.exe -m pip install --upgrade maigret",
+                    "repairable": True,
+                    "deep_enrichment": True,
+                },
+            )
+
+        with tempfile.TemporaryDirectory() as temp:
+            temp_path = Path(temp)
+            command = self.build_deep_enrichment_command(
+                executable=executable,
+                username=normalized_username,
+                site=normalized_site,
+                output_dir=temp_path,
+                timeout=timeout,
+            )
+            execution = self.runner.run(
+                command=command,
+                timeout=self._deep_process_budget(timeout),
+                working_directory=temp_path,
+                env={"PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"},
+            )
+
+            json_files = [path for path in temp_path.rglob("*.json") if path.is_file()]
+            data: Any = None
+            parse_error = ""
+            findings: list[OsintFinding] = []
+            if json_files:
+                report_file = max(json_files, key=lambda path: path.stat().st_mtime)
+                try:
+                    data = json.loads(report_file.read_text(encoding="utf-8"))
+                    for website, info in self._iter_site_records(data):
+                        if not self._is_found(info):
+                            continue
+                        url = info.get("url_user") or info.get("url") or info.get("profile_url")
+                        findings.append(
+                            OsintFinding(
+                                category="account",
+                                value=normalized_username,
+                                url=url,
+                                source=str(website),
+                                confidence=0.97,
+                                reliability=0.93,
+                                metadata={
+                                    **info,
+                                    "registration_confirmed": True,
+                                    "public_data_only": True,
+                                    "deep_enrichment": True,
+                                    "requested_site": normalized_site,
+                                },
+                            )
+                        )
+                except Exception as exc:
+                    parse_error = f"Unable to parse Maigret deep-enrichment JSON: {exc}"
+
+        timed_out = execution.return_code == -1 or "process timeout" in str(execution.stderr or "").casefold()
+        if findings or data is not None:
+            status = ResultStatus.SUCCESS if execution.success and not parse_error else ResultStatus.PARTIAL
+            return OsintResult(
+                connector=self.name,
+                status=status,
+                findings=findings,
+                raw_data=data,
+                execution_time=execution.execution_time,
+                error=parse_error or ("Maigret deep enrichment timed out; partial data retained." if timed_out else None),
+                metadata={
+                    "deep_enrichment": True,
+                    "requested_site": normalized_site,
+                    "accounts_found": len(findings),
+                    "timed_out": timed_out,
+                    "page_parsing_enabled": True,
+                    "secondary_api_enrichment": True,
+                    "recursive_search": False,
+                    "process_budget_seconds": self._deep_process_budget(timeout),
+                },
+            )
+
+        return OsintResult(
+            connector=self.name,
+            status=ResultStatus.PARTIAL if timed_out else ResultStatus.FAILED,
+            execution_time=execution.execution_time,
+            error=(
+                execution.stderr
+                or execution.stdout
+                or "Maigret returned no deep-enrichment report for the selected account."
+            ),
+            metadata={
+                "deep_enrichment": True,
+                "requested_site": normalized_site,
+                "timed_out": timed_out,
+                "page_parsing_enabled": True,
+                "secondary_api_enrichment": True,
+                "recursive_search": False,
+            },
+        )
 
     def execute(self, request: ConnectorRequest) -> OsintResult:
         if not self.validate_target(request):
