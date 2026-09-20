@@ -36,6 +36,10 @@ from app.osint.connectors.socialscan_connector import (
     SocialScanConnector,
 )
 
+from app.osint.connectors.user_scanner_connector import (
+    UserScannerConnector,
+)
+
 
 # ==========================================================
 # Domain / Network Discovery
@@ -254,6 +258,7 @@ __all__ = [
     "PhoneInfogaConnector",
     "GHuntConnector",
     "SocialScanConnector",
+    "UserScannerConnector",
 
 
     # Domain
