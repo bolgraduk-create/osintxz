@@ -287,7 +287,6 @@ class MaigretConnector(BaseConnector):
                 metadata={
                     "deep_enrichment": True,
                     "requested_site": str(site or "").strip(),
-                    "resolved_site": normalized_site,
                     "resolved_site": "",
                     "profile_url": str(profile_url or ""),
                     "network_request_started": False,
@@ -376,7 +375,7 @@ class MaigretConnector(BaseConnector):
                                     "public_data_only": True,
                                     "deep_enrichment": True,
                                     "requested_site": str(site or "").strip(),
-                    "resolved_site": normalized_site,
+                                    "resolved_site": normalized_site,
                                 },
                             )
                         )
@@ -396,7 +395,7 @@ class MaigretConnector(BaseConnector):
                 metadata={
                     "deep_enrichment": True,
                     "requested_site": str(site or "").strip(),
-                    "resolved_site": normalized_site,
+                "resolved_site": normalized_site,
                     "accounts_found": len(findings),
                     "timed_out": timed_out,
                     "page_parsing_enabled": True,
