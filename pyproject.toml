@@ -164,6 +164,15 @@ osint = [
 ]
 
 
+account-verification = [
+
+    # Headless Chromium verification for ambiguous username/profile results.
+    # Browser binaries are installed separately with:
+    # python -m playwright install chromium
+    "crawlee[playwright]>=1.10.0,<2.0.0",
+]
+
+
 [tool.setuptools]
 
 include-package-data = true
