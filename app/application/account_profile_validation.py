@@ -20,7 +20,7 @@ from dataclasses import dataclass
 import ipaddress
 import re
 from typing import Any, Callable, Iterable
-from urllib.parse import parse_qsl, urlsplit
+from urllib.parse import parse_qsl, urljoin, urlsplit
 
 import httpx
 
@@ -381,36 +381,74 @@ def _fetch_public_profile(
         "Accept": "text/html,application/xhtml+xml,application/json;q=0.8,*/*;q=0.5",
     }
     try:
+        current_url = url
         with httpx.Client(
-            follow_redirects=True,
+            follow_redirects=False,
             timeout=httpx.Timeout(float(timeout)),
             headers=headers,
         ) as client:
-            with client.stream("GET", url) as response:
-                chunks: list[bytes] = []
-                size = 0
-                for chunk in response.iter_bytes():
-                    if not chunk:
+            for _hop in range(6):
+                safe_current, blocked_reason = _safe_public_url(current_url)
+                if not safe_current:
+                    return ProfileFetchResult(
+                        status_code=None,
+                        final_url=current_url,
+                        body="",
+                        error=blocked_reason or "Redirect target is not a safe public URL.",
+                    )
+
+                with client.stream("GET", safe_current) as response:
+                    if response.status_code in {301, 302, 303, 307, 308}:
+                        location = str(response.headers.get("location") or "").strip()
+                        if not location:
+                            return ProfileFetchResult(
+                                status_code=response.status_code,
+                                final_url=str(response.url),
+                                body="",
+                            )
+                        next_url = urljoin(str(response.url), location)
+                        safe_next, blocked_reason = _safe_public_url(next_url)
+                        if not safe_next:
+                            return ProfileFetchResult(
+                                status_code=response.status_code,
+                                final_url=next_url,
+                                body="",
+                                error=blocked_reason or "Redirect target is not a safe public URL.",
+                            )
+                        current_url = safe_next
                         continue
-                    remaining = max_body_bytes - size
-                    if remaining <= 0:
-                        break
-                    piece = chunk[:remaining]
-                    chunks.append(piece)
-                    size += len(piece)
-                    if size >= max_body_bytes:
-                        break
-                raw = b"".join(chunks)
-                encoding = response.encoding or "utf-8"
-                try:
-                    body = raw.decode(encoding, errors="replace")
-                except LookupError:
-                    body = raw.decode("utf-8", errors="replace")
-                return ProfileFetchResult(
-                    status_code=response.status_code,
-                    final_url=str(response.url),
-                    body=body,
-                )
+
+                    chunks: list[bytes] = []
+                    size = 0
+                    for chunk in response.iter_bytes():
+                        if not chunk:
+                            continue
+                        remaining = max_body_bytes - size
+                        if remaining <= 0:
+                            break
+                        piece = chunk[:remaining]
+                        chunks.append(piece)
+                        size += len(piece)
+                        if size >= max_body_bytes:
+                            break
+                    raw = b"".join(chunks)
+                    encoding = response.encoding or "utf-8"
+                    try:
+                        body = raw.decode(encoding, errors="replace")
+                    except LookupError:
+                        body = raw.decode("utf-8", errors="replace")
+                    return ProfileFetchResult(
+                        status_code=response.status_code,
+                        final_url=str(response.url),
+                        body=body,
+                    )
+
+            return ProfileFetchResult(
+                status_code=None,
+                final_url=current_url,
+                body="",
+                error="Too many redirects during profile validation.",
+            )
     except Exception as exc:
         return ProfileFetchResult(
             status_code=None,
