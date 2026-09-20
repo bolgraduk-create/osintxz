@@ -51,6 +51,7 @@ class AccountEnrichmentWorker(QObject):
             result = MaigretConnector().deep_enrich(
                 username=self.username,
                 site=self.site,
+                profile_url=self.profile_url,
                 timeout=self.timeout,
             )
             snapshot = self._snapshot_result(result)
