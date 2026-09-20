@@ -57,7 +57,7 @@ Item {
     function statusColor(status) {
         const value = String(status || "").toLowerCase()
         if (value === "success" || value === "completed" || value === "finding" || value === "registry" || value === "remote" || value === "strong" || value === "supported" || value === "verified") return Theme.success
-        if (value === "partial" || value === "guarded" || value === "candidate" || value === "possible" || value === "insufficient" || value === "reported" || value === "unreachable") return Theme.warning
+        if (value === "partial" || value === "guarded" || value === "candidate" || value === "possible" || value === "insufficient" || value === "reported" || value === "unreachable" || value === "likely" || value === "uncertain" || value === "blocked") return Theme.warning
         if (value === "failed" || value === "conflicting" || value === "invalid") return Theme.danger
         if (value === "not_configured" || value === "not_supported") return Theme.textMuted
         return Theme.accent
@@ -1123,9 +1123,61 @@ Item {
                                 + (root.selectedAccount.accountVerificationHttpStatus ? " · HTTP " + String(root.selectedAccount.accountVerificationHttpStatus) : "")
                                 + (root.selectedAccount.accountVerificationFinalUrl && root.selectedAccount.accountVerificationFinalUrl !== root.selectedAccount.url
                                     ? " · Final URL: " + String(root.selectedAccount.accountVerificationFinalUrl) : "")
+                                + (root.selectedAccount.accountBrowserVerificationChecked
+                                    ? " · Browser checked" : "")
                             color: Theme.textSecondary
                             font.pixelSize: 9
                             wrapMode: Text.Wrap
+                        }
+                    }
+
+                    Rectangle {
+                        visible: Boolean(root.selectedAccount.accountBrowserVerificationStatus)
+                        width: parent.width
+                        height: browserVerificationColumn.height + 24
+                        radius: 8
+                        color: Theme.surfaceHover
+                        border.width: 1
+                        border.color: Theme.divider
+
+                        Column {
+                            id: browserVerificationColumn
+                            x: 12
+                            y: 12
+                            width: parent.width - 24
+                            spacing: 5
+
+                            Text {
+                                width: parent.width
+                                text: "BROWSER VERIFICATION · "
+                                    + String(root.selectedAccount.accountBrowserVerificationStatus || "").toUpperCase()
+                                color: root.statusColor(root.selectedAccount.accountBrowserVerificationStatus || "uncertain")
+                                font.pixelSize: 9
+                                font.weight: Font.DemiBold
+                            }
+                            Text {
+                                width: parent.width
+                                text: String(root.selectedAccount.accountBrowserVerificationReason || "")
+                                color: Theme.textSecondary
+                                font.pixelSize: 9
+                                wrapMode: Text.Wrap
+                            }
+                            Text {
+                                visible: (root.selectedAccount.accountBrowserVerificationEvidenceSignals || []).length > 0
+                                width: parent.width
+                                text: "Signals: " + (root.selectedAccount.accountBrowserVerificationEvidenceSignals || []).join(" · ")
+                                color: Theme.textMuted
+                                font.pixelSize: 9
+                                wrapMode: Text.Wrap
+                            }
+                            Text {
+                                visible: Boolean(root.selectedAccount.accountBrowserVerificationTitle)
+                                width: parent.width
+                                text: "Rendered title: " + String(root.selectedAccount.accountBrowserVerificationTitle || "")
+                                color: Theme.textMuted
+                                font.pixelSize: 9
+                                elide: Text.ElideRight
+                            }
                         }
                     }
 
