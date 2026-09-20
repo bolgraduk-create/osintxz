@@ -41,6 +41,8 @@ class UnifiedFindingPersistenceGate:
         material = _bounded_material(metadata)
 
         if target_type is OsintTargetType.USERNAME:
+            if _username_persistence_blocked(metadata):
+                return False
             wanted = _username(target_value)
             if not wanted:
                 return False
@@ -89,6 +91,17 @@ class UnifiedFindingPersistenceGate:
 
 def build_unified_finding_gate(profile: dict[str, Any] | None = None) -> UnifiedFindingPersistenceGate:
     return UnifiedFindingPersistenceGate(profile)
+
+
+def _username_persistence_blocked(metadata: Any) -> bool:
+    if not isinstance(metadata, dict):
+        return False
+    status = str(metadata.get("account_verification_status") or "").strip().casefold()
+    if status == "invalid":
+        return True
+    if metadata.get("requires_account_verification") is True:
+        return metadata.get("registration_confirmed") is not True
+    return False
 
 
 def _bounded_material(value: Any, *, depth: int = 0) -> str:
