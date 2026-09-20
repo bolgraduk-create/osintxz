@@ -30,6 +30,7 @@ from app.osint.connectors import (
     PhoneInfogaConnector,
     GHuntConnector,
     SocialScanConnector,
+    UserScannerConnector,
 
 
     # Domain / Network
@@ -149,6 +150,7 @@ class OsintManager:
             PhoneInfogaConnector(),
             GHuntConnector(),
             SocialScanConnector(),
+            UserScannerConnector(),
 
 
 
