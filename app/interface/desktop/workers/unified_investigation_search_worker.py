@@ -26,6 +26,9 @@ from app.application.search_quality_engine import (
 from app.application.account_profile_validation import (
     annotate_account_profile_validation,
 )
+from app.application.browser_account_verification import (
+    annotate_browser_account_validation,
+)
 from app.application.unified_investigation_search import (
     UnifiedSeed,
     UnifiedSeedKind,
@@ -400,6 +403,17 @@ class UnifiedInvestigationSearchWorker(QObject):
                 workers=8,
             )
 
+            self._emit(
+                "browser_account_validation",
+                "Rendering ambiguous account pages in Chromium…",
+            )
+            results, browser_validation_summary = annotate_browser_account_validation(
+                results,
+                max_browser_checks=14,
+                navigation_timeout=10.0,
+                max_concurrency=3,
+            )
+
             # R13.26a shadow quality assessment.  These annotations are
             # diagnostic only: current consolidation, persistence and pivot
             # decisions remain authoritative until the benchmark proves that
@@ -455,6 +469,7 @@ class UnifiedInvestigationSearchWorker(QObject):
                 "qualityTrace": quality_trace,
                 "qualitySummary": quality_summary.to_dict(),
                 "accountValidationSummary": account_validation_summary.to_dict(),
+                "browserAccountValidationSummary": browser_validation_summary.to_dict(),
                 "providers": providers,
                 "healthSummary": health_summary,
                 "pivots": [self._snapshot_seed(item, queued=is_exact_recursive_seed(item)) for item in pivots],
@@ -489,6 +504,13 @@ class UnifiedInvestigationSearchWorker(QObject):
                     "accountUnreachable": account_validation_summary.unreachable,
                     "accountInvalid": account_validation_summary.invalid,
                     "accountLiveChecks": account_validation_summary.live_checks,
+                    "browserVerificationAvailable": browser_validation_summary.available,
+                    "browserChecked": browser_validation_summary.checked,
+                    "browserVerified": browser_validation_summary.verified,
+                    "browserLikely": browser_validation_summary.likely,
+                    "browserUncertain": browser_validation_summary.uncertain,
+                    "browserBlocked": browser_validation_summary.blocked,
+                    "browserInvalid": browser_validation_summary.invalid,
                     "providers": len(providers),
                     "healthReady": int(health_summary.get("ready") or 0),
                     "healthIssues": int(health_summary.get("issues") or 0),
