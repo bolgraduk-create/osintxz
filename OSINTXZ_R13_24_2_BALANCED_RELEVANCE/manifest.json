@@ -1,0 +1,61 @@
+{
+  "patch": "R13.24.2",
+  "name": "Balanced Relevance",
+  "files": [
+    {
+      "path": "README_R13_24_2_BALANCED_RELEVANCE.md",
+      "size": 1254,
+      "sha256": "0bcc535d0bdeb7b489432cba14aaed0e309cd4704d5f07c4d0bcf0cdf79c6fa9"
+    },
+    {
+      "path": "RUN_R13_24_2_TESTS.ps1",
+      "size": 342,
+      "sha256": "61b15fa67d1e9cb5d75e0ec417c1dd04b2ef7a88bb089f7965b42490fb1f48cc"
+    },
+    {
+      "path": "install_r13_24_2_balanced_relevance.py",
+      "size": 4956,
+      "sha256": "92b58e8a4ed0b29aeea2ad500da6767e12d5aefd247d7aae38479673ada3259c"
+    },
+    {
+      "path": "payload/app/application/adaptive_relevance.py",
+      "size": 15169,
+      "sha256": "5a1c16ee0cb9bd637ba4594c9d0cd5467890efa2278bbaadb980a92b50651e95"
+    },
+    {
+      "path": "payload/tests/.pytest_cache/.gitignore",
+      "size": 37,
+      "sha256": "3ed731b65d06150c138e2dadb0be0697550888a6b47eb8c45ecc9adba8b8e9bd"
+    },
+    {
+      "path": "payload/tests/.pytest_cache/CACHEDIR.TAG",
+      "size": 191,
+      "sha256": "37dc88ef9a0abeddbe81053a6dd8fdfb13afb613045ea1eb4a5c815a74a3bde4"
+    },
+    {
+      "path": "payload/tests/.pytest_cache/README.md",
+      "size": 302,
+      "sha256": "73fd6fccdd802c419a6b2d983d6c3173b7da97558ac4b589edec2dfe443db9ad"
+    },
+    {
+      "path": "payload/tests/.pytest_cache/v/cache/lastfailed",
+      "size": 2,
+      "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+    },
+    {
+      "path": "payload/tests/.pytest_cache/v/cache/nodeids",
+      "size": 688,
+      "sha256": "4b3fbfe10735a0a01c2e536291da9cc01b84f892de41137fe17e47aa52a4848e"
+    },
+    {
+      "path": "payload/tests/test_r13_24_2_balanced_relevance.py",
+      "size": 3306,
+      "sha256": "9cfec6dbefcba495620526d44bc5090a4076f97c4141cb2f5e6c3d5e2ed3c2b9"
+    }
+  ],
+  "notes": [
+    "Loosens analyst-visible Possible tier only",
+    "Strict Results/Evidence/autopivot gates unchanged",
+    "No DB migration"
+  ]
+}

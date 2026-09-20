@@ -3096,6 +3096,8 @@ class DesktopBridge(QObject):
         case = self._case_by_id(case_id)
 
         evidence_rows: list[dict[str, Any]] = []
+        # R13.23.1 PERSON MENTION SNAPSHOT
+        mention_rows: list[dict[str, Any]] = []
         related_rows: list[dict[str, Any]] = []
         link_rows: list[dict[str, Any]] = []
         photo_rows: list[dict[str, Any]] = []
@@ -3163,6 +3165,33 @@ class DesktopBridge(QObject):
                 "sha256": str(getattr(evidence, "sha256", "") or ""),
             }
             evidence_rows.append(evidence_row)
+            if evidence_workflow == "person_mention_selection":
+                raw_mention = evidence_metadata.get("mention")
+                mention = raw_mention if isinstance(raw_mention, dict) else {}
+                raw_signals = mention.get("signals") or []
+                signals = [
+                    str(item).strip()
+                    for item in list(raw_signals)
+                    if str(item or "").strip()
+                ][:8] if isinstance(raw_signals, (list, tuple, set, frozenset)) else []
+                try:
+                    mention_score = float(mention.get("score") or 0.0)
+                except (TypeError, ValueError):
+                    mention_score = 0.0
+                mention_rows.append({
+                    "id": str(getattr(evidence, "id", "") or ""),
+                    "title": str(mention.get("title") or evidence_title),
+                    "detail": str(mention.get("detail") or ""),
+                    "summary": str(mention.get("summary") or " · ".join(signals[:4])),
+                    "url": self._normalized_external_url(str(mention.get("url") or "")) or "",
+                    "source": str(mention.get("source") or "Corroborating mention"),
+                    "signals": signals,
+                    "score": round(max(0.0, min(100.0, mention_score)), 1),
+                    "lane": str(mention.get("lane") or ""),
+                    "status": str(mention.get("status") or "Corroborating mention"),
+                    "date": self._date_text(getattr(evidence, "created_at", None)),
+                    "basis": "analyst_selected",
+                })
             if preview_url:
                 photo_rows.append(dict(evidence_row))
             elif managed_path:
@@ -3270,6 +3299,7 @@ class DesktopBridge(QObject):
             "files": file_rows[:40],
             "avatarUrl": self._person_avatar_url(getattr(entity, "id", "")),
             "evidence": evidence_rows[:50],
+            "mentions": mention_rows[:40],
             "relatedEntities": related_rows[:100],
             "profileCandidates": profile_candidates,
             "personGraph": person_graph,

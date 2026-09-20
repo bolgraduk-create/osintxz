@@ -1,0 +1,66 @@
+{
+  "patch": "R13.21.1",
+  "name": "Contextual Relevance + UI Layout Fix",
+  "baseline": "R13.20.2+ (R13.21 recommended; patch restores its Identity UI)",
+  "database_migration": false,
+  "bulk_download": false,
+  "new_credentials": false,
+  "files": [
+    {
+      "path": "README_R13_21_1_CONTEXTUAL_RELEVANCE_UI.md",
+      "size": 1860,
+      "sha256": "86cefc0d186243b9c7152a2b19f38fd108c7cce89380f7fede4155ed229d93bb"
+    },
+    {
+      "path": "RUN_R13_21_1_TESTS.ps1",
+      "size": 536,
+      "sha256": "f5cb5fda537e8df2888118160bebecc2dfc3060f40885521a7426e67d6bef76e"
+    },
+    {
+      "path": "install_r13_21_1_contextual_relevance_ui.py",
+      "size": 5510,
+      "sha256": "2e2d10dd29c8f9bb15d97dc7bb3a99e1816f18d0803a00b4758cb96feb40294e"
+    },
+    {
+      "path": "payload/app/application/contextual_relevance.py",
+      "size": 14102,
+      "sha256": "40b7524202ef12ea6ec8c23496eb53ea5277c9f361d51713283454ae9e77b040"
+    },
+    {
+      "path": "payload/app/application/identity_resolution.py",
+      "size": 18358,
+      "sha256": "7faf9ab3fb212c4d851da51cb8986f4f8eb0d02a320f0f7320591ca912de18c6"
+    },
+    {
+      "path": "payload/app/application/investigation_result_consolidation.py",
+      "size": 21639,
+      "sha256": "9f1608f9491536960583f4535e9ca1955835a2b96c99d663d6620dbb6c86b4e2"
+    },
+    {
+      "path": "payload/app/application/person_name_relevance.py",
+      "size": 8105,
+      "sha256": "65b048366670a506e85ea120aa97a121c1e4c9bf8fac6b557f630499a409c0a2"
+    },
+    {
+      "path": "payload/app/application/unified_investigation_search.py",
+      "size": 27985,
+      "sha256": "7aeedaca6066df91fa784d5900bf26be58418cf29e92d5de742d739ce2a2c52a"
+    },
+    {
+      "path": "payload/app/interface/desktop/qml/pages/Search.qml",
+      "size": 43490,
+      "sha256": "ece90deb5691ab3babb55f99cb28ad7c13490c1b60860f1aadd183d14adedd06"
+    },
+    {
+      "path": "payload/app/interface/desktop/workers/unified_investigation_search_worker.py",
+      "size": 49755,
+      "sha256": "b16a5dc200517d2deed7b5b37a9eafaee1cbd218c45cf0f30e3e73057c1928f2"
+    },
+    {
+      "path": "payload/tests/test_r13_21_1_contextual_relevance.py",
+      "size": 5769,
+      "sha256": "2d6d0a39eac493c9375feb19d24f87579db4b552ebd65d68f6efcf0cb4cff2b3"
+    }
+  ],
+  "new_test_count": 9
+}

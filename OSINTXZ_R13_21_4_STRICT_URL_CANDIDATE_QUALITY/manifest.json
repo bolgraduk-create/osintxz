@@ -1,0 +1,17 @@
+{
+  "patch": "R13.21.4",
+  "name": "Strict URL Relevance & Candidate Quality",
+  "requires": "R13.21.3",
+  "database_migration": false,
+  "files": [
+    "README_R13_21_4_STRICT_URL_CANDIDATE_QUALITY.md",
+    "RUN_R13_21_4_TESTS.ps1",
+    "install_r13_21_4_strict_url_candidate_quality.py",
+    "payload/app/application/contextual_relevance.py",
+    "payload/app/application/investigation_result_consolidation.py",
+    "payload/app/application/unified_persistence_relevance.py",
+    "payload/app/interface/desktop/qml/pages/Search.qml",
+    "payload/tests/test_r13_21_2_strict_identity_persistence.py",
+    "payload/tests/test_r13_21_4_strict_url_candidate_quality.py"
+  ]
+}

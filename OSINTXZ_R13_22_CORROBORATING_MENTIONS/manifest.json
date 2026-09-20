@@ -1,0 +1,14 @@
+{
+  "patch": "R13.22",
+  "name": "Corroborating Mentions",
+  "requires": "R13.21.4",
+  "database_migrations": false,
+  "new_external_sources": false,
+  "bulk_downloads": false,
+  "files": [
+    "app/application/investigation_result_consolidation.py",
+    "app/interface/desktop/workers/unified_investigation_search_worker.py",
+    "app/interface/desktop/qml/pages/Search.qml",
+    "tests/test_r13_22_corroborating_mentions.py"
+  ]
+}

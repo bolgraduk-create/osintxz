@@ -1,0 +1,31 @@
+{
+  "patch": "R13.21.3",
+  "name": "Account Identity Separation & URL Relevance Fix",
+  "requires": "R13.21.2",
+  "database_migration": false,
+  "adds_sources": false,
+  "changes": [
+    "Separates online accounts/usernames from person identity candidates",
+    "Adds Related Accounts contract and Accounts tab",
+    "Requires exact username/account proof for username-derived clean results and pivots",
+    "Suppresses unrelated GAU/Wayback-style historical URLs from Clean",
+    "Hardens classic Common Crawl NDJSON parsing against non-object rows"
+  ],
+  "tests": {
+    "payload_regression": "48 passed, 1 skipped in minimal payload-only environment",
+    "commoncrawl_smoke": "passed separately with stub runtime"
+  },
+  "files": [
+    "README_R13_21_3_ACCOUNT_IDENTITY_URL_FIX.md",
+    "RUN_R13_21_3_TESTS.ps1",
+    "install_r13_21_3_account_identity_url_fix.py",
+    "payload/app/application/contextual_relevance.py",
+    "payload/app/application/identity_resolution.py",
+    "payload/app/application/investigation_result_consolidation.py",
+    "payload/app/interface/desktop/qml/pages/Search.qml",
+    "payload/app/interface/desktop/workers/unified_investigation_search_worker.py",
+    "payload/app/osint/connectors/commoncrawl_connector.py",
+    "payload/tests/test_r13_21_2_strict_identity_persistence.py",
+    "payload/tests/test_r13_21_3_account_identity_url_fix.py"
+  ]
+}

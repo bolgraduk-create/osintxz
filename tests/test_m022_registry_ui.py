@@ -138,7 +138,8 @@ def test_registry_ui_bridge_and_qml_use_background_worker_and_dedicated_page() -
     assert "ServiceContainer(session)" in worker
     assert 'case "registry": return "pages/Registry.qml"' in main
     assert "desktopBridge.openRegistry()" in osint
-    assert 'model: ["EDRPOU", "Company name", "FOP name", "Court case number"]' in registry
-    assert "desktopBridge.registrySearch(modeBox.currentText, value)" in registry
-    assert "desktopBridge.registryPersistLast()" in registry
-    assert "A match never implies identity, guilt or conviction." in registry
+    assert "registryBridge.registryCenter" in registry
+    assert "registryBridge.search(" in registry
+    assert "AUTO · all safe compatible" in registry
+    assert "registryBridge.persistLast(desktopBridge.currentCaseId)" in registry
+    assert "does not establish identity, guilt, liability or conviction" in registry

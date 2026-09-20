@@ -1,0 +1,26 @@
+{
+  "patch": "R13.23.1.1",
+  "name": "Person Card Compatibility Fix",
+  "files": [
+    {
+      "path": "README_R13_23_1_1_COMPATIBILITY_FIX.md",
+      "sha256": "7c8851f8e53b5f6bb90288c755a21590bc700fd1889108f7325c84ce545f8229",
+      "size": 748
+    },
+    {
+      "path": "RUN_R13_23_1_1_TESTS.ps1",
+      "sha256": "542ba16ec48080c0129650e4efa9bc28e487353b9b893bf7c7526ecf9c172cf6",
+      "size": 418
+    },
+    {
+      "path": "install_r13_23_1_1_compatibility_fix.py",
+      "sha256": "5c5c6c80587c0cdec355bb2450375c7bb8547e450d086ba3646b8047a399e6f8",
+      "size": 4144
+    },
+    {
+      "path": "payload/tests/test_r13_23_1_1_compatibility.py",
+      "sha256": "7f5d3aef251f29df9576add21aeac946f08c4679e1241b8c3ac9fb3841f46d1b",
+      "size": 665
+    }
+  ]
+}

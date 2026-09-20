@@ -1,0 +1,17 @@
+{
+  "patch": "R13.20.2",
+  "name": "Person Name Relevance Hotfix",
+  "requires": "R13.20.1 Result Cleanup",
+  "database_migration": false,
+  "files": [
+    "README_R13_20_2_PERSON_NAME_RELEVANCE.md",
+    "RUN_R13_20_2_TESTS.ps1",
+    "install_r13_20_2_person_name_relevance.py",
+    "payload/app/application/investigation_result_consolidation.py",
+    "payload/app/application/person_name_relevance.py",
+    "payload/app/application/unified_investigation_search.py",
+    "payload/app/interface/desktop/workers/unified_investigation_search_worker.py",
+    "payload/tests/test_r13_20_2_person_name_relevance.py"
+  ],
+  "test_gate": "tests/test_r13_20_2_person_name_relevance.py + R13.20.1/R13.20/QML regression tests"
+}

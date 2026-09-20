@@ -1,0 +1,23 @@
+{
+  "patch": "R13.19",
+  "name": "Full Registry Search UI",
+  "baseline": "R13.18 Source Center UI",
+  "database_migration": false,
+  "bulk_downloads": false,
+  "new_files": [
+    "app/registry_intelligence/source_center.py",
+    "app/interface/desktop/workers/registry_center_worker.py",
+    "app/interface/desktop/bridges/registry_center_bridge.py",
+    "tests/test_r13_19_full_registry_ui.py"
+  ],
+  "replaced_files": [
+    "app/registry_intelligence/router.py",
+    "app/interface/desktop/qml/pages/Registry.qml"
+  ],
+  "patched_files": [
+    "app/interface/desktop/bridges/__init__.py",
+    "app/interface/desktop/workers/__init__.py",
+    "app/interface/desktop/desktop_app.py",
+    "tests/test_m022_registry_ui.py"
+  ]
+}

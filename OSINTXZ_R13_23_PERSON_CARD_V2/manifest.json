@@ -1,0 +1,37 @@
+{
+  "release": "R13.23",
+  "name": "Person Intelligence Card v2",
+  "requires": "R13.22",
+  "database_migration": false,
+  "files": [
+    {
+      "path": "README_R13_23_PERSON_CARD_V2.md",
+      "sha256": "8d79a9c47813bd31e2ee5b83b834ad00e9e113fc62dd3692c174c6a1893da9e4",
+      "size": 1468
+    },
+    {
+      "path": "RUN_R13_23_TESTS.ps1",
+      "sha256": "ec06747a76462f5d3b87fe567134edf8392440992f82b2b28a8a8b12e95e1d2f",
+      "size": 89
+    },
+    {
+      "path": "__pycache__/install_r13_23_person_card_v2.cpython-313.pyc",
+      "sha256": "cb3932e16bb54e2936d0be60e65864d041f623b6d13ce07b068e95b8d822efa4",
+      "size": 17269
+    },
+    {
+      "path": "install_r13_23_person_card_v2.py",
+      "sha256": "0fd16d5211b80e1942f7c72d9de7ff54147dd33320e8172b28b58ed1966f9496",
+      "size": 15110
+    },
+    {
+      "path": "payload/tests/test_r13_23_person_card_v2.py",
+      "sha256": "65c75f6bcb0dd32227a10d3bd7c590949562749ef084b2a52b6e5c05749ae5ee",
+      "size": 1594
+    }
+  ],
+  "tests": [
+    "tests/test_r13_23_person_card_v2.py",
+    "tests/test_qml_desktop_bridge.py"
+  ]
+}

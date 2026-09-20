@@ -67,6 +67,7 @@ Rectangle {
                     {key:"graph", label:"Graph", icon:"graph.svg"},
                     {key:"timeline", label:"Timeline", icon:"clock.svg"},
                     {key:"osint", label:"OSINT", icon:"globe.svg"},
+                    {key:"sources", label:"Sources", icon:"database.svg"},
                     {key:"evidence", label:"Evidence", icon:"document.svg"},
                     {key:"reports", label:"Reports", icon:"chart.svg"},
                     {key:"settings", label:"Settings", icon:"settings.svg"}

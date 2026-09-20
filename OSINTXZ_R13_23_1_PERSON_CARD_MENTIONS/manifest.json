@@ -1,0 +1,18 @@
+{
+  "patch": "R13.23.1",
+  "name": "Person Card Polish + Mentions Integration",
+  "requires": ["R13.22", "R13.23"],
+  "database_migration": false,
+  "new_tables": false,
+  "bulk_downloads": false,
+  "files_added": [
+    "app/application/person_mention_selection_service.py",
+    "tests/test_r13_23_1_person_card_mentions.py"
+  ],
+  "files_patched": [
+    "app/interface/desktop/qml/pages/Person.qml",
+    "app/interface/desktop/qml/pages/Search.qml",
+    "app/interface/desktop/bridges/desktop_bridge.py",
+    "app/interface/desktop/bridges/investigation_search_bridge.py"
+  ]
+}

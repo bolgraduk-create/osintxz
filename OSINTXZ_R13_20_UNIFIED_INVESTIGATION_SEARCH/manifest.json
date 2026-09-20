@@ -1,0 +1,20 @@
+{
+  "stage": "R13.20",
+  "name": "Unified Investigation Search",
+  "requires": "R13.19 Full Registry Search UI",
+  "database_migration": false,
+  "bulk_downloads": false,
+  "new_external_sources": false,
+  "files": [
+    "app/application/unified_investigation_search.py",
+    "app/interface/desktop/bridges/investigation_search_bridge.py",
+    "app/interface/desktop/workers/unified_investigation_search_worker.py",
+    "app/interface/desktop/qml/pages/Search.qml",
+    "tests/test_r13_20_unified_investigation_search.py"
+  ],
+  "patched_files": [
+    "app/interface/desktop/bridges/__init__.py",
+    "app/interface/desktop/workers/__init__.py",
+    "app/interface/desktop/desktop_app.py"
+  ]
+}

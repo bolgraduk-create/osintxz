@@ -1,0 +1,35 @@
+{
+  "name": "OSINTXZ R13.24.1.1 Test Compatibility",
+  "version": "R13.24.1.1",
+  "baseline": "R13.24.1",
+  "changes": [
+    "Update stale R13.24 Maigret regression contract to accept bounded fast-pass values up to 500 while preserving R13.24.1 value 300."
+  ],
+  "files": [
+    {
+      "path": "README_R13_24_1_1_TEST_COMPATIBILITY.md",
+      "sha256": "955069421ba8f22e9e2b52d49b9ea3a8441661e09efccb17d9245d34fcededd8",
+      "size": 776
+    },
+    {
+      "path": "RUN_R13_24_1_1_TESTS.ps1",
+      "sha256": "355874912c7f24db31feb4b3f136121f7af54101fc9ea5a3f235166703f3864f",
+      "size": 779
+    },
+    {
+      "path": "install_r13_24_1_1_test_compatibility.py",
+      "sha256": "a736f89a6608169eface0b7a255d019a37892889586669e6c7d557de0ae552b4",
+      "size": 3327
+    },
+    {
+      "path": "payload/tests/test_r13_24_1_1_test_compatibility.py",
+      "sha256": "75a3656c668ad521ca0e47d1c1aa45428d5c3ac12c7f2a89edad9c6a6162f6ec",
+      "size": 680
+    },
+    {
+      "path": "payload/tests/test_r13_24_adaptive_relevance_connector_health.py",
+      "sha256": "41d24e9d4d26a07e26ae8e91a055ba91a5028689657555839ceba49b1deaae39",
+      "size": 4510
+    }
+  ]
+}

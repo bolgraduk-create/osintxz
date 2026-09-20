@@ -19,6 +19,18 @@ Item {
     property var profileCandidates: person.profileCandidates || []
     property var profileRows: []
     property var metadataRows: person.metadataRows || []
+    // R13.23 PERSON CARD V2
+    property var contactRows: []
+    property var organizationRows: []
+    property var locationRows: []
+    property var technicalRows: []
+    property var otherIntelligenceRows: []
+    property var intelligenceGroups: []
+    property var summaryMetrics: []
+    // R13.23.1 PERSON CARD POLISH + MENTIONS
+    property var webRows: []
+    property var mentionRows: []
+    property var reviewRows: []
     property string addError: ""
     property string candidateQuery: ""
     property string candidateError: ""
@@ -71,6 +83,127 @@ Item {
         return rows
     }
 
+    function normalizeReviewKey(value) {
+        var text = String(value || "").trim().toLowerCase()
+        while (text.length > 1 && text.endsWith("/")) text = text.slice(0, -1)
+        return text
+    }
+
+    function rebuildReviewRows() {
+        var known = ({})
+        function addKnown(value) {
+            var key = root.normalizeReviewKey(value)
+            if (key.length) known[key] = true
+        }
+
+        addKnown(root.person.title)
+        addKnown(root.person.normalizedValue)
+        for (var i = 0; i < root.relatedRows.length; ++i) {
+            addKnown(root.relatedRows[i].value)
+            addKnown(root.relatedRows[i].url)
+        }
+        for (var j = 0; j < root.links.length; ++j) {
+            addKnown(root.links[j].value)
+            addKnown(root.links[j].url)
+        }
+        for (var k = 0; k < root.profileRows.length; ++k) {
+            addKnown(root.profileRows[k].value)
+            addKnown(root.profileRows[k].url)
+        }
+
+        var review = []
+        for (var n = 0; n < root.profileCandidates.length; ++n) {
+            var candidate = root.profileCandidates[n]
+            var originKey = root.normalizeReviewKey(candidate.origin)
+            var valueKey = root.normalizeReviewKey(candidate.value)
+            var urlKey = root.normalizeReviewKey(candidate.url)
+            if ((originKey.length && known[originKey])
+                    || (valueKey.length && known[valueKey])
+                    || (urlKey.length && known[urlKey])) {
+                review.push(candidate)
+            }
+        }
+        root.reviewRows = review
+    }
+
+    function rebuildIntelligenceSections() {
+        var contacts = []
+        var organizations = []
+        var locations = []
+        var web = []
+        var technical = []
+        var other = []
+        var profileKeys = ({})
+
+        for (var p = 0; p < root.profileRows.length; ++p) {
+            var profileKey = root.normalizeReviewKey(root.profileRows[p].url || root.profileRows[p].value)
+            if (profileKey.length) profileKeys[profileKey] = true
+        }
+
+        for (var i = 0; i < root.relatedRows.length; ++i) {
+            var item = root.relatedRows[i]
+            var rawType = String(item.rawType || item.type || "")
+                .toLowerCase().replace(/ /g, "_")
+
+            if (rawType === "username" || rawType === "account")
+                continue
+            if (rawType === "email" || rawType === "phone")
+                contacts.push(item)
+            else if (rawType === "organization")
+                organizations.push(item)
+            else if (rawType === "location" || rawType === "address")
+                locations.push(item)
+            else if (rawType === "url") {
+                var webKey = root.normalizeReviewKey(item.url || item.value)
+                if (!webKey.length || !profileKeys[webKey]) web.push(item)
+            }
+            else if (rawType === "domain" || rawType === "ip" || rawType === "asn" || rawType === "hash")
+                technical.push(item)
+            else
+                other.push(item)
+        }
+
+        root.contactRows = contacts
+        root.organizationRows = organizations
+        root.locationRows = locations
+        root.webRows = web
+        root.technicalRows = technical
+        root.otherIntelligenceRows = other
+        root.rebuildReviewRows()
+
+        var groups = [
+            { title: "CONTACTS", rows: contacts, empty: "No linked contacts" },
+            { title: "ORGANIZATIONS", rows: organizations, empty: "No linked organizations" },
+            { title: "LOCATIONS", rows: locations, empty: "No linked locations" },
+            { title: "WEB PROFILES / PAGES", rows: web, empty: "No additional linked pages" },
+            // R13.23.1.1 EMPTY-STATE COMPATIBILITY
+            { title: "TECHNICAL", rows: technical, empty: "No web / network identifiers" }
+        ]
+        if (other.length > 0)
+            groups.push({ title: "OTHER INTELLIGENCE", rows: other, empty: "" })
+        root.intelligenceGroups = groups
+        root.summaryMetrics = [
+            { label: "Accounts", value: root.profileRows.length },
+            { label: "Contacts", value: contacts.length },
+            { label: "Organizations", value: organizations.length },
+            { label: "Locations", value: locations.length },
+            { label: "Mentions", value: root.mentionRows.length },
+            { label: "Evidence", value: root.evidenceRows.length },
+            { label: "Review", value: root.reviewRows.length }
+        ]
+    }
+
+    function intelligenceRowDetail(item) {
+        var parts = []
+        var rawType = String(item.rawType || item.type || "").replace(/_/g, " ")
+        if (rawType.length) parts.push(rawType)
+        if (item.basis === "analyst_selected") parts.push("analyst linked")
+        else if (item.basis === "manual") parts.push("manual")
+        else if (item.basis) parts.push(String(item.basis))
+        if (item.evidenceTitle) parts.push(String(item.evidenceTitle))
+        return parts.join(" · ")
+    }
+
     function attachmentKind() {
         var kinds = ["link", "photo", "file", "email", "phone", "username", "note"]
         return kinds[Math.max(0, addType.currentIndex)]
@@ -90,10 +223,10 @@ Item {
 
     function filteredProfileCandidates() {
         var query = String(root.candidateQuery || "").trim().toLowerCase()
-        if (!query.length) return root.profileCandidates
+        if (!query.length) return root.reviewRows
         var result = []
-        for (var i = 0; i < root.profileCandidates.length; ++i) {
-            var item = root.profileCandidates[i]
+        for (var i = 0; i < root.reviewRows.length; ++i) {
+            var item = root.reviewRows[i]
             var haystack = (String(item.value || "") + " "
                 + String(item.typeLabel || item.type || "") + " "
                 + String(item.connector || "") + " "
@@ -110,10 +243,12 @@ Item {
         root.photos = root.person.photos || []
         root.files = root.person.files || []
         root.evidenceRows = root.person.evidence || []
+        root.mentionRows = root.person.mentions || []
         root.relatedRows = root.person.relatedEntities || []
         root.profileCandidates = root.person.profileCandidates || []
         root.metadataRows = root.person.metadataRows || []
         root.profileRows = root.buildProfileRows()
+        root.rebuildIntelligenceSections()
     }
 
     Connections {
@@ -183,7 +318,7 @@ Item {
                 y: 62
                 width: Math.max(160, parent.width - 300)
                 text: (root.person.caseTitle ? String(root.person.caseTitle) + " · " : "")
-                    + "Confidence " + String(root.person.confidenceText || "—")
+                    + "Entity confidence " + String(root.person.confidenceText || "—")
                 color: Theme.textSecondary
                 font.pixelSize: 12
                 elide: Text.ElideRight
@@ -210,7 +345,7 @@ Item {
                 width: 162
                 height: 36
                 text: "+  From intelligence"
-                enabled: root.profileCandidates.length > 0
+                enabled: root.reviewRows.length > 0
                 onClicked: profileCandidateDialog.open()
             }
         }
@@ -272,7 +407,7 @@ Item {
                                 x: 102
                                 y: 52
                                 width: parent.width - 120
-                                text: "PERSON · " + String(root.person.confidenceText || "—")
+                                text: "PERSON ENTITY · " + String(root.person.confidenceText || "—")
                                 color: "#a98be9"
                                 font.pixelSize: 10
                                 font.weight: Font.Medium
@@ -362,10 +497,154 @@ Item {
 
                 Panel {
                     Layout.fillWidth: true
+                    Layout.preferredHeight: 166
+                    Layout.minimumHeight: 166
+                    Layout.maximumHeight: 166
+                    title: "Intelligence Summary"
+                    subtitle: "Structured view of linked intelligence · provenance remains authoritative"
+                    iconSource: "../../assets/icons/chart_blue.svg"
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.margins: 12
+                        spacing: 8
+
+                        Repeater {
+                            model: root.summaryMetrics
+                            delegate: Rectangle {
+                                id: summaryMetric
+                                required property var modelData
+                                Layout.fillWidth: true
+                                Layout.fillHeight: true
+                                Layout.minimumHeight: 72
+                                radius: 8
+                                color: "#0d1f2c"
+                                border.width: 1
+                                border.color: Theme.border
+                                Text {
+                                    x: 12; y: 11
+                                    text: String(summaryMetric.modelData.label || "Metric").toUpperCase()
+                                    color: Theme.textMuted
+                                    font.pixelSize: 8
+                                    font.letterSpacing: 0.8
+                                }
+                                Text {
+                                    x: 12; y: 34
+                                    text: String(summaryMetric.modelData.value || 0)
+                                    color: Theme.textPrimary
+                                    font.pixelSize: 22
+                                    font.weight: Font.DemiBold
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Panel {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: Math.min(560, Math.max(352, 94 + Math.ceil(root.intelligenceGroups.length / 2) * 132))
+                    Layout.minimumHeight: 352
+                    Layout.maximumHeight: 560
+                    title: "Core Intelligence"
+                    subtitle: "Contacts, organizations, locations, web pages and technical identifiers grouped by type"
+                    iconSource: "../../assets/icons/users_cyan.svg"
+
+                    GridLayout {
+                        anchors.fill: parent
+                        anchors.margins: 12
+                        columns: 2
+                        rowSpacing: 10
+                        columnSpacing: 10
+
+                        Repeater {
+                            model: root.intelligenceGroups
+                            delegate: Rectangle {
+                                id: intelligenceGroup
+                                required property var modelData
+                                Layout.fillWidth: true
+                                Layout.fillHeight: true
+                                Layout.minimumHeight: 126
+                                radius: 8
+                                color: "#0d1f2c"
+                                border.width: 1
+                                border.color: Theme.border
+
+                                Text {
+                                    x: 12; y: 10
+                                    width: parent.width - 60
+                                    text: String(intelligenceGroup.modelData.title || "INTELLIGENCE")
+                                    color: Theme.textSecondary
+                                    font.pixelSize: 9
+                                    font.weight: Font.DemiBold
+                                    font.letterSpacing: 0.8
+                                    elide: Text.ElideRight
+                                }
+                                Text {
+                                    anchors.right: parent.right
+                                    anchors.rightMargin: 12
+                                    y: 10
+                                    text: String((intelligenceGroup.modelData.rows || []).length)
+                                    color: Theme.accent
+                                    font.pixelSize: 9
+                                    font.weight: Font.DemiBold
+                                }
+
+                                Column {
+                                    x: 12
+                                    y: 34
+                                    width: parent.width - 24
+                                    spacing: 5
+
+                                    Repeater {
+                                        model: (intelligenceGroup.modelData.rows || []).slice(0, 3)
+                                        delegate: Item {
+                                            id: groupedRow
+                                            required property var modelData
+                                            width: parent.width
+                                            height: 25
+                                            Text {
+                                                width: parent.width
+                                                text: String(groupedRow.modelData.value || "—")
+                                                color: groupedRow.modelData.url ? Theme.accent : Theme.textPrimary
+                                                font.pixelSize: 10
+                                                font.weight: Font.Medium
+                                                elide: Text.ElideRight
+                                            }
+                                            Text {
+                                                y: 13
+                                                width: parent.width
+                                                text: root.intelligenceRowDetail(groupedRow.modelData)
+                                                color: Theme.textMuted
+                                                font.pixelSize: 7
+                                                elide: Text.ElideRight
+                                            }
+                                        }
+                                    }
+
+                                    Text {
+                                        visible: (intelligenceGroup.modelData.rows || []).length === 0
+                                        text: String(intelligenceGroup.modelData.empty || "No linked intelligence")
+                                        color: Theme.textMuted
+                                        font.pixelSize: 9
+                                    }
+                                    Text {
+                                        visible: (intelligenceGroup.modelData.rows || []).length > 3
+                                        text: "+ " + String((intelligenceGroup.modelData.rows || []).length - 3) + " more"
+                                        color: Theme.accent
+                                        font.pixelSize: 8
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Panel {
+                    Layout.fillWidth: true
                     Layout.preferredHeight: Math.min(420, Math.max(210, 96 + root.profileRows.length * 66))
                     Layout.minimumHeight: 210
                     Layout.maximumHeight: 420
-                    title: "Profiles & Accounts"
+                    title: "Accounts & Profiles"
                     subtitle: root.profileRows.length > 0
                         ? String(root.profileRows.length) + " linked profile/account item(s)"
                         : "Select existing OSINT intelligence or add an account manually"
@@ -460,6 +739,69 @@ Item {
                                     cursorShape: profileRow.modelData.url ? Qt.PointingHandCursor : Qt.ArrowCursor
                                     enabled: String(profileRow.modelData.url || "").length > 0
                                     onClicked: desktopBridge.openExternalUrl(String(profileRow.modelData.url || ""))
+                                }
+                            }
+                            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+                        }
+                    }
+                }
+
+                Panel {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: Math.min(420, Math.max(210, 96 + root.mentionRows.length * 78))
+                    Layout.minimumHeight: 210
+                    Layout.maximumHeight: 420
+                    title: "Corroborating Mentions"
+                    subtitle: root.mentionRows.length > 0
+                        ? String(root.mentionRows.length) + " analyst-linked multi-signal mention(s)"
+                        : "Attach a multi-signal mention from Investigation Search"
+                    iconSource: "../../assets/icons/search.svg"
+
+                    Item {
+                        anchors.fill: parent
+                        EmptyState {
+                            anchors.fill: parent
+                            anchors.margins: 14
+                            visible: root.mentionRows.length === 0
+                            iconSource: "../../assets/icons/search.svg"
+                            title: "No corroborating mentions"
+                            description: "In Search → Mentions, use Add to person to preserve a relevant page/document with matched signals and provenance."
+                        }
+                        ListView {
+                            anchors.fill: parent
+                            visible: root.mentionRows.length > 0
+                            clip: true
+                            model: root.mentionRows
+                            boundsBehavior: Flickable.StopAtBounds
+                            delegate: Rectangle {
+                                id: mentionRow
+                                required property var modelData
+                                width: ListView.view.width
+                                height: 78
+                                color: mentionMouse.containsMouse ? Theme.surfaceHover : "transparent"
+                                Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; height: 1; color: Theme.divider }
+                                Text { x: 16; y: 10; width: parent.width - 170; text: String(mentionRow.modelData.title || "Corroborating mention"); color: Theme.textPrimary; font.pixelSize: 11; font.weight: Font.DemiBold; elide: Text.ElideRight }
+                                Text { x: 16; y: 31; width: parent.width - 170; text: String(mentionRow.modelData.summary || "Multi-signal match"); color: Theme.textSecondary; font.pixelSize: 9; elide: Text.ElideRight }
+                                Text { x: 16; y: 51; width: parent.width - 170; text: String(mentionRow.modelData.source || "Source") + (mentionRow.modelData.date ? " · " + String(mentionRow.modelData.date) : ""); color: Theme.textMuted; font.pixelSize: 8; elide: Text.ElideRight }
+                                Rectangle {
+                                    anchors.right: parent.right
+                                    anchors.rightMargin: 16
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: 126
+                                    height: 28
+                                    radius: 6
+                                    color: "transparent"
+                                    border.width: 1
+                                    border.color: Theme.success
+                                    Text { anchors.centerIn: parent; text: "MENTION · " + Number(mentionRow.modelData.score || 0).toFixed(0); color: Theme.success; font.pixelSize: 8; font.weight: Font.DemiBold }
+                                }
+                                MouseArea {
+                                    id: mentionMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: mentionRow.modelData.url ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                    enabled: String(mentionRow.modelData.url || "").length > 0
+                                    onClicked: desktopBridge.openExternalUrl(String(mentionRow.modelData.url || ""))
                                 }
                             }
                             ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
@@ -576,8 +918,8 @@ Item {
                     Panel {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
-                        title: "Related Identifiers"
-                        subtitle: "Connected through shared supporting evidence"
+                        title: "Intelligence Attributes"
+                        subtitle: "Evidence-linked identifiers · manual and analyst-linked items remain labeled"
                         iconSource: "../../assets/icons/graph_blue.svg"
 
                         Item {
@@ -1001,7 +1343,7 @@ Item {
                     Text {
                         anchors.centerIn: parent
                         visible: candidateList.count === 0
-                        text: root.profileCandidates.length === 0
+                        text: root.reviewRows.length === 0
                             ? "No unlinked OSINT profile candidates are currently stored in this investigation."
                             : "No candidates match this filter."
                         color: Theme.textMuted
@@ -1023,7 +1365,7 @@ Item {
                     Layout.fillWidth: true
                     Text {
                         Layout.fillWidth: true
-                        text: String(root.profileCandidates.length) + " candidate(s) available"
+                        text: String(root.reviewRows.length) + " relevant candidate(s) available"
                         color: Theme.textMuted
                         font.pixelSize: 9
                     }

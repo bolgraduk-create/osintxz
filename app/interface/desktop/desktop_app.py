@@ -34,7 +34,12 @@ from PySide6.QtGui import QFont
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtWidgets import QApplication
 
-from app.interface.desktop.bridges import DesktopBridge
+from app.interface.desktop.bridges import (
+    DesktopBridge,
+    InvestigationSearchBridge,
+    RegistryCenterBridge,
+    SourceCenterBridge,
+)
 
 
 class DesktopApplication:
@@ -64,11 +69,28 @@ class DesktopApplication:
         qml_file = base_dir / "qml" / "Main.qml"
 
         self.bridge = DesktopBridge(container=self.container)
+        self.source_bridge = SourceCenterBridge(container=self.container)
+        self.registry_bridge = RegistryCenterBridge(container=self.container)
+        self.investigation_search_bridge = InvestigationSearchBridge(
+            container=self.container
+        )
         self.engine = QQmlApplicationEngine()
         self.engine.addImportPath(str(base_dir / "qml"))
         self.engine.rootContext().setContextProperty(
             "desktopBridge",
             self.bridge,
+        )
+        self.engine.rootContext().setContextProperty(
+            "sourceBridge",
+            self.source_bridge,
+        )
+        self.engine.rootContext().setContextProperty(
+            "registryBridge",
+            self.registry_bridge,
+        )
+        self.engine.rootContext().setContextProperty(
+            "investigationSearchBridge",
+            self.investigation_search_bridge,
         )
         self.engine.load(QUrl.fromLocalFile(str(qml_file)))
 

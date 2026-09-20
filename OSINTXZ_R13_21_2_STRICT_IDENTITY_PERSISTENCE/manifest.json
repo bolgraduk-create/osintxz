@@ -1,0 +1,98 @@
+{
+  "patch": "R13.21.2",
+  "name": "Strict Identity & Pre-Persistence Relevance Gate",
+  "baseline": "R13.21.1",
+  "database_migration": false,
+  "new_sources": false,
+  "local_regression": "43 passed",
+  "changes": [
+    "strict structured person-name matching with query-echo suppression",
+    "person-like-only Identity candidates",
+    "separate Candidates UI tab",
+    "optional pre-persistence finding gate for Unified Investigation Search",
+    "exact-target relevance gating before Source/Evidence/Entity creation",
+    "adaptive result-row layout retained"
+  ],
+  "files": [
+    {
+      "path": "README_R13_21_2_STRICT_IDENTITY_PERSISTENCE.md",
+      "bytes": 2151,
+      "sha256": "f2d8369f3c73f1d11ca89aef44cbae37424c20eb9cd0bc17f7879d157f0bb91e"
+    },
+    {
+      "path": "RUN_R13_21_2_TESTS.ps1",
+      "bytes": 548,
+      "sha256": "c5985242d628250ff0f4c8e9f7fb1dca43ec7b20b94e298aa79ffb6178e35667"
+    },
+    {
+      "path": "install_r13_21_2_strict_identity_persistence.py",
+      "bytes": 11176,
+      "sha256": "e8195a72acb4462067a067fb44e60f42ca68de758ddc4e420f0ad9bad7df8c90"
+    },
+    {
+      "path": "payload/app/application/contextual_relevance.py",
+      "bytes": 14102,
+      "sha256": "40b7524202ef12ea6ec8c23496eb53ea5277c9f361d51713283454ae9e77b040"
+    },
+    {
+      "path": "payload/app/application/identity_resolution.py",
+      "bytes": 21526,
+      "sha256": "157ed0127afeda20a571559a827c1db81ff4719b1be4daa9ea149c2b8707cc6a"
+    },
+    {
+      "path": "payload/app/application/investigation_result_consolidation.py",
+      "bytes": 23351,
+      "sha256": "6309dc5883bb29ea1768d6dff19bd64b8f1112057c70720dabf896ceab08d76a"
+    },
+    {
+      "path": "payload/app/application/person_name_relevance.py",
+      "bytes": 11218,
+      "sha256": "983d07b2168b05c1e1c2f4eafee1a8d75203242b2266d1a219e9291616ee437f"
+    },
+    {
+      "path": "payload/app/application/unified_investigation_search.py",
+      "bytes": 27985,
+      "sha256": "7aeedaca6066df91fa784d5900bf26be58418cf29e92d5de742d739ce2a2c52a"
+    },
+    {
+      "path": "payload/app/application/unified_persistence_relevance.py",
+      "bytes": 8853,
+      "sha256": "c8602cfa4322f840ee1ad22e9a9d17dcce6b6daa467d32c30732229793c9e0fc"
+    },
+    {
+      "path": "payload/app/interface/desktop/qml/pages/Search.qml",
+      "bytes": 44348,
+      "sha256": "32f08abe1d4211d8801cb9c95340c4d5c1ec7839e619ab26e1cad3040946d6a5"
+    },
+    {
+      "path": "payload/app/interface/desktop/workers/unified_investigation_search_worker.py",
+      "bytes": 51065,
+      "sha256": "eba2b48c57b54b92e1d9a0ed859c52e0bbb90415680e01fec116073f0eaa36b9"
+    },
+    {
+      "path": "payload/tests/test_r13_20_1_result_cleanup.py",
+      "bytes": 4204,
+      "sha256": "ff83eec17da48d5546359a65a9e10598ab0721564da0b3345fe1310f995a69f4"
+    },
+    {
+      "path": "payload/tests/test_r13_20_2_person_name_relevance.py",
+      "bytes": 4701,
+      "sha256": "65374c51691abd8fdb13ea9290458b2d05cb935569500e9b40d39c03cd0d4bd7"
+    },
+    {
+      "path": "payload/tests/test_r13_21_1_contextual_relevance.py",
+      "bytes": 5818,
+      "sha256": "5df0151de24c17022ed73b1c9b17911df4ba244bfac5b4f958cac214908cee67"
+    },
+    {
+      "path": "payload/tests/test_r13_21_2_strict_identity_persistence.py",
+      "bytes": 6868,
+      "sha256": "d58c47d9e74ee78d16bf65cdb2c5132e0139cfb2cfb1da9c48b1cd779ccd02d1"
+    },
+    {
+      "path": "payload/tests/test_r13_21_identity_resolution.py",
+      "bytes": 6852,
+      "sha256": "c480aa5721c1000d438ca8a534d71837c2e7b93b98c830fced97a33ca498415b"
+    }
+  ]
+}

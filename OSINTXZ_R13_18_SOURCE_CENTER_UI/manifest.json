@@ -1,0 +1,19 @@
+{
+  "package": "OSINTXZ_R13_18_SOURCE_CENTER_UI",
+  "baseline": "R13.17 / GitHub main 55bb12b56f12c6277f61d8cd90fb4c049b632fdb",
+  "database_migration": false,
+  "bulk_downloads": false,
+  "new_runtime_files": [
+    "app/intelligence_sources/source_center.py",
+    "app/interface/desktop/workers/federated_source_search_worker.py",
+    "app/interface/desktop/bridges/source_center_bridge.py",
+    "app/interface/desktop/qml/pages/Sources.qml"
+  ],
+  "patched_files": [
+    "app/interface/desktop/bridges/__init__.py",
+    "app/interface/desktop/workers/__init__.py",
+    "app/interface/desktop/desktop_app.py",
+    "app/interface/desktop/qml/Main.qml",
+    "app/interface/desktop/qml/components/Sidebar.qml"
+  ]
+}

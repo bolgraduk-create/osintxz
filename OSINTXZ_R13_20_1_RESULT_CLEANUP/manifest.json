@@ -1,0 +1,28 @@
+{
+  "patch": "R13.20.1",
+  "name": "Result Cleanup / Consolidation Hotfix",
+  "requires": "R13.20 Unified Investigation Search",
+  "database_migration": false,
+  "files": [
+    "README_R13_20_1_RESULT_CLEANUP.md",
+    "RUN_R13_20_1_TESTS.ps1",
+    "install_r13_20_1_result_cleanup.py",
+    "payload/.pytest_cache/.gitignore",
+    "payload/.pytest_cache/CACHEDIR.TAG",
+    "payload/.pytest_cache/README.md",
+    "payload/.pytest_cache/v/cache/nodeids",
+    "payload/app/application/__pycache__/investigation_result_consolidation.cpython-313.pyc",
+    "payload/app/application/investigation_result_consolidation.py",
+    "payload/app/interface/desktop/qml/pages/Search.qml",
+    "payload/app/interface/desktop/workers/__pycache__/unified_investigation_search_worker.cpython-313.pyc",
+    "payload/app/interface/desktop/workers/unified_investigation_search_worker.py",
+    "payload/tests/.pytest_cache/.gitignore",
+    "payload/tests/.pytest_cache/CACHEDIR.TAG",
+    "payload/tests/.pytest_cache/README.md",
+    "payload/tests/.pytest_cache/v/cache/lastfailed",
+    "payload/tests/.pytest_cache/v/cache/nodeids",
+    "payload/tests/__pycache__/test_r13_20_1_result_cleanup.cpython-313-pytest-9.0.2.pyc",
+    "payload/tests/test_r13_20_1_result_cleanup.py"
+  ],
+  "test_gate": "tests/test_r13_20_1_result_cleanup.py + R13.20/QML regression tests"
+}

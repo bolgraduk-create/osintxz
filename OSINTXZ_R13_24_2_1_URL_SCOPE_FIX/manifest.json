@@ -1,0 +1,35 @@
+{
+  "patch": "R13.24.2.1",
+  "files": [
+    {
+      "path": "README_R13_24_2_1_URL_SCOPE_FIX.md",
+      "sha256": "71d714c46cfd8e90b9cfed7d493662b338b894aabbe21805b452c129b8f05ec0",
+      "size": 906
+    },
+    {
+      "path": "RUN_R13_24_2_1_TESTS.ps1",
+      "sha256": "c3a288f476d9bcd7b74371e18a204f179ba5aee4a34866bf95996aacffc2eea3",
+      "size": 335
+    },
+    {
+      "path": "install_r13_24_2_1_url_scope_fix.py",
+      "sha256": "c6b649629f5580581418a980f8e7dbfd15234e306fe142a6cbe9ae554999e788",
+      "size": 4030
+    },
+    {
+      "path": "payload/app/application/adaptive_relevance.py",
+      "sha256": "9794e665596301a0327f8684d2aa77f39e16ab98a387c1486ffa0b15443b4422",
+      "size": 16612
+    },
+    {
+      "path": "payload/tests/test_r13_24_2_1_url_scope_fix.py",
+      "sha256": "c0e3797b32dce775a11487203850625aee99768cd17d2731992d8944a317d33d",
+      "size": 1278
+    },
+    {
+      "path": "payload/tests/test_r13_24_2_balanced_relevance.py",
+      "sha256": "52dba76d3f149c035550c54285dccac3a91f9ee1801c7c0e5438a421798f72eb",
+      "size": 3539
+    }
+  ]
+}

@@ -122,6 +122,12 @@ class OsintFindingPersistenceService:
         self.entity_service = entity_service
         self.evidence_link_service = evidence_link_service
 
+        # R13.21.2 pre-persistence relevance gate. The attribute is
+        # intentionally optional and defaults to historical behaviour.
+        # Unified Investigation Search installs a thread-local/container-
+        # local callable; other OSINT workflows leave it as None.
+        self.finding_gate = None
+
     def persist_execution(
         self,
         *,
@@ -159,6 +165,16 @@ class OsintFindingPersistenceService:
 
             for index, finding in enumerate(connector_result.findings):
                 if not self._is_persistable_finding(finding):
+                    result.skipped_findings += 1
+                    continue
+
+                if not self._passes_finding_gate(
+                    target_type=target_type,
+                    target_value=target_value,
+                    goal=goal,
+                    connector=connector_result.connector,
+                    finding=finding,
+                ):
                     result.skipped_findings += 1
                     continue
 
@@ -214,6 +230,16 @@ class OsintFindingPersistenceService:
                 result.skipped_findings += 1
                 continue
 
+            if not self._passes_finding_gate(
+                target_type=target_type,
+                target_value=target_value,
+                goal=goal,
+                connector=connector,
+                finding=finding,
+            ):
+                result.skipped_findings += 1
+                continue
+
             result.persisted.append(
                 self._persist_finding(
                     case_id=case_id,
@@ -229,6 +255,38 @@ class OsintFindingPersistenceService:
             )
 
         return result
+
+    def _passes_finding_gate(
+        self,
+        *,
+        target_type: OsintTargetType,
+        target_value: str,
+        goal: DiscoveryGoal,
+        connector: str,
+        finding: OsintFinding,
+    ) -> bool:
+        """Apply an optional caller-supplied relevance gate before persistence.
+
+        Gate failures are fail-closed for the current finding: the provider
+        result remains available to the caller/UI, but no Source/Evidence/Entity
+        is created from a finding the gate could not safely classify.
+        """
+        gate = getattr(self, "finding_gate", None)
+        if gate is None:
+            return True
+        try:
+            return bool(
+                gate(
+                    target_type=target_type,
+                    target_value=target_value,
+                    goal=goal,
+                    connector=connector,
+                    finding=finding,
+                )
+            )
+        except Exception:
+            return False
+
 
     @classmethod
     def _build_username_profile_fusion(

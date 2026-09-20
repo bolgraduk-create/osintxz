@@ -34,6 +34,7 @@ ApplicationWindow {
         case "graph": return "pages/Graph.qml"
         case "timeline": return "pages/Timeline.qml"
         case "osint": return "pages/Osint.qml"
+        case "sources": return "pages/Sources.qml"
         case "evidence": return "pages/Evidence.qml"
         case "reports": return "pages/Reports.qml"
         case "report": return "pages/Report.qml"
@@ -100,9 +101,9 @@ ApplicationWindow {
         width: Math.max(228, Math.min(276, window.width * 0.166))
         currentPage: window.currentPage
         systemOnline: desktopBridge.databaseAvailable
-        sourceCount: "—"
-        integrationCount: "—"
-        monitorCount: "—"
+        sourceCount: String((sourceBridge.sourceCenter.counts || {}).total || 0)
+        integrationCount: String((sourceBridge.sourceCenter.counts || {}).searchable || 0)
+        monitorCount: sourceBridge.busy ? "1" : "0"
         onNavigate: function(page) { window.currentPage = page }
     }
 
