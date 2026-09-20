@@ -20,6 +20,8 @@ Item {
     property var selectedMention: ({})
     property var mentionPersonOptions: []
     property string mentionLinkError: ""
+    // R13.25b ACCOUNT DETAILS
+    property var selectedAccount: ({})
 
     function itemCount(tab) {
         if (tab === "results") return (resultViewMode === "raw" ? (runData.rawResults || []) : (runData.results || [])).length
@@ -169,6 +171,38 @@ Item {
         root.mentionLinkError = ""
         root.mentionPersonOptions = investigationSearchBridge.personOptions(desktopBridge.currentCaseId)
         mentionPersonDialog.open()
+    }
+
+    function accountObservations(row) {
+        const value = row || ({})
+        const observations = value.accountObservations || []
+        if (observations.length > 0) return observations
+        return [{
+            connector: value.source || "Unknown source",
+            service: value.service || "",
+            lane: value.lane || "",
+            url: value.url || "",
+            title: value.title || "",
+            detail: value.detail || "",
+            status: value.status || "",
+            confidence: value.confidence,
+            reliability: value.reliability,
+            metadata: value.findingMetadata || ({})
+        }]
+    }
+
+    function metadataText(value) {
+        if (value === undefined || value === null) return "{}"
+        try {
+            return JSON.stringify(value, null, 2)
+        } catch (error) {
+            return String(value)
+        }
+    }
+
+    function openAccountDetails(row) {
+        root.selectedAccount = row || ({})
+        accountDetailsDialog.open()
     }
 
     opacity: 0
@@ -749,9 +783,13 @@ Item {
                                 anchors.bottom: parent.bottom
                                 anchors.right: addMentionToPersonButton.visible ? addMentionToPersonButton.left : parent.right
                                 hoverEnabled: true
-                                cursorShape: row.modelData.url ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                cursorShape: (root.activeTab === "accounts" || row.modelData.url) ? Qt.PointingHandCursor : Qt.ArrowCursor
                                 onClicked: {
-                                    if (row.modelData.url) desktopBridge.openExternalUrl(String(row.modelData.url))
+                                    if (root.activeTab === "accounts") {
+                                        root.openAccountDetails(row.modelData)
+                                    } else if (row.modelData.url) {
+                                        desktopBridge.openExternalUrl(String(row.modelData.url))
+                                    }
                                 }
                             }
                         }
@@ -883,6 +921,204 @@ Item {
                     iconSource: "../../assets/icons/search.svg"
                     title: "Search persisted intelligence"
                     description: "This is the previous local unified-search capability, now kept beside the new live all-source workflow."
+                }
+            }
+        }
+    }
+
+    Dialog {
+        id: accountDetailsDialog
+        modal: true
+        anchors.centerIn: parent
+        width: Math.min(760, root.width - 80)
+        height: Math.min(650, root.height - 70)
+        padding: 0
+        closePolicy: Popup.CloseOnEscape
+
+        background: Rectangle {
+            radius: 12
+            color: Theme.surface
+            border.width: 1
+            border.color: Theme.border
+        }
+
+        contentItem: ColumnLayout {
+            spacing: 0
+
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 88
+                color: "transparent"
+                Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; height: 1; color: Theme.divider }
+                Text {
+                    x: 20; y: 13
+                    width: parent.width - 180
+                    text: String(root.selectedAccount.title || root.selectedAccount.value || "Account details")
+                    color: Theme.textPrimary
+                    font.pixelSize: 18
+                    font.weight: Font.DemiBold
+                    elide: Text.ElideRight
+                }
+                Text {
+                    x: 20; y: 43
+                    width: parent.width - 180
+                    text: String(root.selectedAccount.url || root.selectedAccount.meta || "")
+                    color: Theme.textMuted
+                    font.pixelSize: 9
+                    elide: Text.ElideRight
+                }
+                AppButton {
+                    visible: Boolean(root.selectedAccount.url)
+                    anchors.right: closeAccountDetailsButton.left
+                    anchors.rightMargin: 8
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 112
+                    text: "Open profile"
+                    primary: true
+                    onClicked: desktopBridge.openExternalUrl(String(root.selectedAccount.url || ""))
+                }
+                AppButton {
+                    id: closeAccountDetailsButton
+                    anchors.right: parent.right
+                    anchors.rightMargin: 16
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 78
+                    text: "Close"
+                    onClicked: accountDetailsDialog.close()
+                }
+            }
+
+            Flickable {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+                contentWidth: width
+                contentHeight: accountDetailsColumn.height + 28
+                boundsBehavior: Flickable.StopAtBounds
+                ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+
+                Column {
+                    id: accountDetailsColumn
+                    x: 20
+                    y: 16
+                    width: parent.width - 40
+                    spacing: 12
+
+                    RowLayout {
+                        width: parent.width
+                        spacing: 12
+                        Text {
+                            Layout.fillWidth: true
+                            text: "ACCOUNT SIGNAL"
+                            color: Theme.textMuted
+                            font.pixelSize: 8
+                            font.weight: Font.DemiBold
+                            font.letterSpacing: 1.1
+                        }
+                        Text {
+                            text: String(Number(root.selectedAccount.corroborationCount || 1)) + " source(s)"
+                            color: Theme.accent
+                            font.pixelSize: 9
+                        }
+                    }
+
+                    Text {
+                        width: parent.width
+                        text: "Seed: " + String(root.selectedAccount.seed || "")
+                            + (root.selectedAccount.service ? " · Platform: " + String(root.selectedAccount.service) : "")
+                            + (root.selectedAccount.score !== undefined ? " · Rank: " + Number(root.selectedAccount.score).toFixed(0) : "")
+                        color: Theme.textSecondary
+                        font.pixelSize: 10
+                        wrapMode: Text.Wrap
+                    }
+
+                    Repeater {
+                        model: root.accountObservations(root.selectedAccount)
+                        delegate: Rectangle {
+                            id: observationCard
+                            required property var modelData
+                            width: accountDetailsColumn.width
+                            height: observationContent.height + 28
+                            radius: 9
+                            color: Theme.surfaceHover
+                            border.width: 1
+                            border.color: Theme.divider
+
+                            Column {
+                                id: observationContent
+                                x: 14
+                                y: 14
+                                width: parent.width - 28
+                                spacing: 7
+
+                                Text {
+                                    width: parent.width
+                                    text: String(observationCard.modelData.connector || "Unknown source")
+                                        + (observationCard.modelData.service ? " · " + String(observationCard.modelData.service) : "")
+                                    color: Theme.textPrimary
+                                    font.pixelSize: 12
+                                    font.weight: Font.DemiBold
+                                    elide: Text.ElideRight
+                                }
+                                Text {
+                                    width: parent.width
+                                    text: (observationCard.modelData.confidence !== undefined && observationCard.modelData.confidence !== null
+                                        ? "Confidence " + Number(observationCard.modelData.confidence).toFixed(2) : "Confidence n/a")
+                                        + " · "
+                                        + (observationCard.modelData.reliability !== undefined && observationCard.modelData.reliability !== null
+                                            ? "Reliability " + Number(observationCard.modelData.reliability).toFixed(2) : "Reliability n/a")
+                                        + (observationCard.modelData.status ? " · " + String(observationCard.modelData.status) : "")
+                                    color: Theme.textMuted
+                                    font.pixelSize: 9
+                                }
+                                Text {
+                                    visible: Boolean(observationCard.modelData.url)
+                                    width: parent.width
+                                    text: String(observationCard.modelData.url || "")
+                                    color: Theme.accent
+                                    font.pixelSize: 9
+                                    elide: Text.ElideRight
+                                }
+                                Text {
+                                    width: parent.width
+                                    text: "PROVIDER METADATA"
+                                    color: Theme.textMuted
+                                    font.pixelSize: 8
+                                    font.weight: Font.DemiBold
+                                    font.letterSpacing: 0.8
+                                }
+                                Rectangle {
+                                    width: parent.width
+                                    height: Math.max(74, metadataTextItem.contentHeight + 20)
+                                    radius: 7
+                                    color: Theme.surface
+                                    border.width: 1
+                                    border.color: Theme.divider
+                                    TextEdit {
+                                        id: metadataTextItem
+                                        x: 10
+                                        y: 10
+                                        width: parent.width - 20
+                                        text: root.metadataText(observationCard.modelData.metadata || ({}))
+                                        color: Theme.textSecondary
+                                        font.pixelSize: 9
+                                        font.family: "Consolas"
+                                        readOnly: true
+                                        selectByMouse: true
+                                        wrapMode: TextEdit.WrapAnywhere
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Text {
+                        width: parent.width
+                        text: "Provider metadata is shown as reported by the source. It may contain service-specific fields and does not by itself prove that multiple accounts belong to the same person."
+                        color: Theme.textMuted
+                        font.pixelSize: 9
+                        wrapMode: Text.Wrap
+                    }
                 }
             }
         }
