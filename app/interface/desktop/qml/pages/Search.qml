@@ -56,9 +56,9 @@ Item {
 
     function statusColor(status) {
         const value = String(status || "").toLowerCase()
-        if (value === "success" || value === "completed" || value === "finding" || value === "registry" || value === "remote" || value === "strong" || value === "supported") return Theme.success
-        if (value === "partial" || value === "guarded" || value === "candidate" || value === "possible" || value === "insufficient") return Theme.warning
-        if (value === "failed" || value === "conflicting") return Theme.danger
+        if (value === "success" || value === "completed" || value === "finding" || value === "registry" || value === "remote" || value === "strong" || value === "supported" || value === "verified") return Theme.success
+        if (value === "partial" || value === "guarded" || value === "candidate" || value === "possible" || value === "insufficient" || value === "reported" || value === "unreachable") return Theme.warning
+        if (value === "failed" || value === "conflicting" || value === "invalid") return Theme.danger
         if (value === "not_configured" || value === "not_supported") return Theme.textMuted
         return Theme.accent
     }
@@ -80,7 +80,7 @@ Item {
         if (activeTab === "identity") return String(row.identitySummary || row.detail || "No independent identity signals available")
         if (activeTab === "candidates") return String(row.detail || "Candidate result kept for analyst review")
         if (activeTab === "possible") return String(row.detail || row.visibilityReason || "Potentially useful result; analyst review required")
-        if (activeTab === "accounts") return String(row.detail || "Online account linked by an exact username/account signal")
+        if (activeTab === "accounts") return String(row.accountVerificationReason || row.detail || "Online account linked by an exact username/account signal")
         if (activeTab === "quality") return String(row.qualitySummary || row.detail || "Shadow quality assessment")
         if (activeTab === "mentions") return String(row.mentionSummary || row.detail || "Multiple known-person signals occur in this source")
         if (activeTab === "providers") return String(row.lane || "") + " · " + String(row.detail || "") + (row.healthAction ? " · " + String(row.healthAction) : "")
@@ -93,7 +93,7 @@ Item {
         if (activeTab === "identity") return String(row.identityLabel || row.identityStatus || "IDENTITY").replace(/_/g, " ").toUpperCase()
         if (activeTab === "candidates") return "REVIEW"
         if (activeTab === "possible") return "POSSIBLE"
-        if (activeTab === "accounts") return "RELATED ACCOUNT"
+        if (activeTab === "accounts") return String(row.accountVerificationStatus || "reported").replace(/_/g, " ").toUpperCase()
         if (activeTab === "quality") return (row.qualityDisagreement ? "DISAGREEMENT · " : "") + String(row.qualityLabel || row.qualityTier || "QUALITY").toUpperCase()
         if (activeTab === "mentions") return String(row.mentionLabel || "CORROBORATING MENTION").toUpperCase()
         if (activeTab === "providers") return String(row.healthLabel || row.status || "provider").replace(/_/g, " ").toUpperCase()
@@ -112,7 +112,10 @@ Item {
         }
         if (activeTab === "candidates") return String(row.source || "") + (row.meta ? " · " + String(row.meta) : "")
         if (activeTab === "possible") return String(row.source || "") + " · visibility " + Number(row.visibilityScore || row.contextRelevanceScore || 0).toFixed(0) + (row.visibilityReason ? " · " + String(row.visibilityReason) : "")
-        if (activeTab === "accounts") return String(row.source || "") + (row.url ? " · " + String(row.url) : "")
+        if (activeTab === "accounts") {
+            const httpText = row.accountVerificationHttpStatus ? " · HTTP " + String(row.accountVerificationHttpStatus) : ""
+            return String(row.source || "") + httpText + (row.url ? " · " + String(row.url) : "")
+        }
         if (activeTab === "quality") {
             return String(row.source || "")
                 + " · Q " + Number(row.qualityScore || 0).toFixed(0)
@@ -202,6 +205,11 @@ Item {
             status: value.status || "",
             confidence: value.confidence,
             reliability: value.reliability,
+            verificationStatus: value.accountVerificationStatus || "reported",
+            verificationReason: value.accountVerificationReason || "",
+            verificationChecked: Boolean(value.accountVerificationChecked),
+            verificationHttpStatus: value.accountVerificationHttpStatus,
+            verificationFinalUrl: value.accountVerificationFinalUrl || "",
             metadata: value.findingMetadata || ({})
         }]
     }
@@ -1082,6 +1090,38 @@ Item {
                         wrapMode: Text.Wrap
                     }
 
+                    Rectangle {
+                        width: parent.width
+                        height: accountVerificationText.contentHeight + 30
+                        radius: 8
+                        color: Theme.surfaceHover
+                        border.width: 1
+                        border.color: root.statusColor(root.selectedAccount.accountVerificationStatus || "reported")
+
+                        Text {
+                            id: accountVerificationBadge
+                            x: 12
+                            y: 8
+                            text: String(root.selectedAccount.accountVerificationStatus || "reported").replace(/_/g, " ").toUpperCase()
+                            color: parent.border.color
+                            font.pixelSize: 9
+                            font.weight: Font.DemiBold
+                        }
+                        Text {
+                            id: accountVerificationText
+                            x: 12
+                            y: 26
+                            width: parent.width - 24
+                            text: String(root.selectedAccount.accountVerificationReason || "Provider-reported account has not been independently verified.")
+                                + (root.selectedAccount.accountVerificationHttpStatus ? " · HTTP " + String(root.selectedAccount.accountVerificationHttpStatus) : "")
+                                + (root.selectedAccount.accountVerificationFinalUrl && root.selectedAccount.accountVerificationFinalUrl !== root.selectedAccount.url
+                                    ? " · Final URL: " + String(root.selectedAccount.accountVerificationFinalUrl) : "")
+                            color: Theme.textSecondary
+                            font.pixelSize: 9
+                            wrapMode: Text.Wrap
+                        }
+                    }
+
                     Repeater {
                         model: root.accountObservations(root.selectedAccount)
                         delegate: Rectangle {
@@ -1120,6 +1160,16 @@ Item {
                                         + (observationCard.modelData.status ? " · " + String(observationCard.modelData.status) : "")
                                     color: Theme.textMuted
                                     font.pixelSize: 9
+                                }
+                                Text {
+                                    visible: Boolean(observationCard.modelData.verificationStatus)
+                                    width: parent.width
+                                    text: "Validation: " + String(observationCard.modelData.verificationStatus || "reported").toUpperCase()
+                                        + (observationCard.modelData.verificationHttpStatus ? " · HTTP " + String(observationCard.modelData.verificationHttpStatus) : "")
+                                        + (observationCard.modelData.verificationReason ? " · " + String(observationCard.modelData.verificationReason) : "")
+                                    color: root.statusColor(observationCard.modelData.verificationStatus || "reported")
+                                    font.pixelSize: 9
+                                    wrapMode: Text.Wrap
                                 }
                                 Text {
                                     visible: Boolean(observationCard.modelData.url)
