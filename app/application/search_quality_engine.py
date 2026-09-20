@@ -258,8 +258,6 @@ def quality_trace_rows(
                 "qualitySummary": str(row.get("qualitySummary") or ""),
             }
         )
-        if limit > 0 and len(out) >= limit:
-            break
 
     out.sort(
         key=lambda item: (
@@ -269,7 +267,7 @@ def quality_trace_rows(
             str(item["title"]).casefold(),
         )
     )
-    return out
+    return out[:limit] if limit > 0 else out
 
 
 def assess_search_quality_row(
