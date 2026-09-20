@@ -22,6 +22,8 @@ Item {
     property string mentionLinkError: ""
     // R13.25b ACCOUNT DETAILS
     property var selectedAccount: ({})
+    property var accountEnrichment: investigationSearchBridge.accountEnrichment || ({})
+    property bool accountEnrichmentBusy: investigationSearchBridge.accountEnrichmentBusy
 
     function itemCount(tab) {
         if (tab === "results") return (resultViewMode === "raw" ? (runData.rawResults || []) : (runData.results || [])).length
@@ -202,6 +204,7 @@ Item {
 
     function openAccountDetails(row) {
         root.selectedAccount = row || ({})
+        investigationSearchBridge.clearAccountEnrichment()
         accountDetailsDialog.open()
     }
 
@@ -968,13 +971,24 @@ Item {
                     elide: Text.ElideRight
                 }
                 AppButton {
+                    id: deepEnrichAccountButton
+                    anchors.right: openAccountProfileButton.visible ? openAccountProfileButton.left : closeAccountDetailsButton.left
+                    anchors.rightMargin: 8
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 112
+                    text: root.accountEnrichmentBusy ? "Enriching…" : "Deep enrich"
+                    primary: true
+                    enabled: !root.accountEnrichmentBusy
+                    onClicked: investigationSearchBridge.deepEnrichAccount(root.selectedAccount)
+                }
+                AppButton {
+                    id: openAccountProfileButton
                     visible: Boolean(root.selectedAccount.url)
                     anchors.right: closeAccountDetailsButton.left
                     anchors.rightMargin: 8
                     anchors.verticalCenter: parent.verticalCenter
-                    width: 112
+                    width: 108
                     text: "Open profile"
-                    primary: true
                     onClicked: desktopBridge.openExternalUrl(String(root.selectedAccount.url || ""))
                 }
                 AppButton {
@@ -1108,6 +1122,137 @@ Item {
                                         wrapMode: TextEdit.WrapAnywhere
                                     }
                                 }
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        width: parent.width
+                        height: 1
+                        color: Theme.divider
+                    }
+
+                    RowLayout {
+                        width: parent.width
+                        spacing: 8
+                        Text {
+                            Layout.fillWidth: true
+                            text: "DEEP ENRICHMENT"
+                            color: Theme.textMuted
+                            font.pixelSize: 8
+                            font.weight: Font.DemiBold
+                            font.letterSpacing: 1.1
+                        }
+                        Text {
+                            visible: Boolean(root.accountEnrichment.hasRun)
+                            text: root.accountEnrichmentBusy
+                                ? "RUNNING"
+                                : String(root.accountEnrichment.status || "UNKNOWN").toUpperCase()
+                            color: root.accountEnrichmentBusy
+                                ? Theme.warning
+                                : root.statusColor(root.accountEnrichment.status)
+                            font.pixelSize: 9
+                            font.weight: Font.DemiBold
+                        }
+                    }
+
+                    Rectangle {
+                        visible: root.accountEnrichmentBusy
+                        width: parent.width
+                        height: 62
+                        radius: 8
+                        color: Theme.surfaceHover
+                        border.width: 1
+                        border.color: Theme.divider
+                        Text {
+                            anchors.fill: parent
+                            anchors.margins: 12
+                            text: "Maigret is parsing the selected profile and requesting its secondary public API/JSON endpoints…"
+                            color: Theme.textSecondary
+                            font.pixelSize: 10
+                            wrapMode: Text.Wrap
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                    }
+
+                    Rectangle {
+                        visible: Boolean(root.accountEnrichment.hasRun) && !root.accountEnrichmentBusy
+                        width: parent.width
+                        height: enrichmentSummaryColumn.height + 24
+                        radius: 8
+                        color: Theme.surfaceHover
+                        border.width: 1
+                        border.color: Theme.divider
+
+                        Column {
+                            id: enrichmentSummaryColumn
+                            x: 12
+                            y: 12
+                            width: parent.width - 24
+                            spacing: 6
+
+                            Text {
+                                width: parent.width
+                                text: String(root.accountEnrichment.connector || "Maigret")
+                                    + " · " + String(root.accountEnrichment.site || "")
+                                    + (root.accountEnrichment.durationText ? " · " + String(root.accountEnrichment.durationText) : "")
+                                color: Theme.textPrimary
+                                font.pixelSize: 11
+                                font.weight: Font.DemiBold
+                                elide: Text.ElideRight
+                            }
+                            Text {
+                                visible: Boolean(root.accountEnrichment.error)
+                                width: parent.width
+                                text: String(root.accountEnrichment.error || "")
+                                color: Theme.warning
+                                font.pixelSize: 9
+                                wrapMode: Text.Wrap
+                            }
+                            Text {
+                                visible: !root.accountEnrichment.error && (root.accountEnrichment.fields || []).length === 0
+                                width: parent.width
+                                text: "The selected account was checked, but no additional structured fields were extracted."
+                                color: Theme.textMuted
+                                font.pixelSize: 9
+                                wrapMode: Text.Wrap
+                            }
+                        }
+                    }
+
+                    Repeater {
+                        model: root.accountEnrichment.fields || []
+                        delegate: Rectangle {
+                            id: enrichmentFieldRow
+                            required property var modelData
+                            width: accountDetailsColumn.width
+                            height: enrichmentFieldValue.contentHeight + 34
+                            radius: 7
+                            color: Theme.surfaceHover
+                            border.width: 1
+                            border.color: Theme.divider
+
+                            Text {
+                                x: 12
+                                y: 8
+                                width: parent.width * 0.30 - 16
+                                text: String(enrichmentFieldRow.modelData.label || enrichmentFieldRow.modelData.key || "Field")
+                                color: Theme.textMuted
+                                font.pixelSize: 9
+                                font.weight: Font.DemiBold
+                                elide: Text.ElideRight
+                            }
+                            TextEdit {
+                                id: enrichmentFieldValue
+                                x: parent.width * 0.30
+                                y: 8
+                                width: parent.width * 0.70 - 12
+                                text: String(enrichmentFieldRow.modelData.value || "")
+                                color: Theme.textSecondary
+                                font.pixelSize: 9
+                                readOnly: true
+                                selectByMouse: true
+                                wrapMode: TextEdit.WrapAnywhere
                             }
                         }
                     }
