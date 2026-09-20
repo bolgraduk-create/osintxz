@@ -411,6 +411,13 @@ def assess_search_quality_row(
     else:
         tier = "noise"
 
+    if (
+        family in _ACCOUNT_TYPES
+        and verification_status in {"reported", "unreachable"}
+        and tier in {"strong", "relevant"}
+    ):
+        tier = "possible"
+
     pivot_score = _pivot_score(
         row=row,
         seed_kind=seed_kind,
