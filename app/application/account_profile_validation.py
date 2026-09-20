@@ -17,7 +17,9 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
+from html.parser import HTMLParser
 import ipaddress
+import json
 import re
 from typing import Any, Callable, Iterable
 from urllib.parse import parse_qsl, urljoin, urlsplit
@@ -43,7 +45,86 @@ _STRONG_NOT_FOUND_PATTERNS = (
     r"\bthe\s+(?:user|profile|account)\s+you(?:'re|\s+are)\s+looking\s+for\s+does\s+not\s+exist\b",
     r"\bpage\s+does\s+not\s+exist\b",
     r"\bpage\s+doesn't\s+exist\b",
+    r"\bpage\s+not\s+found\b",
+    r"\b404\s+not\s+found\b",
+    r"\bmember\s+(?:was\s+)?not\s+found\b",
+    r"\brequested\s+(?:user|profile|member)\s+(?:was\s+)?not\s+found\b",
+    r"\bprofile\s+is\s+unavailable\b",
+    r"\buser\s+is\s+unavailable\b",
 )
+
+
+class _ProfileHTMLParser(HTMLParser):
+    """Extract bounded profile evidence while ignoring scripts/styles."""
+
+    _HIDDEN_TAGS = {"script", "style", "noscript", "template", "svg"}
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self._hidden_depth = 0
+        self._in_title = False
+        self.title_parts: list[str] = []
+        self.visible_parts: list[str] = []
+        self.meta: dict[str, str] = {}
+        self.canonical = ""
+        self.json_ld_parts: list[str] = []
+        self._in_json_ld = False
+
+    def handle_starttag(self, tag: str, attrs) -> None:
+        tag_cf = str(tag or "").casefold()
+        attr_map = {
+            str(key or "").casefold(): str(value or "")
+            for key, value in attrs
+            if key
+        }
+        if tag_cf in self._HIDDEN_TAGS:
+            self._hidden_depth += 1
+        if tag_cf == "title":
+            self._in_title = True
+        if tag_cf == "meta":
+            key = str(attr_map.get("property") or attr_map.get("name") or "").strip().casefold()
+            value = str(attr_map.get("content") or "").strip()
+            if key and value and len(self.meta) < 120:
+                self.meta.setdefault(key, value[:1000])
+        if tag_cf == "link":
+            rel = str(attr_map.get("rel") or "").casefold().split()
+            href = str(attr_map.get("href") or "").strip()
+            if "canonical" in rel and href and not self.canonical:
+                self.canonical = href[:2000]
+        if tag_cf == "script" and str(attr_map.get("type") or "").casefold() == "application/ld+json":
+            self._in_json_ld = True
+
+    def handle_endtag(self, tag: str) -> None:
+        tag_cf = str(tag or "").casefold()
+        if tag_cf == "title":
+            self._in_title = False
+        if tag_cf == "script" and self._in_json_ld:
+            self._in_json_ld = False
+        if tag_cf in self._HIDDEN_TAGS and self._hidden_depth > 0:
+            self._hidden_depth -= 1
+
+    def handle_data(self, data: str) -> None:
+        text = " ".join(str(data or "").split()).strip()
+        if not text:
+            return
+        if self._in_title and sum(map(len, self.title_parts)) < 4000:
+            self.title_parts.append(text)
+        if self._in_json_ld and sum(map(len, self.json_ld_parts)) < 30000:
+            self.json_ld_parts.append(text)
+        if self._hidden_depth == 0 and sum(map(len, self.visible_parts)) < 100000:
+            self.visible_parts.append(text)
+
+    @property
+    def title(self) -> str:
+        return " ".join(self.title_parts)[:4000]
+
+    @property
+    def visible_text(self) -> str:
+        return " ".join(self.visible_parts)[:100000]
+
+    @property
+    def json_ld(self) -> str:
+        return " ".join(self.json_ld_parts)[:30000]
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,6 +144,8 @@ class AccountValidation:
     final_url: str = ""
     username_seen: bool = False
     not_found_marker: str = ""
+    evidence_score: float = 0.0
+    evidence_signals: tuple[str, ...] = ()
 
     def row_fields(self) -> dict[str, Any]:
         return {
@@ -74,6 +157,8 @@ class AccountValidation:
             "accountVerificationFinalUrl": self.final_url,
             "accountVerificationUsernameSeen": self.username_seen,
             "accountVerificationNotFoundMarker": self.not_found_marker,
+            "accountVerificationEvidenceScore": round(float(self.evidence_score), 1),
+            "accountVerificationEvidenceSignals": list(self.evidence_signals),
         }
 
 
@@ -150,16 +235,11 @@ def annotate_account_profile_validation(
             if str(copied[index].get("source") or "").strip()
         }
         if len(sources) > 1:
+            # Corroboration increases confidence, but two discovery tools can
+            # share the same stale site rule.  Do not skip live validation.
             corroborated_without_fetch += 1
-            validation = AccountValidation(
-                status="verified",
-                reason=f"Same profile URL was independently reported by {len(sources)} sources.",
-                checked=False,
-                final_url=str(copied[unresolved[0]].get("url") or ""),
-            )
             for index in unresolved:
-                validations[index] = validation
-            continue
+                copied[index]["accountProviderCorroboration"] = len(sources)
         live_candidates.append((canonical_url, unresolved))
 
     # Rows with no URL remain useful provider observations, but are not verified.
@@ -286,8 +366,22 @@ def _validate_one_url(
     code = int(result.status_code or 0)
     final_url = result.final_url or safe_url
     body = str(result.body or "")
-    username_seen = _bounded_username_occurrence(username, body)
-    marker = _not_found_marker(body)
+    evidence = _profile_page_evidence(
+        body=body,
+        username=username,
+        final_url=final_url,
+    )
+    username_seen = bool(evidence["username_seen"])
+    marker = _not_found_marker(
+        " ".join(
+            part
+            for part in (
+                str(evidence.get("title") or ""),
+                str(evidence.get("visible_text") or ""),
+            )
+            if part
+        )
+    )
 
     if code in {404, 410}:
         return AccountValidation(
@@ -340,25 +434,29 @@ def _validate_one_url(
             username_seen=False,
         )
 
-    if 200 <= code < 400 and username_seen:
+    if 200 <= code < 400 and bool(evidence["verified"]):
         return AccountValidation(
             status="verified",
-            reason="Live profile page is reachable and contains the searched username.",
+            reason="Live profile page contains multiple profile-specific signals for the searched username.",
             checked=True,
             status_code=code,
             final_url=final_url,
-            username_seen=True,
+            username_seen=username_seen,
+            evidence_score=float(evidence["score"]),
+            evidence_signals=tuple(evidence["signals"]),
         )
 
     if 200 <= code < 400:
         return AccountValidation(
             status="reported",
-            reason="Profile URL is reachable, but the response does not independently prove that the account exists.",
+            reason="Profile URL is reachable, but profile-specific evidence is not strong enough to verify the account.",
             checked=True,
             status_code=code,
             final_url=final_url,
             username_seen=username_seen,
             not_found_marker=marker,
+            evidence_score=float(evidence["score"]),
+            evidence_signals=tuple(evidence["signals"]),
         )
 
     return AccountValidation(
@@ -370,6 +468,134 @@ def _validate_one_url(
         username_seen=username_seen,
         not_found_marker=marker,
     )
+
+
+def _profile_page_evidence(
+    *,
+    body: str,
+    username: str,
+    final_url: str,
+) -> dict[str, Any]:
+    parser = _ProfileHTMLParser()
+    try:
+        parser.feed(str(body or ""))
+        parser.close()
+    except Exception:
+        # Malformed HTML is common; retain whatever was parsed before failure.
+        pass
+
+    wanted = str(username or "").strip().lstrip("@")
+    title = parser.title
+    visible = parser.visible_text
+    canonical = urljoin(final_url, parser.canonical) if parser.canonical else ""
+    meta = parser.meta
+
+    title_match = _bounded_username_occurrence(wanted, title)
+    visible_match = _bounded_username_occurrence(wanted, visible)
+    final_url_match = _username_url_relation(wanted, final_url)
+    canonical_match = bool(canonical and _username_url_relation(wanted, canonical))
+
+    explicit_profile_username = False
+    for key in ("profile:username", "profile:screen_name", "twitter:creator"):
+        value = str(meta.get(key) or "").strip().lstrip("@")
+        if value and value.casefold() == wanted.casefold():
+            explicit_profile_username = True
+            break
+
+    og_type = str(meta.get("og:type") or "").strip().casefold()
+    profile_type = og_type in {"profile", "profilepage", "person"}
+
+    structured_person = _json_ld_supports_profile(parser.json_ld, wanted)
+    profile_vocabulary = _profile_vocabulary_signal(visible)
+
+    signals: list[str] = []
+    score = 0.0
+    if explicit_profile_username:
+        signals.append("Explicit profile username metadata matches")
+        score += 55.0
+    if structured_person:
+        signals.append("Structured Person/ProfilePage data matches")
+        score += 45.0
+    if title_match:
+        signals.append("Page title contains searched username")
+        score += 28.0
+    if canonical_match:
+        signals.append("Canonical profile URL contains searched username")
+        score += 22.0
+    if final_url_match:
+        signals.append("Final profile URL contains searched username")
+        score += 12.0
+    if visible_match:
+        signals.append("Visible page text contains searched username")
+        score += 16.0
+    if profile_type:
+        signals.append("OpenGraph page type is profile/person")
+        score += 18.0
+    if profile_vocabulary:
+        signals.append("Visible page contains profile-specific vocabulary")
+        score += 10.0
+
+    strong_anchor = bool(
+        explicit_profile_username
+        or structured_person
+        or title_match
+        or (canonical_match and visible_match)
+    )
+    verified = bool(score >= 45.0 and strong_anchor)
+
+    return {
+        "verified": verified,
+        "score": min(100.0, score),
+        "signals": tuple(signals[:8]),
+        "username_seen": bool(title_match or visible_match or explicit_profile_username or structured_person),
+        "title": title,
+        "visible_text": visible,
+        "canonical": canonical,
+    }
+
+
+def _json_ld_supports_profile(raw: str, username: str) -> bool:
+    text = str(raw or "").strip()
+    wanted = str(username or "").strip().lstrip("@").casefold()
+    if not text or not wanted:
+        return False
+    try:
+        payload = json.loads(text)
+    except Exception:
+        # Multiple JSON-LD scripts may have been concatenated; use a bounded
+        # textual fallback requiring both a profile/person type and username.
+        lowered = text.casefold()
+        return bool(
+            wanted in lowered
+            and any(marker in lowered for marker in ('"@type":"person"', '"@type": "person"', '"profilepage"', '"profile page"'))
+        )
+
+    def visit(value: Any, depth: int = 0) -> bool:
+        if depth > 5:
+            return False
+        if isinstance(value, dict):
+            type_value = str(value.get("@type") or "").casefold()
+            material = " ".join(
+                str(value.get(key) or "")
+                for key in ("name", "alternateName", "identifier", "url")
+            ).casefold()
+            if type_value in {"person", "profilepage", "profile page"} and wanted in material:
+                return True
+            return any(visit(child, depth + 1) for child in list(value.values())[:80])
+        if isinstance(value, list):
+            return any(visit(child, depth + 1) for child in value[:80])
+        return False
+
+    return visit(payload)
+
+
+def _profile_vocabulary_signal(text: str) -> bool:
+    lowered = str(text or "").casefold()
+    markers = (
+        "followers", "following", "posts", "joined", "member since",
+        "profile", "reputation", "karma", "contributions", "activity",
+    )
+    return sum(marker in lowered for marker in markers) >= 2
 
 
 def _fetch_public_profile(
