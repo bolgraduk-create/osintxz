@@ -33,6 +33,7 @@ Item {
         if (tab === "possible") return (runData.possibleResults || []).length
         if (tab === "accounts") return (runData.relatedAccounts || []).length
         if (tab === "quality") return (runData.qualityTrace || []).length
+        if (tab === "exploration") return (((runData.explorationGraph || {}).nodes) || []).length
         if (tab === "mentions") return (runData.mentions || []).length
         if (tab === "providers") return (runData.providers || []).length
         if (tab === "pivots") return (runData.pivots || []).length
@@ -47,6 +48,7 @@ Item {
         if (activeTab === "possible") return runData.possibleResults || []
         if (activeTab === "accounts") return runData.relatedAccounts || []
         if (activeTab === "quality") return runData.qualityTrace || []
+        if (activeTab === "exploration") return ((runData.explorationGraph || {}).nodes) || []
         if (activeTab === "mentions") return runData.mentions || []
         if (activeTab === "providers") return runData.providers || []
         if (activeTab === "pivots") return runData.pivots || []
@@ -69,6 +71,7 @@ Item {
         if (activeTab === "possible") return String(row.title || "Possible result")
         if (activeTab === "accounts") return String(row.title || row.value || "Related account")
         if (activeTab === "quality") return String(row.title || "Quality observation")
+        if (activeTab === "exploration") return String(row.kind || "pivot").toUpperCase() + ": " + String(row.value || "")
         if (activeTab === "mentions") return String(row.title || "Corroborating mention")
         if (activeTab === "providers") return String(row.source || "Provider")
         if (activeTab === "pivots") return String(row.value || "Pivot")
@@ -82,6 +85,7 @@ Item {
         if (activeTab === "possible") return String(row.accountVerificationReason || row.visibilityReason || row.detail || "Potentially useful result; analyst review required")
         if (activeTab === "accounts") return String(row.accountVerificationReason || row.detail || "Online account linked by an exact username/account signal")
         if (activeTab === "quality") return String(row.qualitySummary || row.detail || "Shadow quality assessment")
+        if (activeTab === "exploration") return String(row.reason || "Quality-approved ephemeral pivot")
         if (activeTab === "mentions") return String(row.mentionSummary || row.detail || "Multiple known-person signals occur in this source")
         if (activeTab === "providers") return String(row.lane || "") + " · " + String(row.detail || "") + (row.healthAction ? " · " + String(row.healthAction) : "")
         if (activeTab === "pivots") return String(row.kind || "pivot").replace(/_/g, " ").toUpperCase() + " · " + String(row.origin || "discovered")
@@ -95,6 +99,7 @@ Item {
         if (activeTab === "possible") return "POSSIBLE"
         if (activeTab === "accounts") return String(row.accountVerificationStatus || "reported").replace(/_/g, " ").toUpperCase()
         if (activeTab === "quality") return (row.qualityDisagreement ? "DISAGREEMENT · " : "") + String(row.qualityLabel || row.qualityTier || "QUALITY").toUpperCase()
+        if (activeTab === "exploration") return Boolean(row.executed) ? "EXECUTED · EPHEMERAL" : "EPHEMERAL"
         if (activeTab === "mentions") return String(row.mentionLabel || "CORROBORATING MENTION").toUpperCase()
         if (activeTab === "providers") return String(row.healthLabel || row.status || "provider").replace(/_/g, " ").toUpperCase()
         if (activeTab === "pivots") return Boolean(row.queued) ? "QUEUED" : "REVIEW"
@@ -125,6 +130,13 @@ Item {
                 + " · relevance " + Number(row.qualityRelevanceScore || 0).toFixed(0)
                 + " · pivot " + Number(row.qualityPivotScore || 0).toFixed(0)
                 + " · persist " + Number(row.qualityPersistenceScore || 0).toFixed(0)
+        }
+        if (activeTab === "exploration") {
+            return String(row.source || "quality")
+                + " · D" + Number(row.depth || 0)
+                + " · pivot " + Number(row.pivotScore || 0).toFixed(0)
+                + " · persist " + Number(row.persistenceScore || 0).toFixed(0)
+                + (row.parentSeedValue ? " · from " + String(row.parentSeedValue) : "")
         }
         if (activeTab === "mentions") {
             const mentionScore = Number(row.mentionScore || 0).toFixed(0)
@@ -604,6 +616,7 @@ Item {
                                     { key: "candidates", label: "Candidates" },
                                     { key: "accounts", label: "Accounts" },
                                     { key: "quality", label: "Quality" },
+                                    { key: "exploration", label: "Explore" },
                                     { key: "mentions", label: "Mentions" },
                                     { key: "providers", label: "Providers" },
                                     { key: "pivots", label: "Pivots" },
@@ -718,6 +731,8 @@ Item {
                                     ? Theme.danger
                                     : root.activeTab === "quality"
                                         ? root.statusColor(row.modelData.qualityTier === "noise" ? "failed" : (row.modelData.qualityTier === "possible" ? "possible" : "success"))
+                                        : root.activeTab === "exploration"
+                                            ? root.statusColor(row.modelData.executed ? "success" : "possible")
                                         : root.activeTab === "accounts"
                                             ? root.statusColor(row.modelData.accountVerificationStatus || "reported")
                                             : root.statusColor(root.activeTab === "identity" ? row.modelData.identityStatus : (row.modelData.status || (row.modelData.queued ? "success" : "candidate")))
@@ -773,6 +788,8 @@ Item {
                                 border.width: 1
                                 border.color: root.activeTab === "quality"
                                     ? root.statusColor(row.modelData.qualityTier === "noise" ? "failed" : (row.modelData.qualityTier === "possible" ? "possible" : "success"))
+                                    : root.activeTab === "exploration"
+                                        ? root.statusColor(row.modelData.executed ? "success" : "possible")
                                     : root.activeTab === "accounts"
                                         ? root.statusColor(row.modelData.accountVerificationStatus || "reported")
                                         : root.statusColor(root.activeTab === "identity" ? row.modelData.identityStatus : (row.modelData.status || (row.modelData.queued ? "success" : "candidate")))
@@ -866,6 +883,8 @@ Item {
                                     ? "No medium-confidence results need review. Strict identifiers remain strict; weak noise stays in Raw."
                                 : root.activeTab === "quality"
                                     ? "No shadow quality observations are available for this run."
+                                : root.activeTab === "exploration"
+                                    ? "No quality-approved ephemeral pivots were created for this run."
                                 : root.activeTab === "identity"
                                     ? "No person-like records contained enough structured identity signals to score."
                                     : root.activeTab === "candidates"
