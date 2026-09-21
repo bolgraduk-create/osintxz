@@ -15,14 +15,198 @@ existed.
 """
 from __future__ import annotations
 
-from collections import OrderedDict
+from collections import Counter, OrderedDict
 from dataclasses import dataclass, field
 from typing import Any, Iterable
 
+from app.application.connector_health import classify_provider_health
 from app.application.unified_investigation_search import (
     UnifiedSeed,
     dedupe_seeds,
 )
+
+
+_HEALTH_PENALTIES: dict[str, float] = {
+    "ready": 0.0,
+    "partial": 1.5,
+    "timeout": 5.0,
+    "rate_limited": 4.0,
+    "auth_or_policy": 6.0,
+    "endpoint_error": 5.0,
+    "temporarily_unavailable": 4.5,
+    "not_configured": 8.0,
+    "not_installed": 8.0,
+    "guarded": 7.0,
+    "broken": 7.0,
+}
+
+_LANE_BASE_SECONDS: dict[str, float] = {
+    "federation_roots": 4.0,
+    "federation_pivots": 4.0,
+    "registry_roots": 5.0,
+    "registry_pivots": 5.0,
+}
+
+
+@dataclass(slots=True)
+class SourceRuntimeObservation:
+    source: str
+    attempts: int = 0
+    total_seconds: float = 0.0
+    max_seconds: float = 0.0
+    records: int = 0
+    states: Counter[str] = field(default_factory=Counter)
+
+    def observe(
+        self,
+        *,
+        state: str,
+        duration_seconds: float,
+        records: int,
+    ) -> None:
+        self.attempts += 1
+        self.total_seconds += max(0.0, float(duration_seconds or 0.0))
+        self.max_seconds = max(
+            self.max_seconds,
+            max(0.0, float(duration_seconds or 0.0)),
+        )
+        self.records += max(0, int(records or 0))
+        self.states[str(state or "partial")] += 1
+
+    @property
+    def average_seconds(self) -> float:
+        return (
+            self.total_seconds / self.attempts
+            if self.attempts
+            else 0.0
+        )
+
+    @property
+    def timeout_risk(self) -> float:
+        if not self.attempts:
+            return 0.0
+        return min(
+            1.0,
+            float(self.states.get("timeout", 0)) / float(self.attempts),
+        )
+
+    @property
+    def health_penalty(self) -> float:
+        if not self.attempts:
+            return 0.0
+        weighted = sum(
+            _HEALTH_PENALTIES.get(state, 2.0) * count
+            for state, count in self.states.items()
+        )
+        return weighted / float(self.attempts)
+
+    @property
+    def dominant_state(self) -> str:
+        if not self.states:
+            return "unknown"
+        return self.states.most_common(1)[0][0]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "source": self.source,
+            "attempts": self.attempts,
+            "averageSeconds": round(self.average_seconds, 3),
+            "maxSeconds": round(self.max_seconds, 3),
+            "records": self.records,
+            "healthState": self.dominant_state,
+            "healthPenalty": round(self.health_penalty, 2),
+            "timeoutRisk": round(self.timeout_risk, 3),
+            "states": dict(self.states),
+        }
+
+
+@dataclass(slots=True)
+class AdaptiveRetrievalFeedback:
+    """Ephemeral source-health/latency profile for one search run."""
+
+    sources: dict[str, SourceRuntimeObservation] = field(default_factory=dict)
+
+    def observe_provider_row(self, row: dict[str, Any]) -> None:
+        source = str(row.get("source") or "").strip().casefold()
+        if not source:
+            return
+        state, _label, _action, _retryable = classify_provider_health(row)
+        duration = _safe_float(
+            row.get("durationSeconds")
+            or row.get("executionTime")
+            or row.get("elapsedSeconds")
+        )
+        records = _safe_int(row.get("records"))
+        observation = self.sources.setdefault(
+            source,
+            SourceRuntimeObservation(source=source),
+        )
+        observation.observe(
+            state=state,
+            duration_seconds=duration,
+            records=records,
+        )
+
+    def observation(self, source: str) -> SourceRuntimeObservation | None:
+        return self.sources.get(str(source or "").strip().casefold())
+
+    def health_penalty(self, source: str) -> float:
+        observation = self.observation(source)
+        return observation.health_penalty if observation else 0.0
+
+    def timeout_risk(self, source: str) -> float:
+        observation = self.observation(source)
+        return observation.timeout_risk if observation else 0.0
+
+    def health_state(self, source: str) -> str:
+        observation = self.observation(source)
+        return observation.dominant_state if observation else "unknown"
+
+    def estimate_seconds(
+        self,
+        *,
+        source: str,
+        route: Any,
+        lane: str,
+    ) -> float:
+        observation = self.observation(source)
+        if observation and observation.average_seconds > 0:
+            estimate = observation.average_seconds * 1.15
+        else:
+            timeout = _safe_float(getattr(route, "timeout", 0.0))
+            if timeout > 0:
+                estimate = max(1.0, min(12.0, timeout * 0.25))
+            else:
+                estimate = _LANE_BASE_SECONDS.get(lane, 4.0)
+
+        penalty = self.health_penalty(source)
+        estimate *= 1.0 + min(1.0, penalty * 0.08)
+        return max(0.5, min(30.0, estimate))
+
+    def adaptive_score(
+        self,
+        *,
+        source: str,
+        route: Any,
+        lane: str,
+    ) -> float:
+        return (
+            self.health_penalty(source) * 10.0
+            + self.timeout_risk(source) * 20.0
+            + self.estimate_seconds(
+                source=source,
+                route=route,
+                lane=lane,
+            )
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "sources": [
+                observation.to_dict()
+                for _source, observation in sorted(self.sources.items())
+            ]
+        }
 
 
 @dataclass(frozen=True, slots=True)
