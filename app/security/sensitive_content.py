@@ -149,10 +149,60 @@ def sanitized_text(value: Any) -> str:
     return sanitize_sensitive_text(value).text
 
 
+_SENSITIVE_KEYS = {
+    "password",
+    "passwd",
+    "pwd",
+    "passphrase",
+    "secret",
+    "secret_key",
+    "client_secret",
+    "api_key",
+    "apikey",
+    "access_token",
+    "refresh_token",
+    "auth_token",
+    "authorization",
+    "token",
+}
+
+
+def sanitize_sensitive_value(value: Any) -> Any:
+    """Recursively sanitize serializable structures at persistence boundaries."""
+
+    if isinstance(value, str):
+        return sanitized_text(value)
+
+    if isinstance(value, dict):
+        result: dict[Any, Any] = {}
+        for key, item in value.items():
+            normalized_key = str(key or "").strip().casefold()
+            if normalized_key in _SENSITIVE_KEYS and item not in (None, "", False):
+                result[key] = REDACTED
+            else:
+                result[key] = sanitize_sensitive_value(item)
+        return result
+
+    if isinstance(value, list):
+        return [
+            sanitize_sensitive_value(item)
+            for item in value
+        ]
+
+    if isinstance(value, tuple):
+        return tuple(
+            sanitize_sensitive_value(item)
+            for item in value
+        )
+
+    return value
+
+
 __all__ = [
     "PRIVATE_KEY_REDACTED",
     "REDACTED",
     "SensitiveTextResult",
     "sanitize_sensitive_text",
+    "sanitize_sensitive_value",
     "sanitized_text",
 ]
