@@ -625,7 +625,7 @@ Item {
 
                             AppButton {
                                 id: runButton
-                                anchors.verticalCenter: parent.verticalCenter
+                                y: 5
                                 width: 150
                                 height: 38
                                 text: analysisBridge.busy ? "Analyzing…" : "Run Analysis"
@@ -726,7 +726,7 @@ Item {
                                     spacing: 14
 
                                     Rectangle {
-                                        anchors.horizontalCenter: parent.horizontalCenter
+                                        x: (parent.width - width) / 2
                                         width: 46
                                         height: 46
                                         radius: 23
@@ -767,7 +767,7 @@ Item {
                                     }
 
                                     Row {
-                                        anchors.horizontalCenter: parent.horizontalCenter
+                                        x: (parent.width - width) / 2
                                         spacing: 8
 
                                         Repeater {
