@@ -312,7 +312,7 @@ Item {
 
     function runAnalysisNow() {
         const focus = root.selectedFocus()
-        analysisBridge.runAnalysis(
+        const started = analysisBridge.runAnalysis(
             String(desktopBridge.currentCaseId || ""),
             questionInput.text,
             root.selectedMode,
@@ -323,6 +323,8 @@ Item {
             String(focus.label || "Entire Investigation"),
             root.selectedProvider
         )
+        if (started)
+            root.activeView = "overview"
     }
 
     function sendChatNow() {
