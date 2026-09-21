@@ -585,11 +585,22 @@ class AnalysisBridge(QObject):
 
         try:
             thread = QThread(self)
+            analysis_context = {
+                "summary": str(self._run.get("summary") or ""),
+                "conclusions": [
+                    dict(item)
+                    for item in list(self._run.get("conclusions") or [])
+                    if isinstance(item, dict)
+                ],
+                "runConfig": dict(self._run.get("runConfig") or {}),
+            }
+
             worker = AnalysisChatWorker(
                 case_id=normalized_case_id,
                 session_id=self._chat_session_id,
                 message=normalized_message,
                 conversation=previous_conversation,
+                analysis_context=analysis_context,
                 provider_name=selected_provider,
                 model=selected_model,
                 reasoning_effort=selected_reasoning,
