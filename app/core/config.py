@@ -244,7 +244,7 @@ class Settings(BaseSettings):
     # Generation/reasoning provider used by the investigation analysis stack.
     # Embeddings remain independently configured and may continue to use
     # Ollama even when AI analysis uses OpenAI.
-    ai_provider: str = "openai"
+    ai_provider: str = "ollama"
 
     # OpenAI API credentials/configuration. The secret is read from the local
     # environment/.env only and must never be exposed through desktop payloads.
@@ -253,6 +253,11 @@ class Settings(BaseSettings):
     openai_reasoning_effort: str = "medium"
     openai_timeout_seconds: float = 120.0
     openai_store_responses: bool = False
+
+    # Legacy/local model selectors remain centralized here for compatibility.
+    # OPENAI ignores these values; they apply only to Ollama.
+    ai_model: str | None = None
+    ollama_model: str | None = None
 
     # ======================================================
     # Ollama
