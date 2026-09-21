@@ -39,6 +39,10 @@ _NAMED_SECRET_RE = re.compile(
     r")\b(\s*[:=]\s*)([\"']?)([^\s,;\"']{4,})([\"']?)"
 )
 
+_AUTHORIZATION_HEADER_RE = re.compile(
+    r"(?im)\bAuthorization\s*:\s*(?:Bearer|Basic)\s+[^\s,;]+"
+)
+
 _BEARER_RE = re.compile(
     r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]{12,}"
 )
@@ -52,8 +56,16 @@ _EMAIL_SECRET_PAIR_RE = re.compile(
     r"([^\s,;|]{4,})"
 )
 
+_DOMAIN_USER_SECRET_RE = re.compile(
+    r"(?i)(\b(?:https?://)?(?:[A-Z0-9-]+\.)+[A-Z]{2,}"
+    r":[^:\s|]{1,128}:)([^:\s|]{4,})"
+)
+
 _KNOWN_TOKEN_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\bsk-[A-Za-z0-9_-]{16,}\b"),
+    re.compile(r"\bsk_(?:live|test)_[A-Za-z0-9]{16,}\b"),
+    re.compile(r"\bglpat-[A-Za-z0-9_-]{16,}\b"),
+    re.compile(r"\bAIza[A-Za-z0-9_-]{20,}\b"),
     re.compile(r"\bgh[pousr]_[A-Za-z0-9]{16,}\b"),
     re.compile(r"\bgithub_pat_[A-Za-z0-9_]{16,}\b"),
     re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
@@ -86,6 +98,16 @@ def sanitize_sensitive_text(value: Any) -> SensitiveTextResult:
 
     text = _PRIVATE_KEY_RE.sub(
         replace_private_key,
+        text,
+    )
+
+    def replace_authorization_header(match: re.Match[str]) -> str:
+        nonlocal count
+        count += 1
+        return "Authorization: " + REDACTED
+
+    text = _AUTHORIZATION_HEADER_RE.sub(
+        replace_authorization_header,
         text,
     )
 
@@ -128,6 +150,16 @@ def sanitize_sensitive_text(value: Any) -> SensitiveTextResult:
 
     text = _EMAIL_SECRET_PAIR_RE.sub(
         replace_email_pair,
+        text,
+    )
+
+    def replace_domain_user_secret(match: re.Match[str]) -> str:
+        nonlocal count
+        count += 1
+        return match.group(1) + REDACTED
+
+    text = _DOMAIN_USER_SECRET_RE.sub(
+        replace_domain_user_secret,
         text,
     )
 
