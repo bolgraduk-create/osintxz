@@ -633,8 +633,12 @@ class AnalysisBridge(QObject):
             row = dict(item)
             if row.get("provider") == "ollama":
                 row["online"] = online
-                row["status"] = "online" if online else "offline"
-                if names:
+                row["status"] = (
+                    "online"
+                    if online and names
+                    else ("online_no_models" if online else "offline")
+                )
+                if online:
                     row["models"] = [
                         {
                             "id": name,
@@ -643,11 +647,15 @@ class AnalysisBridge(QObject):
                         }
                         for name in names
                     ]
-                    if (
-                        str(row.get("defaultModel") or "") not in names
-                    ):
-                        row["defaultModel"] = names[0]
-                        row["model"] = names[0]
+                    if names:
+                        if (
+                            str(row.get("defaultModel") or "") not in names
+                        ):
+                            row["defaultModel"] = names[0]
+                            row["model"] = names[0]
+                    else:
+                        row["defaultModel"] = ""
+                        row["model"] = ""
                 row["discoveryError"] = str(
                     payload.get("ollamaError") or ""
                 )
