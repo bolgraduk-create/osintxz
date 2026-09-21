@@ -443,6 +443,11 @@ from app.osint.enrichment_execution import (
     OsintEnrichmentExecutionService,
 )
 
+from app.osint.pivot_router import OsintCapabilityRouter
+from app.osint.credential_policy import (
+    configured_threat_intelligence_modules,
+)
+
 from app.osint.finding_persistence import (
     OsintFindingPersistenceService,
 )
@@ -1418,10 +1423,21 @@ class ServiceContainer:
             OsintTargetBuilder()
         )
 
+        self.osint_capability_router = (
+            OsintCapabilityRouter(
+                configured_credential_modules=(
+                    configured_threat_intelligence_modules(settings)
+                ),
+            )
+        )
+
         self.osint_enrichment_execution_service = (
             OsintEnrichmentExecutionService(
                 pipeline=(
                     self.osint_pipeline
+                ),
+                router=(
+                    self.osint_capability_router
                 ),
             )
         )
