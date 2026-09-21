@@ -71,6 +71,8 @@ def test_service_container_wires_real_chat_service_to_existing_rag_and_ai():
     assert "self.investigation_rag_context_builder" in source
     assert "self.ai_execution_service" in source
     assert "self.investigation_rag_grounded_citation_service" in source
+    assert "prompt_manager=(" in source
+    assert "self.prompt_manager" in source
 
 
 def test_chat_worker_uses_selected_real_provider_model_and_persists_turn():
@@ -156,3 +158,14 @@ def test_chat_history_uses_existing_ai_analysis_table_without_new_schema():
     assert "AnalysisType.OTHER" in source
     assert "sessionId" in source
     assert "sanitize_sensitive_value" in source
+
+
+def test_chat_prompt_uses_central_prompt_manager_contract():
+    source = Path(
+        "app/application/analysis_chat_service.py"
+    ).read_text(encoding="utf-8")
+
+    assert "PromptManager" in source
+    assert 'ANALYSIS_CHAT_PROMPT_NAME = "analysis_conversational_chat"' in source
+    assert "self.prompt_manager.register_prompt(" in source
+    assert "prompt_manager.render_prompt(" in source
