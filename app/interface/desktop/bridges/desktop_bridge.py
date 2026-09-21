@@ -522,6 +522,7 @@ class DesktopBridge(QObject):
             "ip": OsintTargetType.IP,
             "url": OsintTargetType.URL,
             "phone": OsintTargetType.PHONE,
+            "hash": OsintTargetType.HASH,
         }.get(normalized_type)
         if target_enum is None:
             self._set_message("Unsupported OSINT target type.")
