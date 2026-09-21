@@ -96,7 +96,9 @@ Item {
             if (String(item.provider || "") === "openai" && !Boolean(item.configured))
                 suffix = " · API key missing"
             else if (String(item.provider || "") === "ollama") {
-                if (item.online === true)
+                if (String(item.status || "") === "online_no_models")
+                    suffix = " · no installed models"
+                else if (item.online === true)
                     suffix = " · online"
                 else if (item.online === false)
                     suffix = " · offline"
@@ -428,7 +430,9 @@ Item {
                         if (String(info.provider || "") === "openai" && info.storeResponses === false)
                             status = " · " + "storage off"
                         else if (String(info.provider || "") === "ollama")
-                            status = info.online === true ? " · online" : (info.online === false ? " · offline" : " · checking")
+                            status = String(info.status || "") === "online_no_models"
+                                ? " · no installed models"
+                                : (info.online === true ? " · online" : (info.online === false ? " · offline" : " · checking"))
                         return String(info.label || "AI") + " · " + String(root.selectedModel || info.model || "No model") + status
                     }
                     color: Boolean(root.selectedProviderInfo().configured) ? Theme.textSecondary : Theme.danger
