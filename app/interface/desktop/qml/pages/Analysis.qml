@@ -82,6 +82,8 @@ Item {
     }
 
     function modelLabels() {
+        if (String(root.provider.provider || "") !== "openai")
+            return [String(root.provider.model || "Local model")]
         const values = root.models()
         const out = []
         for (let i = 0; i < values.length; ++i)
@@ -123,12 +125,19 @@ Item {
     function applyMode(key) {
         const info = root.modeInfo(key)
         root.selectedMode = String(info.key || key || "standard")
-        if (info.recommendedModel)
-            root.selectedModel = String(info.recommendedModel)
-        if (info.recommendedReasoning)
-            root.selectedReasoning = String(info.recommendedReasoning)
-        modelBox.currentIndex = root.modelIndex(root.selectedModel)
-        reasoningBox.currentIndex = root.reasoningIndex(root.selectedReasoning)
+        if (String(root.provider.provider || "") === "openai") {
+            if (info.recommendedModel)
+                root.selectedModel = String(info.recommendedModel)
+            if (info.recommendedReasoning)
+                root.selectedReasoning = String(info.recommendedReasoning)
+            modelBox.currentIndex = root.modelIndex(root.selectedModel)
+            reasoningBox.currentIndex = root.reasoningIndex(root.selectedReasoning)
+        } else {
+            root.selectedModel = String(root.provider.model || "")
+            root.selectedReasoning = ""
+            modelBox.currentIndex = 0
+            reasoningBox.currentIndex = 0
+        }
     }
 
     function conclusionsFor(kind) {
@@ -281,7 +290,9 @@ Item {
                     width: parent.width - 42
                     text: String(root.provider.label || "AI")
                         + " · " + String(root.provider.model || "No model")
-                        + (root.provider.storeResponses === false ? " · storage off" : "")
+                        + (String(root.provider.provider || "") === "openai" && root.provider.storeResponses === false
+                            ? " · storage off"
+                            : "")
                     color: Boolean(root.provider.configured) ? Theme.textSecondary : Theme.danger
                     font.pixelSize: 9
                     font.weight: Font.Medium
@@ -607,7 +618,9 @@ Item {
                                     id: reasoningBox
                                     width: parent.width
                                     height: 32
-                                    model: root.reasoningEfforts()
+                                    model: String(root.provider.provider || "") === "openai"
+                                        ? root.reasoningEfforts()
+                                        : ["Local provider"]
                                     enabled: !analysisBridge.busy && String(root.provider.provider || "") === "openai"
                                     onCurrentIndexChanged: {
                                         const values = root.reasoningEfforts()
