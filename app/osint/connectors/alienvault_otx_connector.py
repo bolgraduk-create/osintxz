@@ -132,6 +132,25 @@ class AlienVaultOTXConnector(BaseConnector):
                 error=str(exc),
             )
 
+        if response.status_code == 429:
+            return OsintResult(
+                connector=self.name,
+                status=ResultStatus.FAILED,
+                error="AlienVault OTX HTTP 429 rate limit reached.",
+                metadata={"http_status": 429},
+            )
+
+        if response.status_code in {401, 403}:
+            return OsintResult(
+                connector=self.name,
+                status=ResultStatus.FAILED,
+                error=(
+                    "AlienVault OTX HTTP "
+                    f"{response.status_code} authentication/access failed."
+                ),
+                metadata={"http_status": response.status_code},
+            )
+
         if response.status_code == 404:
 
             return OsintResult(
