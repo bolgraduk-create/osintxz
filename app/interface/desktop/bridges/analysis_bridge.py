@@ -19,6 +19,9 @@ from app.models.entity import EntityType
 from app.interface.desktop.workers.investigation_analysis_worker import (
     InvestigationAnalysisWorker,
 )
+from app.interface.desktop.workers.analysis_provider_discovery_worker import (
+    AnalysisProviderDiscoveryWorker,
+)
 
 
 LOGGER = logging.getLogger(__name__)
@@ -49,6 +52,9 @@ class AnalysisBridge(QObject):
         self._focus_options: list[dict[str, Any]] = []
         self._history: list[dict[str, Any]] = []
         self._catalog = analysis_workspace_catalog()
+        self._provider_catalog = self._initial_provider_catalog()
+        self._provider_thread: QThread | None = None
+        self._provider_worker: AnalysisProviderDiscoveryWorker | None = None
 
     @Property("QVariantMap", notify=changed)
     def runData(self) -> dict[str, Any]:
@@ -77,46 +83,41 @@ class AnalysisBridge(QObject):
     @Property("QVariantMap", notify=changed)
     def providerInfo(self) -> dict[str, Any]:
         provider = str(settings.ai_provider or "ollama").strip().casefold()
+        return dict(self._provider_entry(provider))
 
-        if provider == "openai":
-            secret = settings.openai_api_key
-            configured = bool(
-                secret
-                and secret.get_secret_value().strip()
-            )
-            return {
-                "provider": "openai",
-                "label": "OpenAI",
-                "model": str(settings.openai_model or ""),
-                "configured": configured,
-                "reasoningEffort": str(
-                    settings.openai_reasoning_effort or "medium"
-                ),
-                "storeResponses": bool(
-                    settings.openai_store_responses
-                ),
-                "status": (
-                    "configured"
-                    if configured
-                    else "not_configured"
-                ),
-            }
+    @Property("QVariantList", notify=changed)
+    def providerCatalog(self) -> list[dict[str, Any]]:
+        return [dict(item) for item in self._provider_catalog]
 
-        model = str(
-            settings.ollama_model
-            or settings.ai_model
-            or settings.default_model
-            or ""
-        )
-        return {
-            "provider": "ollama",
-            "label": "Ollama",
-            "model": model,
-            "configured": bool(str(settings.ollama_host or "").strip()),
-            "reasoningEffort": "",
-            "storeResponses": False,
-            "status": "configured",
-        }
+    @Property(bool, notify=changed)
+    def providerDiscoveryBusy(self) -> bool:
+        return self._provider_thread is not None
+
+    @Slot()
+    def refreshProviders(self) -> None:
+        """Refresh real local-provider state without blocking the QML thread."""
+
+        if self._provider_thread is not None:
+            return
+
+        thread = QThread(self)
+        worker = AnalysisProviderDiscoveryWorker()
+        worker.moveToThread(thread)
+
+        thread.started.connect(worker.run)
+        worker.succeeded.connect(self._on_provider_discovered)
+        worker.failed.connect(self._on_provider_discovery_failed)
+        worker.succeeded.connect(thread.quit)
+        worker.failed.connect(thread.quit)
+        worker.succeeded.connect(worker.deleteLater)
+        worker.failed.connect(worker.deleteLater)
+        thread.finished.connect(self._on_provider_thread_finished)
+        thread.finished.connect(thread.deleteLater)
+
+        self._provider_thread = thread
+        self._provider_worker = worker
+        self.changed.emit()
+        thread.start()
 
     @Slot(str)
     def prepareCase(self, case_id: str) -> None:
@@ -289,6 +290,10 @@ class AnalysisBridge(QObject):
         str, str, str, str, str, str, str, str,
         result=bool,
     )
+    @Slot(
+        str, str, str, str, str, str, str, str, str,
+        result=bool,
+    )
     def runAnalysis(
         self,
         case_id: str,
@@ -299,6 +304,7 @@ class AnalysisBridge(QObject):
         scope_type: str = "case",
         focus_entity_id: str = "",
         focus_entity_label: str = "",
+        provider_name: str = "",
     ) -> bool:
         if self._busy:
             self._set_message(
@@ -313,19 +319,32 @@ class AnalysisBridge(QObject):
             )
             return False
 
-        provider = self.providerInfo
-        if (
-            provider.get("provider") == "openai"
-            and not provider.get("configured")
-        ):
+        selected_provider = str(
+            provider_name
+            or settings.ai_provider
+            or "ollama"
+        ).strip().casefold()
+        provider = self._provider_entry(selected_provider)
+        if not provider:
             self._set_message(
-                "OpenAI is selected but OPENAI_API_KEY is not configured."
+                "Unsupported Analysis provider: " + selected_provider
             )
+            return False
+
+        if not provider.get("configured"):
+            if selected_provider == "openai":
+                self._set_message(
+                    "OpenAI is selected but OPENAI_API_KEY is not configured."
+                )
+            else:
+                self._set_message(
+                    "Ollama is selected but no local Ollama endpoint is configured."
+                )
             return False
 
         profile = normalize_analysis_mode(mode)
         selected_model = str(model or "").strip()
-        if provider.get("provider") == "openai":
+        if selected_provider == "openai":
             selected_model = normalize_openai_model(
                 selected_model,
                 fallback=profile.recommended_model,
@@ -335,10 +354,19 @@ class AnalysisBridge(QObject):
                 fallback=profile.recommended_reasoning,
             )
         else:
-            # Local providers own their model selection. Ignore stale GPT UI
-            # state so run metadata never claims an OpenAI model was used.
-            selected_model = str(provider.get("model") or "").strip()
+            if not selected_model:
+                selected_model = str(
+                    provider.get("defaultModel")
+                    or provider.get("model")
+                    or ""
+                ).strip()
             selected_reasoning = ""
+
+        if not selected_model:
+            self._set_message(
+                "Select an AI model before running analysis."
+            )
+            return False
 
         normalized_scope = str(scope_type or "case").strip().casefold()
         normalized_focus_id = str(focus_entity_id or "").strip()
@@ -359,6 +387,7 @@ class AnalysisBridge(QObject):
             "question": normalized_question,
             "startedAt": started_at,
             "mode": profile.key,
+            "provider": selected_provider,
             "model": selected_model,
             "reasoningEffort": selected_reasoning,
             "scopeType": normalized_scope,
@@ -383,7 +412,7 @@ class AnalysisBridge(QObject):
                 "reasoningEffort": selected_reasoning,
                 "plannedAiRequests": profile.ai_request_count,
                 "maxOutputTokensPerRequest": profile.max_output_tokens,
-                "provider": str(provider.get("provider") or ""),
+                "provider": selected_provider,
             },
             "progress": 0.0,
             "progressText": "Starting investigation analysis…",
@@ -426,6 +455,7 @@ class AnalysisBridge(QObject):
                 mode=profile.key,
                 model=selected_model,
                 reasoning_effort=selected_reasoning,
+                provider_name=selected_provider,
                 scope_type=normalized_scope,
                 focus_entity_id=normalized_focus_id,
                 focus_entity_label=normalized_focus_label,
@@ -584,6 +614,57 @@ class AnalysisBridge(QObject):
         self._set_message("Investigation analysis failed: " + error)
         self.changed.emit()
 
+    @Slot(object)
+    def _on_provider_discovered(self, result: object) -> None:
+        payload = result if isinstance(result, dict) else {}
+        online = bool(payload.get("ollamaOnline"))
+        names = [
+            str(value).strip()
+            for value in list(payload.get("ollamaModels") or [])
+            if str(value).strip()
+        ]
+
+        updated: list[dict[str, Any]] = []
+        for item in self._provider_catalog:
+            row = dict(item)
+            if row.get("provider") == "ollama":
+                row["online"] = online
+                row["status"] = "online" if online else "offline"
+                if names:
+                    row["models"] = [
+                        {
+                            "id": name,
+                            "label": name,
+                            "tier": "Installed locally",
+                        }
+                        for name in names
+                    ]
+                    if (
+                        str(row.get("defaultModel") or "") not in names
+                    ):
+                        row["defaultModel"] = names[0]
+                        row["model"] = names[0]
+                row["discoveryError"] = str(
+                    payload.get("ollamaError") or ""
+                )
+            updated.append(row)
+
+        self._provider_catalog = updated
+        self.changed.emit()
+
+    @Slot(object)
+    def _on_provider_discovery_failed(self, result: object) -> None:
+        payload = result if isinstance(result, dict) else {}
+        self._set_message(
+            str(payload.get("error") or "Unable to refresh AI providers.")
+        )
+
+    @Slot()
+    def _on_provider_thread_finished(self) -> None:
+        self._provider_worker = None
+        self._provider_thread = None
+        self.changed.emit()
+
     @Slot()
     def _on_thread_finished(self) -> None:
         self._busy = False
@@ -591,6 +672,89 @@ class AnalysisBridge(QObject):
         self._thread = None
         self._context = {}
         self.changed.emit()
+
+    def _initial_provider_catalog(self) -> list[dict[str, Any]]:
+        secret = settings.openai_api_key
+        openai_configured = bool(
+            secret
+            and secret.get_secret_value().strip()
+        )
+
+        openai_models = [
+            {
+                "id": str(item.get("id") or ""),
+                "label": str(item.get("label") or item.get("id") or ""),
+                "tier": str(item.get("tier") or ""),
+            }
+            for item in list(self._catalog.get("models") or [])
+            if isinstance(item, dict)
+        ]
+
+        ollama_model = str(
+            settings.ollama_model
+            or settings.ai_model
+            or settings.default_model
+            or ""
+        ).strip()
+        ollama_models = (
+            [
+                {
+                    "id": ollama_model,
+                    "label": ollama_model,
+                    "tier": "Configured local model",
+                }
+            ]
+            if ollama_model
+            else []
+        )
+
+        return [
+            {
+                "provider": "openai",
+                "label": "OpenAI",
+                "configured": openai_configured,
+                "online": None,
+                "status": (
+                    "configured"
+                    if openai_configured
+                    else "not_configured"
+                ),
+                "model": str(settings.openai_model or ""),
+                "defaultModel": str(settings.openai_model or ""),
+                "models": openai_models,
+                "reasoningEfforts": list(
+                    self._catalog.get("reasoningEfforts") or []
+                ),
+                "reasoningEffort": str(
+                    settings.openai_reasoning_effort or "medium"
+                ),
+                "storeResponses": bool(
+                    settings.openai_store_responses
+                ),
+            },
+            {
+                "provider": "ollama",
+                "label": "Ollama",
+                "configured": bool(
+                    str(settings.ollama_host or "").strip()
+                ),
+                "online": None,
+                "status": "checking",
+                "model": ollama_model,
+                "defaultModel": ollama_model,
+                "models": ollama_models,
+                "reasoningEfforts": [],
+                "reasoningEffort": "",
+                "storeResponses": False,
+            },
+        ]
+
+    def _provider_entry(self, provider_name: str) -> dict[str, Any]:
+        normalized = str(provider_name or "").strip().casefold()
+        for item in self._provider_catalog:
+            if str(item.get("provider") or "").strip().casefold() == normalized:
+                return dict(item)
+        return {}
 
     def _load_history(self, case_id: str) -> None:
         normalized = str(case_id or "").strip()
