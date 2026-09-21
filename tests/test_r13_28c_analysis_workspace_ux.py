@@ -334,3 +334,33 @@ def test_desktop_bootstrap_gives_analysis_bridge_source_navigation_access():
     ).read_text(encoding="utf-8")
 
     assert "desktop_bridge=self.bridge" in source
+
+
+def test_legacy_orchestrator_callers_default_to_deep_profile():
+    source = Path(
+        "app/application/investigation_analysis_orchestrator.py"
+    ).read_text(encoding="utf-8")
+
+    assert 'else "deep"' in source
+    assert "Preserve the pre-R13.28c canonical behavior" in source
+
+
+def test_rag_source_navigation_can_focus_exact_evidence_and_timeline_rows():
+    analysis_bridge = Path(
+        "app/interface/desktop/bridges/analysis_bridge.py"
+    ).read_text(encoding="utf-8")
+    desktop_bridge = Path(
+        "app/interface/desktop/bridges/desktop_bridge.py"
+    ).read_text(encoding="utf-8")
+    workspace_qml = Path(
+        "app/interface/desktop/qml/pages/DataWorkspace.qml"
+    ).read_text(encoding="utf-8")
+
+    assert 'bridge.focusWorkspaceRecord(' in analysis_bridge
+    assert '"timeline"' in analysis_bridge
+    assert '"evidence"' in analysis_bridge
+    assert "def focusWorkspaceRecord(" in desktop_bridge
+    assert "def workspaceFocus(" in desktop_bridge
+    assert "positionViewAtIndex(i, ListView.Center)" in workspace_qml
+    assert "externallyFocused" in workspace_qml
+    assert "Theme.accentSoft" in workspace_qml
