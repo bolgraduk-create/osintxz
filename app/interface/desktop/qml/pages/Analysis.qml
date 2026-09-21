@@ -26,6 +26,17 @@ Item {
     property string activeView: "overview"
     property string preparedCaseId: ""
 
+    readonly property var layerItems: [
+        {key:"overview", label:"Overview", icon:"chart.svg"},
+        {key:"facts", label:"Facts", icon:"document_blue.svg"},
+        {key:"hypotheses", label:"Hypotheses", icon:"search.svg"},
+        {key:"contradictions", label:"Contradictions", icon:"chart.svg"},
+        {key:"next_steps", label:"Next Steps", icon:"search.svg"},
+        {key:"sources", label:"Sources", icon:"document_blue.svg"},
+        {key:"pipeline", label:"Pipeline", icon:"graph_blue.svg"},
+        {key:"history", label:"History", icon:"clock.svg"}
+    ]
+
     function reload() {
         root.run = analysisBridge.runData || ({})
         root.provider = analysisBridge.providerInfo || ({})
@@ -47,15 +58,6 @@ Item {
         root.preparedCaseId = caseId
         root.selectedFocusIndex = 0
         analysisBridge.prepareCase(caseId)
-    }
-
-    function statusColor(status) {
-        const value = String(status || "").toLowerCase()
-        if (value === "success" || value === "completed") return Theme.success
-        if (value === "partial" || value === "skipped") return Theme.warning
-        if (value === "failed" || value === "cancelled") return Theme.danger
-        if (value === "running") return Theme.accent
-        return Theme.textMuted
     }
 
     function modes() {
@@ -114,7 +116,7 @@ Item {
 
     function selectedFocus() {
         if (root.selectedFocusIndex < 0 || root.selectedFocusIndex >= root.focusOptions.length)
-            return ({ id: "", label: "Entire Investigation", type: "case" })
+            return ({ id:"", label:"Entire Investigation", type:"case" })
         return root.focusOptions[root.selectedFocusIndex]
     }
 
@@ -149,6 +151,23 @@ Item {
         return 0
     }
 
+    function activeViewIndex() {
+        for (let i = 0; i < root.layerItems.length; ++i) {
+            if (String(root.layerItems[i].key) === root.activeView)
+                return i
+        }
+        return 0
+    }
+
+    function statusColor(status) {
+        const value = String(status || "").toLowerCase()
+        if (value === "success" || value === "completed") return Theme.success
+        if (value === "partial" || value === "skipped") return Theme.warning
+        if (value === "failed" || value === "cancelled") return Theme.danger
+        if (value === "running") return Theme.accent
+        return Theme.textMuted
+    }
+
     function runAnalysisNow() {
         const focus = root.selectedFocus()
         analysisBridge.runAnalysis(
@@ -174,6 +193,11 @@ Item {
         }
     }
 
+    function usePrompt(value) {
+        questionInput.text = String(value || "")
+        questionInput.forceActiveFocus()
+    }
+
     Connections {
         target: analysisBridge
         function onChanged() { root.reload() }
@@ -192,348 +216,76 @@ Item {
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.leftMargin: Spacing.page
-        anchors.rightMargin: Spacing.page
+        anchors.leftMargin: 20
+        anchors.rightMargin: 20
         anchors.topMargin: 14
-        anchors.bottomMargin: 22
-        spacing: 10
+        anchors.bottomMargin: 18
+        spacing: 12
 
+        // Compact page header.
         Item {
             Layout.fillWidth: true
-            Layout.preferredHeight: 74
+            Layout.preferredHeight: 62
 
-            Text {
-                x: 2
-                y: 0
-                text: "ANALYSIS LAB"
-                color: Theme.accent
-                font.pixelSize: 9
-                font.weight: Font.DemiBold
-                font.letterSpacing: 1.8
-            }
+            Column {
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: 2
 
-            Text {
-                x: 2
-                y: 18
-                text: "AI Analysis"
-                color: Theme.textPrimary
-                font.pixelSize: Typography.pageTitle
-                font.weight: Font.DemiBold
-            }
+                Text {
+                    text: "ANALYSIS LAB"
+                    color: Theme.accent
+                    font.pixelSize: 8
+                    font.weight: Font.DemiBold
+                    font.letterSpacing: 1.7
+                }
 
-            Text {
-                x: 3
-                y: 53
-                width: parent.width - 390
-                text: desktopBridge.hasCurrentCase
-                    ? ("Structured reasoning over “" + String(desktopBridge.currentCaseTitle || "Investigation")
-                        + "” · source-bound · provenance-first")
-                    : "Select an investigation before running analysis."
-                color: Theme.textSecondary
-                font.pixelSize: 11
-                elide: Text.ElideRight
+                Text {
+                    text: "AI Analysis"
+                    color: Theme.textPrimary
+                    font.pixelSize: 28
+                    font.weight: Font.DemiBold
+                }
+
+                Text {
+                    text: desktopBridge.hasCurrentCase
+                        ? ("Grounded reasoning over “" + String(desktopBridge.currentCaseTitle || "Investigation") + "”")
+                        : "Select an investigation to begin."
+                    color: Theme.textMuted
+                    font.pixelSize: 10
+                }
             }
 
             Rectangle {
                 anchors.right: parent.right
-                anchors.top: parent.top
-                width: 350
-                height: 56
-                radius: 8
+                anchors.verticalCenter: parent.verticalCenter
+                width: Math.min(330, parent.width * 0.32)
+                height: 44
+                radius: 22
                 color: Theme.surface
                 border.width: 1
-                border.color: Boolean(root.provider.configured) ? Theme.border : Theme.danger
+                border.color: Theme.border
 
                 Rectangle {
-                    x: 12
+                    x: 13
                     anchors.verticalCenter: parent.verticalCenter
-                    width: 8
-                    height: 8
+                    width: 7
+                    height: 7
                     radius: 4
                     color: Boolean(root.provider.configured) ? Theme.success : Theme.danger
                 }
 
                 Text {
-                    x: 30
-                    y: 9
+                    x: 29
+                    anchors.verticalCenter: parent.verticalCenter
                     width: parent.width - 42
                     text: String(root.provider.label || "AI")
                         + " · " + String(root.provider.model || "No model")
-                    color: Theme.textPrimary
-                    font.pixelSize: 11
-                    font.weight: Font.DemiBold
-                    elide: Text.ElideRight
-                }
-
-                Text {
-                    x: 30
-                    y: 31
-                    width: parent.width - 42
-                    text: Boolean(root.provider.configured)
-                        ? ("Configured"
-                            + (root.provider.reasoningEffort
-                                ? " · reasoning " + String(root.provider.reasoningEffort)
-                                : "")
-                            + (root.provider.storeResponses === false
-                                ? " · API storage off"
-                                : ""))
-                        : "Not configured — add OPENAI_API_KEY to .env"
-                    color: Boolean(root.provider.configured) ? Theme.textMuted : Theme.danger
+                        + (root.provider.storeResponses === false ? " · storage off" : "")
+                    color: Boolean(root.provider.configured) ? Theme.textSecondary : Theme.danger
                     font.pixelSize: 9
+                    font.weight: Font.Medium
                     elide: Text.ElideRight
-                }
-            }
-        }
-
-        Panel {
-            Layout.fillWidth: true
-            Layout.preferredHeight: 252
-            title: "Analysis Focus"
-            subtitle: "Choose analytical depth, scope and model before execution"
-            iconSource: "../../assets/icons/search.svg"
-
-            ColumnLayout {
-                anchors.fill: parent
-                anchors.margins: 14
-                spacing: 10
-
-                RowLayout {
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: 68
-                    spacing: 8
-
-                    Repeater {
-                        model: root.modes()
-
-                        delegate: Rectangle {
-                            id: modeCard
-                            required property var modelData
-                            Layout.fillWidth: true
-                            Layout.fillHeight: true
-                            radius: 7
-                            color: String(root.selectedMode) === String(modeCard.modelData.key)
-                                ? Theme.accentSoft
-                                : Theme.background
-                            border.width: 1
-                            border.color: String(root.selectedMode) === String(modeCard.modelData.key)
-                                ? Theme.accent
-                                : Theme.border
-
-                            Text {
-                                x: 12
-                                y: 10
-                                text: String(modeCard.modelData.label || "")
-                                color: String(root.selectedMode) === String(modeCard.modelData.key)
-                                    ? Theme.accent
-                                    : Theme.textPrimary
-                                font.pixelSize: 11
-                                font.weight: Font.DemiBold
-                            }
-
-                            Text {
-                                x: 12
-                                y: 30
-                                width: parent.width - 24
-                                text: String(modeCard.modelData.requests || 1)
-                                    + " AI call" + (Number(modeCard.modelData.requests || 1) === 1 ? "" : "s")
-                                    + " · " + String(modeCard.modelData.description || "")
-                                color: Theme.textMuted
-                                font.pixelSize: 8
-                                elide: Text.ElideRight
-                            }
-
-                            MouseArea {
-                                anchors.fill: parent
-                                enabled: !analysisBridge.busy
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: root.applyMode(String(modeCard.modelData.key || "standard"))
-                            }
-                        }
-                    }
-                }
-
-                RowLayout {
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: 56
-                    spacing: 10
-
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 4
-                        Text {
-                            text: "SCOPE"
-                            color: Theme.textMuted
-                            font.pixelSize: 8
-                            font.letterSpacing: 1.0
-                        }
-                        AppComboBox {
-                            id: scopeBox
-                            Layout.fillWidth: true
-                            model: root.focusLabels()
-                            enabled: !analysisBridge.busy
-                            onCurrentIndexChanged: root.selectedFocusIndex = currentIndex
-                        }
-                    }
-
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 4
-                        Text {
-                            text: "MODEL"
-                            color: Theme.textMuted
-                            font.pixelSize: 8
-                            font.letterSpacing: 1.0
-                        }
-                        AppComboBox {
-                            id: modelBox
-                            Layout.fillWidth: true
-                            model: root.modelLabels()
-                            enabled: !analysisBridge.busy && String(root.provider.provider || "") === "openai"
-                            onCurrentIndexChanged: {
-                                const values = root.models()
-                                if (currentIndex >= 0 && currentIndex < values.length)
-                                    root.selectedModel = String(values[currentIndex].id || root.selectedModel)
-                            }
-                        }
-                    }
-
-                    ColumnLayout {
-                        Layout.preferredWidth: 190
-                        spacing: 4
-                        Text {
-                            text: "REASONING"
-                            color: Theme.textMuted
-                            font.pixelSize: 8
-                            font.letterSpacing: 1.0
-                        }
-                        AppComboBox {
-                            id: reasoningBox
-                            Layout.fillWidth: true
-                            model: root.reasoningEfforts()
-                            enabled: !analysisBridge.busy && String(root.provider.provider || "") === "openai"
-                            onCurrentIndexChanged: {
-                                const values = root.reasoningEfforts()
-                                if (currentIndex >= 0 && currentIndex < values.length)
-                                    root.selectedReasoning = String(values[currentIndex])
-                            }
-                        }
-                    }
-                }
-
-                RowLayout {
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    spacing: 10
-
-                    TextArea {
-                        id: questionInput
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        placeholderText: "Optional analyst question. Leave blank for the standard investigation question."
-                        wrapMode: TextEdit.Wrap
-                        color: Theme.textPrimary
-                        placeholderTextColor: Theme.textMuted
-                        selectionColor: Theme.accent
-                        selectedTextColor: "#ffffff"
-                        font.pixelSize: 10
-                        enabled: !analysisBridge.busy
-                        background: Rectangle {
-                            radius: 7
-                            color: Theme.background
-                            border.width: 1
-                            border.color: questionInput.activeFocus ? Theme.accent : Theme.border
-                        }
-                    }
-
-                    ColumnLayout {
-                        Layout.preferredWidth: 170
-                        Layout.fillHeight: true
-                        spacing: 8
-
-                        AppButton {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 40
-                            text: analysisBridge.busy ? "Analyzing…" : "Run Analysis"
-                            primary: true
-                            enabled: !analysisBridge.busy
-                                && desktopBridge.hasCurrentCase
-                                && Boolean(root.provider.configured)
-                            onClicked: root.runAnalysisNow()
-                        }
-
-                        AppButton {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 34
-                            text: "Clear result"
-                            enabled: !analysisBridge.busy && Boolean(root.run.hasRun)
-                            onClicked: analysisBridge.clear()
-                        }
-
-                        Text {
-                            Layout.fillWidth: true
-                            text: "AI output is analysis, not Evidence."
-                            color: Theme.textMuted
-                            font.pixelSize: 8
-                            wrapMode: Text.Wrap
-                        }
-                    }
-                }
-            }
-        }
-
-        Rectangle {
-            Layout.fillWidth: true
-            Layout.preferredHeight: analysisBridge.busy || Boolean(root.run.hasRun) ? 66 : 0
-            visible: analysisBridge.busy || Boolean(root.run.hasRun)
-            radius: 8
-            color: Theme.surface
-            border.width: 1
-            border.color: analysisBridge.busy ? Theme.accent : Theme.border
-
-            ProgressBar {
-                id: progressBar
-                anchors.left: parent.left
-                anchors.leftMargin: 14
-                anchors.right: statusBadge.left
-                anchors.rightMargin: 14
-                anchors.verticalCenter: parent.verticalCenter
-                from: 0
-                to: 1
-                value: Number(root.run.progress || (root.run.status === "success" ? 1 : 0))
-            }
-
-            Text {
-                anchors.left: progressBar.left
-                anchors.bottom: parent.bottom
-                anchors.bottomMargin: 8
-                width: progressBar.width
-                text: String(root.run.progressText || root.run.status || "")
-                    + (root.run.currentStageLabel
-                        ? " · " + String(root.run.currentStageLabel)
-                        : "")
-                color: Theme.textMuted
-                font.pixelSize: 8
-                elide: Text.ElideRight
-            }
-
-            Rectangle {
-                id: statusBadge
-                anchors.right: parent.right
-                anchors.rightMargin: 14
-                anchors.verticalCenter: parent.verticalCenter
-                width: 116
-                height: 30
-                radius: 15
-                color: "transparent"
-                border.width: 1
-                border.color: root.statusColor(root.run.status || (analysisBridge.busy ? "running" : ""))
-
-                Text {
-                    anchors.centerIn: parent
-                    text: String(root.run.status || (analysisBridge.busy ? "RUNNING" : "—")).toUpperCase()
-                    color: root.statusColor(root.run.status || (analysisBridge.busy ? "running" : ""))
-                    font.pixelSize: 8
-                    font.weight: Font.DemiBold
                 }
             }
         }
@@ -541,20 +293,21 @@ Item {
         RowLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            spacing: 10
+            spacing: 14
 
+            // Analysis navigation rail.
             Rectangle {
-                Layout.preferredWidth: 176
+                Layout.preferredWidth: 188
                 Layout.fillHeight: true
-                radius: 8
-                color: Theme.surface
+                radius: 10
+                color: "#0b1a26"
                 border.width: 1
                 border.color: Theme.border
 
                 Column {
                     anchors.fill: parent
-                    anchors.margins: 8
-                    spacing: 4
+                    anchors.margins: 10
+                    spacing: 5
 
                     Text {
                         width: parent.width
@@ -563,80 +316,88 @@ Item {
                         color: Theme.textMuted
                         font.pixelSize: 8
                         font.weight: Font.DemiBold
-                        font.letterSpacing: 1.1
+                        font.letterSpacing: 1.15
                         verticalAlignment: Text.AlignVCenter
                     }
 
                     Repeater {
-                        model: [
-                            {key:"overview", label:"Overview"},
-                            {key:"facts", label:"Facts"},
-                            {key:"hypotheses", label:"Hypotheses"},
-                            {key:"contradictions", label:"Contradictions"},
-                            {key:"next_steps", label:"Next Steps"},
-                            {key:"sources", label:"Sources"},
-                            {key:"pipeline", label:"Pipeline"},
-                            {key:"history", label:"History"}
-                        ]
+                        model: root.layerItems
 
                         delegate: Rectangle {
-                            id: navRow
+                            id: layerRow
                             required property var modelData
                             width: parent.width
-                            height: 38
-                            radius: 6
-                            color: String(root.activeView) === String(navRow.modelData.key)
+                            height: 39
+                            radius: 7
+                            color: root.activeView === String(layerRow.modelData.key)
                                 ? Theme.accentSoft
-                                : "transparent"
+                                : (layerMouse.containsMouse ? Theme.surfaceHover : "transparent")
 
                             Rectangle {
-                                visible: String(root.activeView) === String(navRow.modelData.key)
-                                width: 3
-                                height: 20
-                                radius: 2
+                                visible: root.activeView === String(layerRow.modelData.key)
                                 anchors.left: parent.left
                                 anchors.verticalCenter: parent.verticalCenter
+                                width: 3
+                                height: 22
+                                radius: 2
                                 color: Theme.accent
                             }
 
-                            Text {
-                                x: 12
+                            Image {
+                                anchors.left: parent.left
+                                anchors.leftMargin: 11
                                 anchors.verticalCenter: parent.verticalCenter
-                                text: String(navRow.modelData.label)
-                                color: String(root.activeView) === String(navRow.modelData.key)
+                                width: 16
+                                height: 16
+                                source: "../../assets/icons/" + String(layerRow.modelData.icon || "chart.svg")
+                                opacity: root.activeView === String(layerRow.modelData.key) ? 1 : 0.72
+                            }
+
+                            Text {
+                                x: 36
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: String(layerRow.modelData.label)
+                                color: root.activeView === String(layerRow.modelData.key)
                                     ? Theme.textPrimary
                                     : Theme.textSecondary
                                 font.pixelSize: 10
-                                font.weight: String(root.activeView) === String(navRow.modelData.key)
+                                font.weight: root.activeView === String(layerRow.modelData.key)
                                     ? Font.DemiBold
                                     : Font.Normal
                             }
 
                             Rectangle {
-                                visible: root.navCount(String(navRow.modelData.key)) > 0
+                                visible: root.navCount(String(layerRow.modelData.key)) > 0
                                 anchors.right: parent.right
                                 anchors.rightMargin: 8
                                 anchors.verticalCenter: parent.verticalCenter
-                                width: Math.max(24, countText.implicitWidth + 10)
-                                height: 20
+                                width: Math.max(23, layerCount.implicitWidth + 10)
+                                height: 19
                                 radius: 10
-                                color: Theme.background
+                                color: "#0d1c28"
 
                                 Text {
-                                    id: countText
+                                    id: layerCount
                                     anchors.centerIn: parent
-                                    text: String(root.navCount(String(navRow.modelData.key)))
+                                    text: String(root.navCount(String(layerRow.modelData.key)))
                                     color: Theme.textMuted
                                     font.pixelSize: 8
                                 }
                             }
 
                             MouseArea {
+                                id: layerMouse
                                 anchors.fill: parent
+                                hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor
-                                onClicked: root.activeView = String(navRow.modelData.key)
+                                onClicked: root.activeView = String(layerRow.modelData.key)
                             }
                         }
+                    }
+
+                    Item {
+                        width: parent.width
+                        height: 8
                     }
 
                     Rectangle {
@@ -645,163 +406,517 @@ Item {
                         color: Theme.divider
                     }
 
-                    Text {
+                    Column {
                         width: parent.width
-                        text: root.run.runConfig
-                            ? (String(root.run.runConfig.modeLabel || "").toUpperCase()
-                                + "\n" + String(root.run.runConfig.model || "")
-                                + "\n" + String(root.run.runConfig.reasoningEffort || "").toUpperCase())
-                            : "NO ACTIVE RUN"
-                        color: Theme.textMuted
-                        font.pixelSize: 8
-                        lineHeight: 1.35
-                        wrapMode: Text.Wrap
+                        spacing: 7
+
+                        Text {
+                            width: parent.width
+                            text: Boolean(root.run.hasRun) ? "CURRENT RUN" : "READY"
+                            color: Theme.textMuted
+                            font.pixelSize: 8
+                            font.weight: Font.DemiBold
+                            font.letterSpacing: 1.0
+                        }
+
+                        Text {
+                            width: parent.width
+                            text: Boolean(root.run.hasRun) && root.run.runConfig
+                                ? (String(root.run.runConfig.modeLabel || "Analysis")
+                                    + " · " + String(root.run.runConfig.reasoningEffort || ""))
+                                : String(root.selectedMode).toUpperCase() + " MODE"
+                            color: Theme.textSecondary
+                            font.pixelSize: 9
+                            elide: Text.ElideRight
+                        }
+
+                        Text {
+                            width: parent.width
+                            text: Boolean(root.run.hasRun) && root.run.cost
+                                ? ("Cost " + String(root.run.cost.display || "—"))
+                                : "No analysis started"
+                            color: Theme.textMuted
+                            font.pixelSize: 8
+                            elide: Text.ElideRight
+                        }
                     }
                 }
             }
 
-            StackLayout {
-                id: views
+            ColumnLayout {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                currentIndex: {
-                    const keys = ["overview","facts","hypotheses","contradictions","next_steps","sources","pipeline","history"]
-                    const idx = keys.indexOf(root.activeView)
-                    return idx >= 0 ? idx : 0
-                }
+                spacing: 10
 
-                // OVERVIEW
-                Flickable {
-                    clip: true
-                    contentWidth: width
-                    contentHeight: overviewColumn.height
-                    boundsBehavior: Flickable.StopAtBounds
-                    ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+                // Chat-like analysis composer.
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 206
+                    radius: 12
+                    color: "#0d1c28"
+                    border.width: 1
+                    border.color: questionInput.activeFocus ? Theme.borderHover : Theme.border
 
                     Column {
-                        id: overviewColumn
-                        width: parent.width
-                        spacing: 10
+                        anchors.fill: parent
+                        anchors.margins: 12
+                        spacing: 9
 
-                        Item {
+                        Row {
+                            id: modeRow
                             width: parent.width
-                            height: Boolean(root.run.hasRun) ? 86 : 170
+                            height: 38
+                            spacing: 7
 
-                            Text {
-                                anchors.centerIn: parent
-                                visible: !Boolean(root.run.hasRun)
-                                width: Math.min(parent.width - 80, 680)
-                                text: desktopBridge.hasCurrentCase
-                                    ? "Ready. Choose scope and analytical depth, then run the case through the deterministic analysis pipeline and bounded RAG."
-                                    : "Select an investigation to enable Analysis."
-                                color: Theme.textMuted
-                                font.pixelSize: 12
-                                wrapMode: Text.Wrap
-                                horizontalAlignment: Text.AlignHCenter
-                            }
+                            Repeater {
+                                model: root.modes()
 
-                            Row {
-                                visible: Boolean(root.run.hasRun)
-                                width: parent.width
-                                height: 86
-                                spacing: 8
+                                delegate: Rectangle {
+                                    id: modePill
+                                    required property var modelData
+                                    width: (modeRow.width - 14) / 3
+                                    height: 38
+                                    radius: 19
+                                    color: root.selectedMode === String(modePill.modelData.key)
+                                        ? Theme.accentSoft
+                                        : "#10202d"
+                                    border.width: 1
+                                    border.color: root.selectedMode === String(modePill.modelData.key)
+                                        ? Theme.accent
+                                        : Theme.border
 
-                                Repeater {
-                                    model: [
-                                        {label:"SOURCES", value: root.sources.length},
-                                        {label:"FACTS", value: root.facts.length},
-                                        {label:"VALID REFS", value: root.citationSummary.valid || 0},
-                                        {label:"AI CALLS", value: root.run.usage ? (root.run.usage.requests || 0) : 0},
-                                        {label:"EST. COST", value: root.run.cost ? (root.run.cost.display || "—") : "—"}
-                                    ]
-
-                                    delegate: Rectangle {
-                                        id: metric
-                                        required property var modelData
-                                        width: (overviewColumn.width - 32) / 5
-                                        height: 86
-                                        radius: 8
-                                        color: Theme.surface
-                                        border.width: 1
-                                        border.color: Theme.border
+                                    Row {
+                                        anchors.centerIn: parent
+                                        spacing: 7
 
                                         Text {
-                                            x: 12
-                                            y: 12
-                                            width: parent.width - 24
-                                            text: String(metric.modelData.label)
+                                            text: String(modePill.modelData.label || "")
+                                            color: root.selectedMode === String(modePill.modelData.key)
+                                                ? Theme.textPrimary
+                                                : Theme.textSecondary
+                                            font.pixelSize: 10
+                                            font.weight: Font.DemiBold
+                                        }
+
+                                        Text {
+                                            text: "· " + String(modePill.modelData.requests || 1)
+                                                + (Number(modePill.modelData.requests || 1) === 1 ? " call" : " calls")
                                             color: Theme.textMuted
                                             font.pixelSize: 8
-                                            font.letterSpacing: 0.8
-                                            elide: Text.ElideRight
                                         }
+                                    }
 
-                                        Text {
-                                            x: 12
-                                            y: 39
-                                            width: parent.width - 24
-                                            text: String(metric.modelData.value)
-                                            color: Theme.textPrimary
-                                            font.pixelSize: 20
-                                            font.weight: Font.DemiBold
-                                            elide: Text.ElideRight
-                                        }
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        enabled: !analysisBridge.busy
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: root.applyMode(String(modePill.modelData.key || "standard"))
                                     }
                                 }
                             }
                         }
 
-                        Panel {
-                            visible: Boolean(root.run.hasRun)
-                            width: overviewColumn.width
-                            height: Math.min(520, Math.max(230, summaryText.implicitHeight + 118))
-                            title: "AI Summary"
-                            subtitle: String(root.run.scope && root.run.scope.label ? root.run.scope.label : "Entire Investigation")
-                                + " · "
-                                + String(root.run.runConfig && root.run.runConfig.modeLabel ? root.run.runConfig.modeLabel : "Analysis")
-                            iconSource: "../../assets/icons/chart.svg"
+                        Rectangle {
+                            width: parent.width
+                            height: 82
+                            radius: 9
+                            color: Theme.background
+                            border.width: 1
+                            border.color: questionInput.activeFocus ? Theme.accent : Theme.divider
 
-                            Flickable {
+                            TextArea {
+                                id: questionInput
                                 anchors.fill: parent
-                                anchors.margins: 16
-                                clip: true
-                                contentWidth: width
-                                contentHeight: summaryText.implicitHeight + 42
-                                boundsBehavior: Flickable.StopAtBounds
+                                anchors.margins: 7
+                                placeholderText: "Ask what you want to understand about this investigation..."
+                                wrapMode: TextEdit.Wrap
+                                color: Theme.textPrimary
+                                placeholderTextColor: Theme.textMuted
+                                selectionColor: Theme.accent
+                                selectedTextColor: "#ffffff"
+                                font.pixelSize: 11
+                                enabled: !analysisBridge.busy
+                                background: Rectangle { color: "transparent" }
+                            }
+                        }
+
+                        Row {
+                            width: parent.width
+                            height: 48
+                            spacing: 8
+
+                            Column {
+                                width: Math.max(170, (parent.width - 190) * 0.31)
+                                height: 48
+                                spacing: 3
+                                Text {
+                                    text: "SCOPE"
+                                    color: Theme.textMuted
+                                    font.pixelSize: 7
+                                    font.letterSpacing: 0.9
+                                }
+                                AppComboBox {
+                                    id: scopeBox
+                                    width: parent.width
+                                    height: 32
+                                    model: root.focusLabels()
+                                    enabled: !analysisBridge.busy
+                                    onCurrentIndexChanged: root.selectedFocusIndex = currentIndex
+                                }
+                            }
+
+                            Column {
+                                width: Math.max(220, (parent.width - 190) * 0.39)
+                                height: 48
+                                spacing: 3
+                                Text {
+                                    text: "MODEL"
+                                    color: Theme.textMuted
+                                    font.pixelSize: 7
+                                    font.letterSpacing: 0.9
+                                }
+                                AppComboBox {
+                                    id: modelBox
+                                    width: parent.width
+                                    height: 32
+                                    model: root.modelLabels()
+                                    enabled: !analysisBridge.busy && String(root.provider.provider || "") === "openai"
+                                    onCurrentIndexChanged: {
+                                        const values = root.models()
+                                        if (currentIndex >= 0 && currentIndex < values.length)
+                                            root.selectedModel = String(values[currentIndex].id || root.selectedModel)
+                                    }
+                                }
+                            }
+
+                            Column {
+                                width: Math.max(112, (parent.width - 190) * 0.20)
+                                height: 48
+                                spacing: 3
+                                Text {
+                                    text: "REASONING"
+                                    color: Theme.textMuted
+                                    font.pixelSize: 7
+                                    font.letterSpacing: 0.9
+                                }
+                                AppComboBox {
+                                    id: reasoningBox
+                                    width: parent.width
+                                    height: 32
+                                    model: root.reasoningEfforts()
+                                    enabled: !analysisBridge.busy && String(root.provider.provider || "") === "openai"
+                                    onCurrentIndexChanged: {
+                                        const values = root.reasoningEfforts()
+                                        if (currentIndex >= 0 && currentIndex < values.length)
+                                            root.selectedReasoning = String(values[currentIndex])
+                                    }
+                                }
+                            }
+
+                            Item {
+                                width: Math.max(0, parent.width
+                                    - scopeBox.parent.width
+                                    - modelBox.parent.width
+                                    - reasoningBox.parent.width
+                                    - runButton.width
+                                    - 32)
+                                height: 1
+                            }
+
+                            AppButton {
+                                id: runButton
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 150
+                                height: 38
+                                text: analysisBridge.busy ? "Analyzing…" : "Run Analysis"
+                                primary: true
+                                enabled: !analysisBridge.busy
+                                    && desktopBridge.hasCurrentCase
+                                    && Boolean(root.provider.configured)
+                                onClicked: root.runAnalysisNow()
+                            }
+                        }
+                    }
+                }
+
+                // Running/completed strip.
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: analysisBridge.busy || Boolean(root.run.hasRun) ? 50 : 0
+                    visible: analysisBridge.busy || Boolean(root.run.hasRun)
+                    radius: 9
+                    color: Theme.surface
+                    border.width: 1
+                    border.color: analysisBridge.busy ? Theme.accent : Theme.border
+
+                    Rectangle {
+                        anchors.left: parent.left
+                        anchors.leftMargin: 12
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 8
+                        height: 8
+                        radius: 4
+                        color: root.statusColor(root.run.status || (analysisBridge.busy ? "running" : ""))
+                    }
+
+                    Text {
+                        anchors.left: parent.left
+                        anchors.leftMargin: 30
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: parent.width - 270
+                        text: String(root.run.progressText || root.run.status || "")
+                            + (root.run.currentStageLabel ? " · " + String(root.run.currentStageLabel) : "")
+                        color: Theme.textSecondary
+                        font.pixelSize: 9
+                        elide: Text.ElideRight
+                    }
+
+                    Text {
+                        anchors.right: clearRunButton.left
+                        anchors.rightMargin: 14
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: Boolean(root.run.hasRun) && root.run.durationText
+                            ? String(root.run.durationText)
+                            : (root.run.stageCount ? String(root.run.stageIndex || 0) + "/" + String(root.run.stageCount) : "")
+                        color: Theme.textMuted
+                        font.pixelSize: 8
+                    }
+
+                    AppButton {
+                        id: clearRunButton
+                        anchors.right: parent.right
+                        anchors.rightMargin: 8
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 92
+                        height: 32
+                        text: "Clear"
+                        quiet: true
+                        enabled: !analysisBridge.busy && Boolean(root.run.hasRun)
+                        onClicked: analysisBridge.clear()
+                    }
+                }
+
+                StackLayout {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    currentIndex: root.activeViewIndex()
+
+                    // OVERVIEW
+                    Flickable {
+                        clip: true
+                        contentWidth: width
+                        contentHeight: overviewContent.height
+                        boundsBehavior: Flickable.StopAtBounds
+                        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+
+                        Column {
+                            id: overviewContent
+                            width: Math.min(parent.width - 28, 920)
+                            x: Math.max(14, (parent.width - width) / 2)
+                            spacing: 18
+
+                            Item {
+                                width: parent.width
+                                height: !Boolean(root.run.hasRun) ? Math.max(330, overviewContent.parent.height - 20) : 0
+                                visible: !Boolean(root.run.hasRun)
 
                                 Column {
-                                    width: parent.width
-                                    spacing: 10
+                                    anchors.centerIn: parent
+                                    width: Math.min(parent.width - 40, 720)
+                                    spacing: 14
+
+                                    Rectangle {
+                                        anchors.horizontalCenter: parent.horizontalCenter
+                                        width: 46
+                                        height: 46
+                                        radius: 23
+                                        color: Theme.accentSoft
+                                        border.width: 1
+                                        border.color: Theme.accent
+
+                                        Text {
+                                            anchors.centerIn: parent
+                                            text: "AI"
+                                            color: Theme.accent
+                                            font.pixelSize: 12
+                                            font.weight: Font.Bold
+                                        }
+                                    }
 
                                     Text {
-                                        id: summaryText
+                                        width: parent.width
+                                        text: desktopBridge.hasCurrentCase
+                                            ? "What do you want to understand?"
+                                            : "Select an investigation first"
+                                        color: Theme.textPrimary
+                                        font.pixelSize: 22
+                                        font.weight: Font.DemiBold
+                                        horizontalAlignment: Text.AlignHCenter
+                                    }
+
+                                    Text {
+                                        width: parent.width
+                                        text: desktopBridge.hasCurrentCase
+                                            ? "Ask a focused question, or use one of the starting points below. Analysis stays grounded in the investigation’s bounded sources."
+                                            : "Analysis needs an active case before it can build grounded context."
+                                        color: Theme.textMuted
+                                        font.pixelSize: 10
+                                        lineHeight: 1.35
+                                        wrapMode: Text.Wrap
+                                        horizontalAlignment: Text.AlignHCenter
+                                    }
+
+                                    Row {
+                                        anchors.horizontalCenter: parent.horizontalCenter
+                                        spacing: 8
+
+                                        Repeater {
+                                            model: [
+                                                {title:"Summarize the case", prompt:"Summarize the most important findings in this investigation and explain what matters most."},
+                                                {title:"Find contradictions", prompt:"Identify the strongest contradictions or inconsistencies in the available investigation data."},
+                                                {title:"Plan next steps", prompt:"Based on the available evidence, what should be investigated next and why?"}
+                                            ]
+
+                                            delegate: Rectangle {
+                                                id: promptCard
+                                                required property var modelData
+                                                width: 190
+                                                height: 70
+                                                radius: 10
+                                                color: promptMouse.containsMouse ? Theme.surfaceHover : Theme.surface
+                                                border.width: 1
+                                                border.color: promptMouse.containsMouse ? Theme.borderHover : Theme.border
+                                                opacity: desktopBridge.hasCurrentCase ? 1 : 0.5
+
+                                                Text {
+                                                    x: 12
+                                                    y: 12
+                                                    width: parent.width - 24
+                                                    text: String(promptCard.modelData.title)
+                                                    color: Theme.textPrimary
+                                                    font.pixelSize: 10
+                                                    font.weight: Font.DemiBold
+                                                    elide: Text.ElideRight
+                                                }
+
+                                                Text {
+                                                    x: 12
+                                                    y: 36
+                                                    width: parent.width - 24
+                                                    text: "Use prompt"
+                                                    color: Theme.accent
+                                                    font.pixelSize: 8
+                                                }
+
+                                                MouseArea {
+                                                    id: promptMouse
+                                                    anchors.fill: parent
+                                                    enabled: desktopBridge.hasCurrentCase
+                                                    hoverEnabled: true
+                                                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                                    onClicked: root.usePrompt(String(promptCard.modelData.prompt))
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Assistant-style response header.
+                            Row {
+                                visible: Boolean(root.run.hasRun)
+                                width: parent.width
+                                spacing: 12
+
+                                Rectangle {
+                                    width: 34
+                                    height: 34
+                                    radius: 17
+                                    color: Theme.accentSoft
+                                    border.width: 1
+                                    border.color: Theme.accent
+                                    Text {
+                                        anchors.centerIn: parent
+                                        text: "AI"
+                                        color: Theme.accent
+                                        font.pixelSize: 9
+                                        font.weight: Font.Bold
+                                    }
+                                }
+
+                                Column {
+                                    width: parent.width - 46
+                                    spacing: 3
+
+                                    Text {
+                                        text: "Analysis"
+                                        color: Theme.textPrimary
+                                        font.pixelSize: 12
+                                        font.weight: Font.DemiBold
+                                    }
+
+                                    Text {
+                                        width: parent.width
+                                        text: String(root.run.scope && root.run.scope.label ? root.run.scope.label : "Entire Investigation")
+                                            + " · "
+                                            + String(root.run.runConfig && root.run.runConfig.modeLabel ? root.run.runConfig.modeLabel : "Analysis")
+                                            + " · "
+                                            + String(root.run.runConfig && root.run.runConfig.model ? root.run.runConfig.model : root.provider.model || "")
+                                        color: Theme.textMuted
+                                        font.pixelSize: 8
+                                        elide: Text.ElideRight
+                                    }
+                                }
+                            }
+
+                            // Keep explicit title contracts from R13.28b while rendering minimally.
+                            Panel {
+                                visible: Boolean(root.run.hasRun)
+                                width: parent.width
+                                height: Math.max(210, summaryBody.implicitHeight + 105)
+                                title: "AI Summary"
+                                subtitle: "Grounded response · citations open the underlying source"
+                                headerDivider: false
+                                color: "transparent"
+                                border.width: 0
+
+                                Column {
+                                    anchors.fill: parent
+                                    anchors.leftMargin: 18
+                                    anchors.rightMargin: 18
+                                    anchors.bottomMargin: 8
+                                    spacing: 12
+
+                                    Text {
+                                        id: summaryBody
                                         width: parent.width
                                         text: String(root.run.summary || "No AI summary was produced.")
                                         color: Theme.textPrimary
-                                        font.pixelSize: 11
-                                        lineHeight: 1.45
+                                        font.pixelSize: 12
+                                        lineHeight: 1.5
                                         wrapMode: Text.Wrap
                                         textFormat: Text.PlainText
                                     }
 
                                     Flow {
                                         width: parent.width
-                                        spacing: 6
+                                        spacing: 7
 
                                         Repeater {
                                             model: root.sourceRefsForSummary()
+
                                             delegate: Rectangle {
                                                 id: summaryRef
                                                 required property var modelData
-                                                width: refText.implicitWidth + 18
-                                                height: 26
+                                                width: summaryRefText.implicitWidth + 18
+                                                height: 25
                                                 radius: 13
                                                 color: Theme.accentSoft
                                                 border.width: 1
                                                 border.color: Theme.accent
 
                                                 Text {
-                                                    id: refText
+                                                    id: summaryRefText
                                                     anchors.centerIn: parent
                                                     text: String(summaryRef.modelData)
                                                     color: Theme.accent
@@ -818,270 +933,257 @@ Item {
                                         }
                                     }
                                 }
-
-                                ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
                             }
-                        }
 
-                        Panel {
-                            visible: Boolean(root.run.hasRun)
-                            width: overviewColumn.width
-                            height: 174
-                            title: "Run Telemetry"
-                            subtitle: "Actual provider-reported usage · cost is approximate"
-                            iconSource: "../../assets/icons/chart.svg"
+                            Rectangle {
+                                visible: Boolean(root.run.hasRun)
+                                width: parent.width
+                                height: 82
+                                radius: 10
+                                color: "#0d1c28"
+                                border.width: 1
+                                border.color: Theme.border
 
-                            RowLayout {
-                                anchors.fill: parent
-                                anchors.margins: 14
-                                spacing: 8
+                                Row {
+                                    anchors.fill: parent
+                                    anchors.margins: 10
+                                    spacing: 6
 
-                                Repeater {
-                                    model: [
-                                        {label:"INPUT", value: root.run.usage ? (root.run.usage.inputTokens || 0) : 0},
-                                        {label:"CACHED", value: root.run.usage ? (root.run.usage.cachedInputTokens || 0) : 0},
-                                        {label:"OUTPUT", value: root.run.usage ? (root.run.usage.outputTokens || 0) : 0},
-                                        {label:"REASONING", value: root.run.usage ? (root.run.usage.reasoningTokens || 0) : 0}
-                                    ]
-                                    delegate: Rectangle {
-                                        id: tokenMetric
-                                        required property var modelData
-                                        Layout.fillWidth: true
-                                        Layout.fillHeight: true
-                                        radius: 7
-                                        color: Theme.background
-                                        border.width: 1
-                                        border.color: Theme.border
+                                    Repeater {
+                                        model: [
+                                            {label:"SOURCES", value:root.sources.length},
+                                            {label:"FACTS", value:root.facts.length},
+                                            {label:"VALID REFS", value:root.citationSummary.valid || 0},
+                                            {label:"AI CALLS", value:root.run.usage ? (root.run.usage.requests || 0) : 0},
+                                            {label:"EST. COST", value:root.run.cost ? (root.run.cost.display || "—") : "—"}
+                                        ]
 
-                                        Text {
-                                            anchors.horizontalCenter: parent.horizontalCenter
-                                            y: 23
-                                            text: String(tokenMetric.modelData.value)
-                                            color: Theme.textPrimary
-                                            font.pixelSize: 18
-                                            font.weight: Font.DemiBold
-                                        }
-                                        Text {
-                                            anchors.horizontalCenter: parent.horizontalCenter
-                                            y: 52
-                                            text: String(tokenMetric.modelData.label)
-                                            color: Theme.textMuted
-                                            font.pixelSize: 8
-                                            font.letterSpacing: 0.7
+                                        delegate: Rectangle {
+                                            id: overviewMetric
+                                            required property var modelData
+                                            width: (parent.width - 24) / 5
+                                            height: parent.height
+                                            radius: 7
+                                            color: Theme.surface
+
+                                            Text {
+                                                anchors.horizontalCenter: parent.horizontalCenter
+                                                y: 13
+                                                text: String(overviewMetric.modelData.value)
+                                                color: Theme.textPrimary
+                                                font.pixelSize: 17
+                                                font.weight: Font.DemiBold
+                                            }
+
+                                            Text {
+                                                anchors.horizontalCenter: parent.horizontalCenter
+                                                y: 41
+                                                text: String(overviewMetric.modelData.label)
+                                                color: Theme.textMuted
+                                                font.pixelSize: 7
+                                                font.letterSpacing: 0.65
+                                            }
                                         }
                                     }
                                 }
-
-                                Rectangle {
-                                    Layout.preferredWidth: 230
-                                    Layout.fillHeight: true
-                                    radius: 7
-                                    color: Theme.background
-                                    border.width: 1
-                                    border.color: Theme.border
-
-                                    Text {
-                                        x: 12
-                                        y: 13
-                                        text: "ESTIMATED API COST"
-                                        color: Theme.textMuted
-                                        font.pixelSize: 8
-                                        font.letterSpacing: 0.7
-                                    }
-                                    Text {
-                                        x: 12
-                                        y: 40
-                                        text: root.run.cost ? String(root.run.cost.display || "—") : "—"
-                                        color: Theme.accent
-                                        font.pixelSize: 20
-                                        font.weight: Font.DemiBold
-                                    }
-                                    Text {
-                                        x: 12
-                                        y: 72
-                                        width: parent.width - 24
-                                        text: root.run.cost
-                                            ? ("pricing " + String(root.run.cost.pricingEffectiveDate || root.catalog.pricingEffectiveDate || "")
-                                                + " · " + String(root.run.cost.notice || "approximate"))
-                                            : ""
-                                        color: Theme.textMuted
-                                        font.pixelSize: 8
-                                        wrapMode: Text.Wrap
-                                    }
-                                }
                             }
-                        }
 
-                        Rectangle {
-                            visible: Boolean(root.run.hasRun)
-                            width: overviewColumn.width
-                            height: root.run.redactions && root.run.redactions.active ? 82 : 64
-                            radius: 8
-                            color: Theme.surface
-                            border.width: 1
-                            border.color: Theme.border
-
-                            Text {
-                                anchors.fill: parent
-                                anchors.margins: 14
-                                text: String(root.run.notice || "AI-generated analysis is analytical assistance, not Evidence or an independently verified fact.")
-                                    + (root.run.redactions && root.run.redactions.active
-                                        ? ("\n\nSECURITY · " + String(root.run.redactions.count || 0)
-                                            + " credential/secret fragment(s) were redacted before display and history.")
-                                        : "")
-                                color: Theme.textMuted
-                                font.pixelSize: 9
-                                wrapMode: Text.Wrap
-                                verticalAlignment: Text.AlignVCenter
-                            }
-                        }
-                    }
-                }
-
-                // FACTS
-                Flickable {
-                    clip: true
-                    contentWidth: width
-                    contentHeight: factsColumn.height
-                    boundsBehavior: Flickable.StopAtBounds
-                    ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
-
-                    Column {
-                        id: factsColumn
-                        width: parent.width
-                        spacing: 8
-
-                        Text {
-                            width: parent.width
-                            height: 42
-                            text: "FACTS · SOURCE-BACKED OBSERVATIONS"
-                            color: Theme.textPrimary
-                            font.pixelSize: 12
-                            font.weight: Font.DemiBold
-                            verticalAlignment: Text.AlignVCenter
-                        }
-
-                        Text {
-                            width: parent.width
-                            text: "These rows come directly from bounded RAG source material. They are separated from AI hypotheses, but are not automatically independently verified."
-                            color: Theme.textMuted
-                            font.pixelSize: 9
-                            wrapMode: Text.Wrap
-                        }
-
-                        Repeater {
-                            model: root.facts
-                            delegate: Rectangle {
-                                id: factRow
-                                required property var modelData
-                                width: factsColumn.width
-                                height: Math.max(104, factText.implicitHeight + 56)
-                                radius: 8
+                            Rectangle {
+                                visible: Boolean(root.run.hasRun)
+                                width: parent.width
+                                height: root.run.redactions && root.run.redactions.active ? 80 : 58
+                                radius: 9
                                 color: Theme.surface
                                 border.width: 1
                                 border.color: Theme.border
 
-                                Rectangle {
-                                    x: 12
-                                    y: 12
-                                    width: 42
-                                    height: 24
-                                    radius: 12
-                                    color: Theme.background
-                                    border.width: 1
-                                    border.color: Theme.accent
-                                    Text {
-                                        anchors.centerIn: parent
-                                        text: String(factRow.modelData.reference || "R?")
-                                        color: Theme.accent
-                                        font.pixelSize: 8
-                                        font.weight: Font.DemiBold
-                                    }
-                                    MouseArea {
-                                        anchors.fill: parent
-                                        cursorShape: Qt.PointingHandCursor
-                                        onClicked: analysisBridge.openSource(String(factRow.modelData.reference || ""))
-                                    }
-                                }
-
                                 Text {
-                                    x: 64
-                                    y: 13
-                                    width: parent.width - 78
-                                    text: String(factRow.modelData.title || "Source observation")
-                                    color: Theme.textPrimary
-                                    font.pixelSize: 10
-                                    font.weight: Font.DemiBold
-                                    elide: Text.ElideRight
-                                }
-
-                                Text {
-                                    id: factText
-                                    x: 14
-                                    y: 46
-                                    width: parent.width - 28
-                                    text: String(factRow.modelData.text || "No source text.")
-                                    color: Theme.textSecondary
-                                    font.pixelSize: 10
-                                    lineHeight: 1.35
+                                    anchors.fill: parent
+                                    anchors.margins: 13
+                                    text: String(root.run.notice || "AI output is analysis, not Evidence.")
+                                        + (root.run.redactions && root.run.redactions.active
+                                            ? ("\nSECURITY · " + String(root.run.redactions.count || 0)
+                                                + " credential/secret fragment(s) were redacted.")
+                                            : "")
+                                    color: Theme.textMuted
+                                    font.pixelSize: 8
+                                    lineHeight: 1.25
                                     wrapMode: Text.Wrap
+                                    verticalAlignment: Text.AlignVCenter
                                 }
                             }
+
+                            Item { width: parent.width; height: 10 }
                         }
                     }
-                }
 
-                // HYPOTHESES
-                Flickable {
-                    clip: true
-                    contentWidth: width
-                    contentHeight: hypothesisColumn.height
-                    boundsBehavior: Flickable.StopAtBounds
-                    ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+                    // FACTS
+                    Flickable {
+                        clip: true
+                        contentWidth: width
+                        contentHeight: factsContent.height
+                        boundsBehavior: Flickable.StopAtBounds
+                        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
-                    Column {
-                        id: hypothesisColumn
-                        width: parent.width
-                        spacing: 10
-
-                        Panel {
-                            width: hypothesisColumn.width
-                            height: 150
-                            title: "Hypotheses"
-                            subtitle: "AI inference · must be tested against evidence"
-                            iconSource: "../../assets/icons/search.svg"
+                        Column {
+                            id: factsContent
+                            width: Math.min(parent.width - 28, 920)
+                            x: Math.max(14, (parent.width - width) / 2)
+                            spacing: 10
 
                             Text {
-                                anchors.fill: parent
-                                anchors.margins: 16
-                                text: "Hypotheses are candidate explanations generated from the bounded source set. They are not identity claims, facts, or Evidence until independently supported."
-                                color: Theme.textSecondary
-                                font.pixelSize: 10
+                                width: parent.width
+                                height: 46
+                                text: "Facts"
+                                color: Theme.textPrimary
+                                font.pixelSize: 21
+                                font.weight: Font.DemiBold
+                                verticalAlignment: Text.AlignVCenter
+                            }
+
+                            Text {
+                                width: parent.width
+                                text: "Source-backed observations selected into the bounded RAG context. They are separated from AI inference and are not automatically independently verified."
+                                color: Theme.textMuted
+                                font.pixelSize: 9
+                                lineHeight: 1.35
                                 wrapMode: Text.Wrap
+                            }
+
+                            Repeater {
+                                model: root.facts
+
+                                delegate: Rectangle {
+                                    id: factCard
+                                    required property var modelData
+                                    width: parent.width
+                                    height: Math.max(92, factText.implicitHeight + 48)
+                                    radius: 10
+                                    color: Theme.surface
+                                    border.width: 1
+                                    border.color: Theme.border
+
+                                    Rectangle {
+                                        x: 12
+                                        y: 12
+                                        width: 40
+                                        height: 23
+                                        radius: 12
+                                        color: Theme.accentSoft
+
+                                        Text {
+                                            anchors.centerIn: parent
+                                            text: String(factCard.modelData.reference || "R?")
+                                            color: Theme.accent
+                                            font.pixelSize: 8
+                                            font.weight: Font.DemiBold
+                                        }
+
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: analysisBridge.openSource(String(factCard.modelData.reference || ""))
+                                        }
+                                    }
+
+                                    Text {
+                                        x: 62
+                                        y: 14
+                                        width: parent.width - 76
+                                        text: String(factCard.modelData.title || "Source observation")
+                                        color: Theme.textPrimary
+                                        font.pixelSize: 10
+                                        font.weight: Font.DemiBold
+                                        elide: Text.ElideRight
+                                    }
+
+                                    Text {
+                                        id: factText
+                                        x: 14
+                                        y: 45
+                                        width: parent.width - 28
+                                        text: String(factCard.modelData.text || "")
+                                        color: Theme.textSecondary
+                                        font.pixelSize: 10
+                                        lineHeight: 1.35
+                                        wrapMode: Text.Wrap
+                                    }
+                                }
+                            }
+
+                            Text {
+                                visible: root.facts.length === 0
+                                width: parent.width
+                                height: 120
+                                text: "No source-backed observations are available for this run."
+                                color: Theme.textMuted
+                                font.pixelSize: 10
+                                horizontalAlignment: Text.AlignHCenter
                                 verticalAlignment: Text.AlignVCenter
                             }
                         }
+                    }
 
-                        Repeater {
-                            model: root.conclusionsFor("hypotheses")
-                            delegate: Panel {
-                                id: hypothesisPanel
-                                required property var modelData
-                                width: hypothesisColumn.width
-                                height: Math.min(500, Math.max(220, hypothesisText.implicitHeight + 125))
-                                title: "Hypothesis Analysis"
-                                subtitle: String(hypothesisPanel.modelData.workflow || "hypothesis_generation")
-                                iconSource: "../../assets/icons/search.svg"
+                    // HYPOTHESES
+                    Flickable {
+                        clip: true
+                        contentWidth: width
+                        contentHeight: hypothesesContent.height
+                        boundsBehavior: Flickable.StopAtBounds
+                        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
-                                Column {
-                                    anchors.fill: parent
-                                    anchors.margins: 16
-                                    spacing: 10
+                        Column {
+                            id: hypothesesContent
+                            width: Math.min(parent.width - 28, 920)
+                            x: Math.max(14, (parent.width - width) / 2)
+                            spacing: 10
+
+                            Text {
+                                width: parent.width
+                                height: 46
+                                text: "Hypotheses"
+                                color: Theme.textPrimary
+                                font.pixelSize: 21
+                                font.weight: Font.DemiBold
+                                verticalAlignment: Text.AlignVCenter
+                            }
+
+                            Text {
+                                width: parent.width
+                                text: "Candidate explanations generated from the bounded source set. These are analytical inferences, not facts or Evidence."
+                                color: Theme.textMuted
+                                font.pixelSize: 9
+                                wrapMode: Text.Wrap
+                            }
+
+                            Repeater {
+                                model: root.conclusionsFor("hypotheses")
+                                delegate: Rectangle {
+                                    id: hypothesisCard
+                                    required property var modelData
+                                    width: parent.width
+                                    height: Math.max(170, hypothesisText.implicitHeight + 75)
+                                    radius: 10
+                                    color: Theme.surface
+                                    border.width: 1
+                                    border.color: Theme.border
+
+                                    Text {
+                                        x: 14
+                                        y: 13
+                                        text: "AI INFERENCE"
+                                        color: Theme.accent
+                                        font.pixelSize: 8
+                                        font.weight: Font.DemiBold
+                                        font.letterSpacing: 0.9
+                                    }
 
                                     Text {
                                         id: hypothesisText
-                                        width: parent.width
-                                        text: String(hypothesisPanel.modelData.text || "")
+                                        x: 14
+                                        y: 39
+                                        width: parent.width - 28
+                                        text: String(hypothesisCard.modelData.text || "")
                                         color: Theme.textPrimary
                                         font.pixelSize: 11
                                         lineHeight: 1.45
@@ -1089,21 +1191,24 @@ Item {
                                     }
 
                                     Flow {
-                                        width: parent.width
+                                        x: 14
+                                        y: hypothesisText.y + hypothesisText.implicitHeight + 12
+                                        width: parent.width - 28
                                         spacing: 6
+
                                         Repeater {
-                                            model: hypothesisPanel.modelData.sourceReferences || []
+                                            model: hypothesisCard.modelData.sourceReferences || []
                                             delegate: Rectangle {
-                                                id: hRef
+                                                id: hypothesisRef
                                                 required property var modelData
-                                                width: hRefText.implicitWidth + 18
-                                                height: 25
+                                                width: hypothesisRefText.implicitWidth + 18
+                                                height: 24
                                                 radius: 12
                                                 color: Theme.accentSoft
                                                 Text {
-                                                    id: hRefText
+                                                    id: hypothesisRefText
                                                     anchors.centerIn: parent
-                                                    text: String(hRef.modelData)
+                                                    text: String(hypothesisRef.modelData)
                                                     color: Theme.accent
                                                     font.pixelSize: 8
                                                     font.weight: Font.DemiBold
@@ -1111,103 +1216,116 @@ Item {
                                                 MouseArea {
                                                     anchors.fill: parent
                                                     cursorShape: Qt.PointingHandCursor
-                                                    onClicked: analysisBridge.openSource(String(hRef.modelData))
+                                                    onClicked: analysisBridge.openSource(String(hypothesisRef.modelData))
                                                 }
                                             }
                                         }
                                     }
                                 }
                             }
-                        }
-
-                        Text {
-                            visible: root.conclusionsFor("hypotheses").length === 0
-                            width: parent.width
-                            height: 90
-                            text: root.run.runConfig && root.run.runConfig.mode === "quick"
-                                ? "Quick mode intentionally does not generate hypotheses."
-                                : "No hypotheses were produced."
-                            color: Theme.textMuted
-                            font.pixelSize: 11
-                            horizontalAlignment: Text.AlignHCenter
-                            verticalAlignment: Text.AlignVCenter
-                        }
-                    }
-                }
-
-                // CONTRADICTIONS
-                Flickable {
-                    clip: true
-                    contentWidth: width
-                    contentHeight: contradictionColumn.height
-                    boundsBehavior: Flickable.StopAtBounds
-                    ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
-
-                    Column {
-                        id: contradictionColumn
-                        width: parent.width
-                        spacing: 10
-
-                        Panel {
-                            width: contradictionColumn.width
-                            height: 150
-                            title: "Contradictions"
-                            subtitle: "Conflict review · inconsistency does not imply deception"
-                            iconSource: "../../assets/icons/chart.svg"
 
                             Text {
-                                anchors.fill: parent
-                                anchors.margins: 16
-                                text: "This layer highlights conflicting or difficult-to-reconcile source material. A contradiction can come from stale data, source error, ambiguity, or genuine conflict."
-                                color: Theme.textSecondary
+                                visible: root.conclusionsFor("hypotheses").length === 0
+                                width: parent.width
+                                height: 120
+                                text: root.run.runConfig && root.run.runConfig.mode === "quick"
+                                    ? "Quick mode stops after the grounded summary."
+                                    : "No hypotheses were produced."
+                                color: Theme.textMuted
                                 font.pixelSize: 10
-                                wrapMode: Text.Wrap
+                                horizontalAlignment: Text.AlignHCenter
                                 verticalAlignment: Text.AlignVCenter
                             }
                         }
+                    }
 
-                        Repeater {
-                            model: root.conclusionsFor("contradictions")
-                            delegate: Panel {
-                                id: contradictionPanel
-                                required property var modelData
-                                width: contradictionColumn.width
-                                height: Math.min(500, Math.max(220, contradictionText.implicitHeight + 125))
-                                title: "Contradiction Analysis"
-                                subtitle: String(contradictionPanel.modelData.workflow || "contradiction_analysis")
-                                iconSource: "../../assets/icons/chart.svg"
+                    // CONTRADICTIONS
+                    Flickable {
+                        clip: true
+                        contentWidth: width
+                        contentHeight: contradictionsContent.height
+                        boundsBehavior: Flickable.StopAtBounds
+                        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
-                                Column {
-                                    anchors.fill: parent
-                                    anchors.margins: 16
-                                    spacing: 10
+                        Column {
+                            id: contradictionsContent
+                            width: Math.min(parent.width - 28, 920)
+                            x: Math.max(14, (parent.width - width) / 2)
+                            spacing: 10
+
+                            Text {
+                                width: parent.width
+                                height: 46
+                                text: "Contradictions"
+                                color: Theme.textPrimary
+                                font.pixelSize: 21
+                                font.weight: Font.DemiBold
+                                verticalAlignment: Text.AlignVCenter
+                            }
+
+                            Text {
+                                width: parent.width
+                                text: "Conflicting or difficult-to-reconcile material. A contradiction can result from stale data, ambiguity or source error and does not itself imply deception."
+                                color: Theme.textMuted
+                                font.pixelSize: 9
+                                wrapMode: Text.Wrap
+                            }
+
+                            Repeater {
+                                model: root.conclusionsFor("contradictions")
+                                delegate: Rectangle {
+                                    id: contradictionCard
+                                    required property var modelData
+                                    width: parent.width
+                                    height: Math.max(170, contradictionText.implicitHeight + 75)
+                                    radius: 10
+                                    color: Theme.surface
+                                    border.width: 1
+                                    border.color: Theme.border
+
+                                    Text {
+                                        x: 14
+                                        y: 13
+                                        text: "CONFLICT REVIEW"
+                                        color: Theme.warning
+                                        font.pixelSize: 8
+                                        font.weight: Font.DemiBold
+                                        font.letterSpacing: 0.9
+                                    }
+
                                     Text {
                                         id: contradictionText
-                                        width: parent.width
-                                        text: String(contradictionPanel.modelData.text || "")
+                                        x: 14
+                                        y: 39
+                                        width: parent.width - 28
+                                        text: String(contradictionCard.modelData.text || "")
                                         color: Theme.textPrimary
                                         font.pixelSize: 11
                                         lineHeight: 1.45
                                         wrapMode: Text.Wrap
                                     }
+
                                     Flow {
-                                        width: parent.width
+                                        x: 14
+                                        y: contradictionText.y + contradictionText.implicitHeight + 12
+                                        width: parent.width - 28
                                         spacing: 6
+
                                         Repeater {
-                                            model: contradictionPanel.modelData.sourceReferences || []
+                                            model: contradictionCard.modelData.sourceReferences || []
                                             delegate: Rectangle {
-                                                id: cRef
+                                                id: contradictionRef
                                                 required property var modelData
-                                                width: cRefText.implicitWidth + 18
-                                                height: 25
+                                                width: contradictionRefText.implicitWidth + 18
+                                                height: 24
                                                 radius: 12
-                                                color: Theme.background
+                                                color: "#2b2415"
                                                 border.width: 1
                                                 border.color: Theme.warning
                                                 Text {
-                                                    id: cRefText
+                                                    id: contradictionRefText
                                                     anchors.centerIn: parent
-                                                    text: String(cRef.modelData)
+                                                    text: String(contradictionRef.modelData)
                                                     color: Theme.warning
                                                     font.pixelSize: 8
                                                     font.weight: Font.DemiBold
@@ -1215,139 +1333,150 @@ Item {
                                                 MouseArea {
                                                     anchors.fill: parent
                                                     cursorShape: Qt.PointingHandCursor
-                                                    onClicked: analysisBridge.openSource(String(cRef.modelData))
+                                                    onClicked: analysisBridge.openSource(String(contradictionRef.modelData))
                                                 }
                                             }
                                         }
                                     }
                                 }
                             }
-                        }
-
-                        Text {
-                            visible: root.conclusionsFor("contradictions").length === 0
-                            width: parent.width
-                            height: 90
-                            text: root.run.runConfig && root.run.runConfig.mode === "quick"
-                                ? "Quick mode intentionally does not run contradiction analysis."
-                                : "No contradiction analysis was produced."
-                            color: Theme.textMuted
-                            font.pixelSize: 11
-                            horizontalAlignment: Text.AlignHCenter
-                            verticalAlignment: Text.AlignVCenter
-                        }
-                    }
-                }
-
-                // NEXT STEPS
-                Flickable {
-                    clip: true
-                    contentWidth: width
-                    contentHeight: nextStepsColumn.height
-                    boundsBehavior: Flickable.StopAtBounds
-                    ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
-
-                    Column {
-                        id: nextStepsColumn
-                        width: parent.width
-                        spacing: 10
-
-                        Panel {
-                            width: nextStepsColumn.width
-                            height: 150
-                            title: "Next Investigation Steps"
-                            subtitle: "Analytical suggestions · no automatic execution"
-                            iconSource: "../../assets/icons/search.svg"
 
                             Text {
-                                anchors.fill: parent
-                                anchors.margins: 16
-                                text: "Suggested next steps are an analyst queue only. OSINTXZ does not automatically execute them, modify Evidence, or assert that they are necessary."
-                                color: Theme.textSecondary
+                                visible: root.conclusionsFor("contradictions").length === 0
+                                width: parent.width
+                                height: 120
+                                text: root.run.runConfig && root.run.runConfig.mode === "quick"
+                                    ? "Quick mode does not run contradiction analysis."
+                                    : "No contradiction analysis was produced."
+                                color: Theme.textMuted
                                 font.pixelSize: 10
-                                wrapMode: Text.Wrap
+                                horizontalAlignment: Text.AlignHCenter
                                 verticalAlignment: Text.AlignVCenter
                             }
                         }
+                    }
 
-                        Repeater {
-                            model: root.conclusionsFor("next_steps")
-                            delegate: Panel {
-                                id: nextPanel
-                                required property var modelData
-                                width: nextStepsColumn.width
-                                height: Math.min(500, Math.max(220, nextText.implicitHeight + 125))
-                                title: "Next Steps"
-                                subtitle: String(nextPanel.modelData.workflow || "next_investigation_steps")
-                                iconSource: "../../assets/icons/search.svg"
+                    // NEXT STEPS
+                    Flickable {
+                        clip: true
+                        contentWidth: width
+                        contentHeight: nextStepsContent.height
+                        boundsBehavior: Flickable.StopAtBounds
+                        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
-                                Column {
-                                    anchors.fill: parent
-                                    anchors.margins: 16
-                                    spacing: 10
+                        Column {
+                            id: nextStepsContent
+                            width: Math.min(parent.width - 28, 920)
+                            x: Math.max(14, (parent.width - width) / 2)
+                            spacing: 10
+
+                            Text {
+                                width: parent.width
+                                height: 46
+                                text: "Next Steps"
+                                color: Theme.textPrimary
+                                font.pixelSize: 21
+                                font.weight: Font.DemiBold
+                                verticalAlignment: Text.AlignVCenter
+                            }
+
+                            Text {
+                                width: parent.width
+                                text: "Suggested investigative directions only. OSINTXZ does not execute these steps automatically."
+                                color: Theme.textMuted
+                                font.pixelSize: 9
+                                wrapMode: Text.Wrap
+                            }
+
+                            Repeater {
+                                model: root.conclusionsFor("next_steps")
+                                delegate: Rectangle {
+                                    id: nextCard
+                                    required property var modelData
+                                    width: parent.width
+                                    height: Math.max(170, nextText.implicitHeight + 75)
+                                    radius: 10
+                                    color: Theme.surface
+                                    border.width: 1
+                                    border.color: Theme.border
+
+                                    Text {
+                                        x: 14
+                                        y: 13
+                                        text: "ANALYST QUEUE"
+                                        color: Theme.success
+                                        font.pixelSize: 8
+                                        font.weight: Font.DemiBold
+                                        font.letterSpacing: 0.9
+                                    }
+
                                     Text {
                                         id: nextText
-                                        width: parent.width
-                                        text: String(nextPanel.modelData.text || "")
+                                        x: 14
+                                        y: 39
+                                        width: parent.width - 28
+                                        text: String(nextCard.modelData.text || "")
                                         color: Theme.textPrimary
                                         font.pixelSize: 11
                                         lineHeight: 1.45
                                         wrapMode: Text.Wrap
                                     }
+
                                     Flow {
-                                        width: parent.width
+                                        x: 14
+                                        y: nextText.y + nextText.implicitHeight + 12
+                                        width: parent.width - 28
                                         spacing: 6
+
                                         Repeater {
-                                            model: nextPanel.modelData.sourceReferences || []
+                                            model: nextCard.modelData.sourceReferences || []
                                             delegate: Rectangle {
-                                                id: nRef
+                                                id: nextRef
                                                 required property var modelData
-                                                width: nRefText.implicitWidth + 18
-                                                height: 25
+                                                width: nextRefText.implicitWidth + 18
+                                                height: 24
                                                 radius: 12
-                                                color: Theme.accentSoft
+                                                color: "#173127"
+                                                border.width: 1
+                                                border.color: Theme.success
                                                 Text {
-                                                    id: nRefText
+                                                    id: nextRefText
                                                     anchors.centerIn: parent
-                                                    text: String(nRef.modelData)
-                                                    color: Theme.accent
+                                                    text: String(nextRef.modelData)
+                                                    color: Theme.success
                                                     font.pixelSize: 8
                                                     font.weight: Font.DemiBold
                                                 }
                                                 MouseArea {
                                                     anchors.fill: parent
                                                     cursorShape: Qt.PointingHandCursor
-                                                    onClicked: analysisBridge.openSource(String(nRef.modelData))
+                                                    onClicked: analysisBridge.openSource(String(nextRef.modelData))
                                                 }
                                             }
                                         }
                                     }
                                 }
                             }
-                        }
 
-                        Text {
-                            visible: root.conclusionsFor("next_steps").length === 0
-                            width: parent.width
-                            height: 90
-                            text: root.run.runConfig && root.run.runConfig.mode !== "deep"
-                                ? "Next Steps are generated only in Deep mode."
-                                : "No next-step analysis was produced."
-                            color: Theme.textMuted
-                            font.pixelSize: 11
-                            horizontalAlignment: Text.AlignHCenter
-                            verticalAlignment: Text.AlignVCenter
+                            Text {
+                                visible: root.conclusionsFor("next_steps").length === 0
+                                width: parent.width
+                                height: 120
+                                text: root.run.runConfig && root.run.runConfig.mode !== "deep"
+                                    ? "Next Steps are generated only in Deep mode."
+                                    : "No next-step analysis was produced."
+                                color: Theme.textMuted
+                                font.pixelSize: 10
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                            }
                         }
                     }
-                }
 
-                // SOURCES
-                Item {
+                    // SOURCES
                     Panel {
-                        anchors.fill: parent
                         title: "RAG Sources"
-                        subtitle: String(root.sources.length)
-                            + " bounded investigation source(s) supplied to the AI context · click R# to navigate"
+                        subtitle: String(root.sources.length) + " bounded source(s) · click R# to open the underlying workspace"
                         iconSource: "../../assets/icons/document_blue.svg"
 
                         ListView {
@@ -1360,8 +1489,8 @@ Item {
                                 id: sourceRow
                                 required property var modelData
                                 width: ListView.view.width
-                                height: Math.max(72, sourceSnippet.implicitHeight + 49)
-                                color: "transparent"
+                                height: 72
+                                color: sourceMouse.containsMouse ? Theme.surfaceHover : "transparent"
 
                                 Rectangle {
                                     anchors.left: parent.left
@@ -1373,13 +1502,11 @@ Item {
 
                                 Rectangle {
                                     x: 14
-                                    y: 12
-                                    width: 44
-                                    height: 26
-                                    radius: 13
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: 42
+                                    height: 24
+                                    radius: 12
                                     color: Theme.accentSoft
-                                    border.width: 1
-                                    border.color: Theme.accent
                                     Text {
                                         anchors.centerIn: parent
                                         text: String(sourceRow.modelData.reference || "R?")
@@ -1387,17 +1514,12 @@ Item {
                                         font.pixelSize: 8
                                         font.weight: Font.DemiBold
                                     }
-                                    MouseArea {
-                                        anchors.fill: parent
-                                        cursorShape: Qt.PointingHandCursor
-                                        onClicked: analysisBridge.openSource(String(sourceRow.modelData.reference || ""))
-                                    }
                                 }
 
                                 Text {
-                                    x: 70
-                                    y: 10
-                                    width: parent.width - 190
+                                    x: 68
+                                    y: 12
+                                    width: parent.width - 205
                                     text: String(sourceRow.modelData.title || "Investigation source")
                                     color: Theme.textPrimary
                                     font.pixelSize: 10
@@ -1406,53 +1528,44 @@ Item {
                                 }
 
                                 Text {
-                                    id: sourceSnippet
-                                    x: 70
-                                    y: 31
-                                    width: parent.width - 190
+                                    x: 68
+                                    y: 35
+                                    width: parent.width - 205
                                     text: String(sourceRow.modelData.snippet || "")
                                     color: Theme.textMuted
                                     font.pixelSize: 8
-                                    maximumLineCount: 2
                                     elide: Text.ElideRight
-                                    wrapMode: Text.Wrap
                                 }
 
                                 Text {
                                     anchors.right: parent.right
-                                    anchors.rightMargin: 16
-                                    y: 11
-                                    width: 105
+                                    anchors.rightMargin: 14
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: 112
                                     horizontalAlignment: Text.AlignRight
                                     text: String(sourceRow.modelData.objectType || "object").toUpperCase()
-                                    color: Theme.textSecondary
-                                    font.pixelSize: 8
-                                    elide: Text.ElideRight
-                                }
-
-                                Text {
-                                    anchors.right: parent.right
-                                    anchors.rightMargin: 16
-                                    y: 33
-                                    width: 105
-                                    horizontalAlignment: Text.AlignRight
-                                    text: "score " + Number(sourceRow.modelData.score || 0).toFixed(3)
+                                        + "\n" + Number(sourceRow.modelData.score || 0).toFixed(3)
                                     color: Theme.textMuted
                                     font.pixelSize: 8
+                                }
+
+                                MouseArea {
+                                    id: sourceMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: analysisBridge.openSource(String(sourceRow.modelData.reference || ""))
                                 }
                             }
 
                             ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
                         }
                     }
-                }
 
-                // PIPELINE
-                Item {
+                    // PIPELINE
                     Panel {
-                        anchors.fill: parent
                         title: "Analysis Pipeline"
-                        subtitle: "Canonical deterministic stages plus bounded RAG / AI generation"
+                        subtitle: "Deterministic investigation stages plus bounded RAG and AI generation"
                         iconSource: "../../assets/icons/graph_blue.svg"
 
                         ListView {
@@ -1465,7 +1578,7 @@ Item {
                                 id: stageRow
                                 required property var modelData
                                 width: ListView.view.width
-                                height: 54
+                                height: 50
                                 color: "transparent"
 
                                 Rectangle {
@@ -1488,7 +1601,7 @@ Item {
                                 Text {
                                     x: 34
                                     anchors.verticalCenter: parent.verticalCenter
-                                    width: parent.width - 250
+                                    width: parent.width - 240
                                     text: String(stageRow.modelData.label || stageRow.modelData.stage || "Stage")
                                     color: Theme.textPrimary
                                     font.pixelSize: 10
@@ -1497,20 +1610,20 @@ Item {
                                 }
 
                                 Text {
-                                    anchors.right: stageStatus.left
-                                    anchors.rightMargin: 18
+                                    anchors.right: statusText.left
+                                    anchors.rightMargin: 16
                                     anchors.verticalCenter: parent.verticalCenter
                                     text: Number(stageRow.modelData.durationSeconds || 0).toFixed(2) + "s"
                                     color: Theme.textMuted
-                                    font.pixelSize: 9
+                                    font.pixelSize: 8
                                 }
 
                                 Text {
-                                    id: stageStatus
+                                    id: statusText
                                     anchors.right: parent.right
                                     anchors.rightMargin: 16
                                     anchors.verticalCenter: parent.verticalCenter
-                                    width: 92
+                                    width: 90
                                     horizontalAlignment: Text.AlignRight
                                     text: String(stageRow.modelData.status || "").toUpperCase()
                                     color: root.statusColor(stageRow.modelData.status)
@@ -1522,14 +1635,11 @@ Item {
                             ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
                         }
                     }
-                }
 
-                // HISTORY
-                Item {
+                    // HISTORY
                     Panel {
-                        anchors.fill: parent
                         title: "Analysis History"
-                        subtitle: "Saved AIAnalysis runs for the selected investigation · never Evidence"
+                        subtitle: "Saved AIAnalysis runs for this investigation · never Evidence"
                         iconSource: "../../assets/icons/clock.svg"
 
                         ListView {
@@ -1542,7 +1652,7 @@ Item {
                                 id: historyRow
                                 required property var modelData
                                 width: ListView.view.width
-                                height: 76
+                                height: 72
                                 color: historyMouse.containsMouse ? Theme.surfaceHover : "transparent"
 
                                 Rectangle {
@@ -1555,8 +1665,8 @@ Item {
 
                                 Text {
                                     x: 14
-                                    y: 10
-                                    width: parent.width - 210
+                                    y: 11
+                                    width: parent.width - 220
                                     text: String(historyRow.modelData.runConfig && historyRow.modelData.runConfig.modeLabel
                                         ? historyRow.modelData.runConfig.modeLabel
                                         : "Analysis")
@@ -1572,23 +1682,9 @@ Item {
 
                                 Text {
                                     x: 14
-                                    y: 33
-                                    width: parent.width - 210
+                                    y: 35
+                                    width: parent.width - 220
                                     text: String(historyRow.modelData.question || "Standard investigation analysis")
-                                        + " · "
-                                        + String(historyRow.modelData.runConfig && historyRow.modelData.runConfig.model
-                                            ? historyRow.modelData.runConfig.model
-                                            : historyRow.modelData.historyModel || "")
-                                    color: Theme.textMuted
-                                    font.pixelSize: 8
-                                    elide: Text.ElideRight
-                                }
-
-                                Text {
-                                    x: 14
-                                    y: 52
-                                    width: parent.width - 210
-                                    text: String(historyRow.modelData.historyCreatedAt || "")
                                     color: Theme.textMuted
                                     font.pixelSize: 8
                                     elide: Text.ElideRight
@@ -1596,31 +1692,18 @@ Item {
 
                                 Text {
                                     anchors.right: parent.right
-                                    anchors.rightMargin: 16
-                                    y: 15
-                                    width: 170
+                                    anchors.rightMargin: 14
+                                    y: 13
+                                    width: 180
                                     horizontalAlignment: Text.AlignRight
                                     text: String(historyRow.modelData.cost && historyRow.modelData.cost.display
                                         ? historyRow.modelData.cost.display
                                         : "—")
                                         + " · "
-                                        + String(historyRow.modelData.usage && historyRow.modelData.usage.requests
-                                            ? historyRow.modelData.usage.requests + " calls"
-                                            : "no usage")
+                                        + String(historyRow.modelData.historyCreatedAt || "")
                                     color: Theme.accent
-                                    font.pixelSize: 9
-                                }
-
-                                Text {
-                                    anchors.right: parent.right
-                                    anchors.rightMargin: 16
-                                    y: 40
-                                    width: 170
-                                    horizontalAlignment: Text.AlignRight
-                                    text: "OPEN"
-                                    color: Theme.textSecondary
                                     font.pixelSize: 8
-                                    font.weight: Font.DemiBold
+                                    elide: Text.ElideLeft
                                 }
 
                                 MouseArea {
@@ -1638,7 +1721,7 @@ Item {
                         Text {
                             anchors.centerIn: parent
                             visible: root.historyRows.length === 0
-                            text: "No Analysis Workspace history for this investigation yet."
+                            text: "No saved analysis runs yet."
                             color: Theme.textMuted
                             font.pixelSize: 10
                         }
