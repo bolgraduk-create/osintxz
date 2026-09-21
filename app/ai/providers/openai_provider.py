@@ -48,6 +48,7 @@ class OpenAIProvider(BaseProvider):
         self.timeout_seconds = max(1.0, float(timeout_seconds or 120.0))
         self.store_responses = bool(store_responses)
         self.client: Any | None = None
+        self._usage_events: list[dict[str, Any]] = []
 
     # ==========================================================
     # Lifecycle
@@ -134,6 +135,10 @@ class OpenAIProvider(BaseProvider):
         request.update(options)
 
         response = self.client.responses.create(**request)
+        self._record_usage(
+            response=response,
+            requested_model=str(request.get("model") or self.model_name),
+        )
         output_text = str(
             getattr(response, "output_text", "")
             or ""
@@ -143,6 +148,108 @@ class OpenAIProvider(BaseProvider):
             raise ValueError("OpenAI Responses API returned empty output.")
 
         return output_text
+
+    # ==========================================================
+    # Usage telemetry
+    # ==========================================================
+
+    def usage_snapshot(self) -> dict[str, Any]:
+        events = [dict(item) for item in self._usage_events]
+        return {
+            "provider": "openai",
+            "requests": len(events),
+            "inputTokens": sum(
+                int(item.get("inputTokens") or 0)
+                for item in events
+            ),
+            "cachedInputTokens": sum(
+                int(item.get("cachedInputTokens") or 0)
+                for item in events
+            ),
+            "outputTokens": sum(
+                int(item.get("outputTokens") or 0)
+                for item in events
+            ),
+            "reasoningTokens": sum(
+                int(item.get("reasoningTokens") or 0)
+                for item in events
+            ),
+            "totalTokens": sum(
+                int(item.get("totalTokens") or 0)
+                for item in events
+            ),
+            "events": events,
+        }
+
+    def _record_usage(
+        self,
+        *,
+        response: Any,
+        requested_model: str,
+    ) -> None:
+        usage = getattr(response, "usage", None)
+        if usage is None:
+            return
+
+        input_tokens = self._usage_int(usage, "input_tokens")
+        output_tokens = self._usage_int(usage, "output_tokens")
+        total_tokens = self._usage_int(
+            usage,
+            "total_tokens",
+            default=input_tokens + output_tokens,
+        )
+
+        input_details = getattr(
+            usage,
+            "input_tokens_details",
+            None,
+        )
+        output_details = getattr(
+            usage,
+            "output_tokens_details",
+            None,
+        )
+
+        cached_input_tokens = self._usage_int(
+            input_details,
+            "cached_tokens",
+        )
+        reasoning_tokens = self._usage_int(
+            output_details,
+            "reasoning_tokens",
+        )
+
+        response_model = str(
+            getattr(response, "model", "")
+            or requested_model
+            or self.model_name
+        ).strip()
+
+        self._usage_events.append(
+            {
+                "model": response_model,
+                "inputTokens": input_tokens,
+                "cachedInputTokens": cached_input_tokens,
+                "outputTokens": output_tokens,
+                "reasoningTokens": reasoning_tokens,
+                "totalTokens": total_tokens,
+            }
+        )
+
+    @staticmethod
+    def _usage_int(
+        value: Any,
+        field: str,
+        *,
+        default: int = 0,
+    ) -> int:
+        if value is None:
+            return max(0, int(default or 0))
+        try:
+            raw = getattr(value, field, default)
+            return max(0, int(raw or 0))
+        except (TypeError, ValueError):
+            return max(0, int(default or 0))
 
     # ==========================================================
     # Information
