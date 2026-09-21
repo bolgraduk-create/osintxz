@@ -87,7 +87,7 @@ class URLScanConnector(BaseConnector):
             return OsintResult(
                 connector=self.name,
                 status=ResultStatus.FAILED,
-                error="URLScan API rate limit reached.",
+                error="URLScan HTTP 429 rate limit reached.",
                 metadata={"http_status": 429},
             )
 
@@ -95,7 +95,10 @@ class URLScanConnector(BaseConnector):
             return OsintResult(
                 connector=self.name,
                 status=ResultStatus.FAILED,
-                error="URLScan API authentication failed.",
+                error=(
+                    "URLScan HTTP "
+                    f"{response.status_code} authentication/access failed."
+                ),
                 metadata={"http_status": response.status_code},
             )
 
