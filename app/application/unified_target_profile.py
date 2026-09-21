@@ -88,8 +88,13 @@ def build_unified_target_profile(snapshot: dict[str, Any]) -> dict[str, Any]:
     ) -> None:
         if group not in groups:
             return
+        normalized_kind = _kind(kind) or "other"
         text = str(value or "").strip()
         safe_url = _safe_http_url(url)
+        if normalized_kind in {"url", "profile_page"} and not safe_url:
+            safe_url = _safe_http_url(text)
+        if normalized_kind in {"url", "profile_page"} and not safe_url:
+            return
         if not text and not safe_url:
             return
         if not text:
@@ -116,8 +121,8 @@ def build_unified_target_profile(snapshot: dict[str, Any]) -> dict[str, Any]:
         groups[group].append(
             {
                 "id": str(entity_id or ""),
-                "kind": _kind(kind) or "other",
-                "label": _kind(kind).replace("_", " ").title() or "Data",
+                "kind": normalized_kind,
+                "label": normalized_kind.replace("_", " ").title() or "Data",
                 "value": text,
                 "url": safe_url,
                 "source": str(source or ""),
