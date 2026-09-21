@@ -159,6 +159,18 @@ def test_worker_uses_scheduler_instead_of_first_n_route_slices():
     assert "pivot_plan.registry_queries[:10]" not in text
 
 
+def test_search_qml_exposes_schedule_decisions_and_budget_misses():
+    qml = Path("app/interface/desktop/qml/pages/Search.qml").read_text(
+        encoding="utf-8"
+    )
+
+    assert '{ key: "schedule", label: "Schedule" }' in qml
+    assert "retrievalScheduleRows()" in qml
+    assert "BUDGET SKIP" in qml
+    assert "missedDueToBudget" in qml
+    assert "row.wave" in qml
+
+
 def test_search_quality_and_exploration_paths_remain_present():
     text = Path(
         "app/interface/desktop/workers/unified_investigation_search_worker.py"
