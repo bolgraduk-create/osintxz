@@ -39,15 +39,15 @@ class AnalysisHistoryService:
         )
         safe_snapshot = self._safe_snapshot(snapshot)
 
-        model_info = dict(safe_sanitized_snapshot.get("modelInfo") or {})
-        run_config = dict(safe_sanitized_snapshot.get("runConfig") or {})
+        model_info = dict(safe_snapshot.get("modelInfo") or {})
+        run_config = dict(safe_snapshot.get("runConfig") or {})
         model_name = str(
             run_config.get("model")
             or model_info.get("model")
             or ""
         ).strip() or None
 
-        summary = str(safe_sanitized_snapshot.get("summary") or "").strip()
+        summary = str(safe_snapshot.get("summary") or "").strip()
         result_text = summary or "Analysis Workspace run"
 
         metadata = {
@@ -184,6 +184,9 @@ class AnalysisHistoryService:
             "provider": provider,
             "usage": dict(sanitized_snapshot.get("usage") or {}),
             "cost": dict(sanitized_snapshot.get("cost") or {}),
+            "redactions": dict(
+                sanitized_snapshot.get("redactions") or {}
+            ),
             "successfulStages": int(
                 sanitized_snapshot.get("successfulStages") or 0
             ),
