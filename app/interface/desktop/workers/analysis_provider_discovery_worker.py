@@ -60,11 +60,11 @@ class AnalysisProviderDiscoveryWorker(QObject):
                 if name and name not in discovered:
                     discovered.append(name)
 
-            if configured_model and configured_model not in discovered:
-                discovered.insert(0, configured_model)
-
             payload["ollamaOnline"] = True
-            payload["ollamaModels"] = discovered or models
+            # When Ollama is reachable, only models reported by /api/tags are
+            # selectable. A configured-but-not-installed model must not be
+            # presented as if it were available.
+            payload["ollamaModels"] = discovered
         except (URLError, TimeoutError, OSError, ValueError, json.JSONDecodeError) as exc:
             payload["ollamaError"] = str(exc)
 
