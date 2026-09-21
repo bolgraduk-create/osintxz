@@ -13,3 +13,13 @@ AUTO_CREDENTIALED_THREAT_CONNECTORS: dict[str, str] = {
 AUTO_CREDENTIALED_THREAT_MODULES = frozenset(
     AUTO_CREDENTIALED_THREAT_CONNECTORS
 )
+
+
+# Conservative automatic-request caps for one traversal/search run. These are
+# application safeguards, not claims about upstream provider account quotas.
+AUTO_CREDENTIALED_THREAT_RUN_LIMITS: dict[str, int] = {
+    "abuseipdb_connector": 4,
+    "alienvault_otx_connector": 4,
+    "urlscan_connector": 3,
+    "virustotal_connector": 2,
+}
