@@ -21,7 +21,7 @@ from app.ai.rag.rag_engine import RAGEngine
 from app.core.config import Settings, settings
 
 
-DEFAULT_AI_PROVIDER = "openai"
+DEFAULT_AI_PROVIDER = "ollama"
 DEFAULT_OLLAMA_MODEL = "qwen3:8b"
 DEFAULT_OPENAI_MODEL = "gpt-5.6"
 
@@ -50,7 +50,10 @@ def resolve_ai_configuration(
         ).strip()
     else:
         model_name = str(
-            getattr(config, "default_model", None) or DEFAULT_OLLAMA_MODEL
+            getattr(config, "ollama_model", None)
+            or getattr(config, "ai_model", None)
+            or getattr(config, "default_model", None)
+            or DEFAULT_OLLAMA_MODEL
         ).strip()
 
     if not model_name:
