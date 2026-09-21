@@ -622,7 +622,7 @@ def _route_priority_key(
     *,
     feedback: AdaptiveRetrievalFeedback,
     lane: str,
-) -> tuple[int, float, float, int, str, str, str]:
+) -> tuple[int, int, float, float, str, str, str]:
     seed, route = item
     source = _route_source(route)
     configured = getattr(route, "configured", None)
@@ -635,9 +635,9 @@ def _route_priority_key(
     )
     return (
         _seed_priority_key(seed)[0],
+        configured_priority,
         health_penalty,
         estimate,
-        configured_priority,
         seed.kind.value,
         seed.value.casefold(),
         source.casefold(),
