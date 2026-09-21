@@ -181,9 +181,9 @@ class Settings(BaseSettings):
     # OSINT API Keys
     # ======================================================
 
-    abuseipdb_api_key: str | None = None
+    abuseipdb_api_key: SecretStr | None = None
 
-    otx_api_key: str | None = None
+    otx_api_key: SecretStr | None = None
 
     greynoise_api_key: str | None = None
 
@@ -222,9 +222,9 @@ class Settings(BaseSettings):
     uk_charity_commission_api_key: str | None = None
     poland_regon_api_key: str | None = None
 
-    urlscan_api_key: str | None = None
+    urlscan_api_key: SecretStr | None = None
 
-    virustotal_api_key: str | None = None
+    virustotal_api_key: SecretStr | None = None
 
     # Brave Search credentials are optional and remain disabled by default.
     brave_search_api_key: SecretStr | None = None
