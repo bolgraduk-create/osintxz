@@ -219,6 +219,13 @@ class RetrievalScheduleDecision:
     seed_value: str
     source: str = ""
     capability: str = ""
+    estimated_seconds: float = 0.0
+    health_state: str = "unknown"
+    health_penalty: float = 0.0
+    timeout_risk: float = 0.0
+    adaptive_score: float = 0.0
+    deprioritized: bool = False
+    time_budget_skip: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -230,6 +237,13 @@ class RetrievalScheduleDecision:
             "seedValue": self.seed_value,
             "source": self.source,
             "capability": self.capability,
+            "estimatedSeconds": round(self.estimated_seconds, 2),
+            "healthState": self.health_state,
+            "healthPenalty": round(self.health_penalty, 2),
+            "timeoutRisk": round(self.timeout_risk, 3),
+            "adaptiveScore": round(self.adaptive_score, 2),
+            "deprioritized": self.deprioritized,
+            "timeBudgetSkip": self.time_budget_skip,
         }
 
 
@@ -243,6 +257,10 @@ class RetrievalScheduleSummary:
     groups: int
     waves: int
     decisions: tuple[RetrievalScheduleDecision, ...] = ()
+    time_budget_seconds: float | None = None
+    estimated_selected_seconds: float = 0.0
+    skipped_due_to_time_budget: int = 0
+    deprioritized: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -253,6 +271,16 @@ class RetrievalScheduleSummary:
             "skippedDueToBudget": self.skipped_due_to_budget,
             "groups": self.groups,
             "waves": self.waves,
+            "timeBudgetSeconds": (
+                round(self.time_budget_seconds, 2)
+                if self.time_budget_seconds is not None
+                else None
+            ),
+            "estimatedSelectedSeconds": round(
+                self.estimated_selected_seconds, 2
+            ),
+            "skippedDueToTimeBudget": self.skipped_due_to_time_budget,
+            "deprioritized": self.deprioritized,
             "decisions": [item.to_dict() for item in self.decisions],
         }
 
@@ -273,6 +301,18 @@ class RetrievalScheduleBook:
         return sum(item.selected for item in self.entries)
 
     @property
+    def skipped_due_to_time_budget(self) -> int:
+        return sum(item.skipped_due_to_time_budget for item in self.entries)
+
+    @property
+    def deprioritized(self) -> int:
+        return sum(item.deprioritized for item in self.entries)
+
+    @property
+    def estimated_selected_seconds(self) -> float:
+        return sum(item.estimated_selected_seconds for item in self.entries)
+
+    @property
     def candidates(self) -> int:
         return sum(item.candidates for item in self.entries)
 
@@ -283,6 +323,11 @@ class RetrievalScheduleBook:
                 "candidates": self.candidates,
                 "selected": self.selected,
                 "missedDueToBudget": self.missed_due_to_budget,
+                "skippedDueToTimeBudget": self.skipped_due_to_time_budget,
+                "deprioritized": self.deprioritized,
+                "estimatedSelectedSeconds": round(
+                    self.estimated_selected_seconds, 2
+                ),
             },
             "lanes": [item.to_dict() for item in self.entries],
         }
