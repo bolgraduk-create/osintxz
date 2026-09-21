@@ -127,7 +127,7 @@ def test_create_ai_stack_injects_secret_only_into_runtime_manager_config():
 
 def test_openai_sdk_is_declared_as_runtime_dependency():
     pyproject = Path("pyproject.toml").read_text(encoding="utf-8")
-    assert '"openai>=2.0.0,<3.0.0"' in pyproject
+    assert '"openai>=3.16.0,<4.0.0"' in pyproject
 
 
 def test_ai_factory_does_not_read_environment_directly():
