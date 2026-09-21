@@ -330,13 +330,15 @@ class AnalysisBridge(QObject):
                 selected_model,
                 fallback=profile.recommended_model,
             )
-        elif not selected_model:
-            selected_model = str(provider.get("model") or "")
-
-        selected_reasoning = normalize_reasoning_effort(
-            reasoning_effort,
-            fallback=profile.recommended_reasoning,
-        )
+            selected_reasoning = normalize_reasoning_effort(
+                reasoning_effort,
+                fallback=profile.recommended_reasoning,
+            )
+        else:
+            # Local providers own their model selection. Ignore stale GPT UI
+            # state so run metadata never claims an OpenAI model was used.
+            selected_model = str(provider.get("model") or "").strip()
+            selected_reasoning = ""
 
         normalized_scope = str(scope_type or "case").strip().casefold()
         normalized_focus_id = str(focus_entity_id or "").strip()
