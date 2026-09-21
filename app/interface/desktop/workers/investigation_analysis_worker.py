@@ -17,6 +17,10 @@ from app.application.investigation_analysis_contracts import (
     InvestigationAnalysisProgressEvent,
     InvestigationAnalysisResult,
 )
+from app.security.sensitive_content import (
+    sanitize_sensitive_text,
+    sanitized_text,
+)
 
 
 class InvestigationAnalysisWorker(QObject):
@@ -192,7 +196,7 @@ class InvestigationAnalysisWorker(QObject):
                 warnings = list(snapshot.get("warnings") or [])
                 warnings.append(
                     "Analysis completed, but history could not be saved: "
-                    + str(history_exc)
+                    + sanitized_text(history_exc)
                 )
                 snapshot["warnings"] = warnings
             finally:
@@ -219,7 +223,7 @@ class InvestigationAnalysisWorker(QObject):
 
             self.failed.emit(
                 {
-                    "error": str(exc),
+                    "error": sanitized_text(exc),
                     "duration": perf_counter() - started,
                     "caseId": self.case_id,
                 }
@@ -269,6 +273,14 @@ class InvestigationAnalysisWorker(QObject):
         usage: dict[str, Any] | None = None,
         cost: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        redaction_count = 0
+
+        def safe_text(value: Any) -> str:
+            nonlocal redaction_count
+            sanitized = sanitize_sensitive_text(value)
+            redaction_count += sanitized.redaction_count
+            return sanitized.text
+
         stages = [
             {
                 "stage": item.stage.value,
@@ -278,11 +290,14 @@ class InvestigationAnalysisWorker(QObject):
                     float(item.duration_seconds or 0.0),
                     3,
                 ),
-                "warnings": list(item.warnings),
+                "warnings": [
+                    safe_text(value)
+                    for value in item.warnings
+                ],
                 "error": (
                     {
                         "type": item.error.error_type,
-                        "message": item.error.message,
+                        "message": safe_text(item.error.message),
                     }
                     if item.error is not None
                     else {}
@@ -318,7 +333,7 @@ class InvestigationAnalysisWorker(QObject):
             rag = unified.rag
             rag_summary = rag.summary
             if rag_summary is not None:
-                summary_text = str(rag_summary.summary or "")
+                summary_text = safe_text(rag_summary.summary)
                 summary_refs = list(
                     rag_summary.source_references or ()
                 )
@@ -338,7 +353,7 @@ class InvestigationAnalysisWorker(QObject):
                         {
                             "kind": kind,
                             "label": cls._conclusion_label(kind),
-                            "text": str(item.text or ""),
+                            "text": safe_text(item.text),
                             "sourceReferences": list(
                                 item.source_references or ()
                             ),
@@ -362,16 +377,15 @@ class InvestigationAnalysisWorker(QObject):
             if rag_context is not None:
                 for source in rag_context.included_sources:
                     source_text = " ".join(
-                        str(
+                        safe_text(
                             getattr(source, "text", "")
-                            or ""
                         ).split()
                     )
                     source_row = {
                         "reference": str(
                             source.reference_id or ""
                         ),
-                        "title": str(source.title or ""),
+                        "title": safe_text(source.title),
                         "objectType": str(
                             source.object_type or ""
                         ),
@@ -460,7 +474,7 @@ class InvestigationAnalysisWorker(QObject):
         return {
             "caseId": str(result.case_id),
             "status": result.status.value,
-            "question": question,
+            "question": safe_text(question),
             "scope": dict(
                 scope
                 or {
@@ -474,7 +488,10 @@ class InvestigationAnalysisWorker(QObject):
                 float(result.duration_seconds or 0.0),
                 3,
             ),
-            "warnings": list(result.warnings),
+            "warnings": [
+                safe_text(value)
+                for value in result.warnings
+            ],
             "stages": stages,
             "successfulStages": result.successful_stage_count(),
             "failedStages": result.failed_stage_count(),
@@ -494,6 +511,16 @@ class InvestigationAnalysisWorker(QObject):
             "provider": provider_metadata,
             "usage": dict(usage or {}),
             "cost": dict(cost or {}),
+            "redactions": {
+                "active": redaction_count > 0,
+                "count": redaction_count,
+                "notice": (
+                    "Credential-like or secret material was redacted before "
+                    "Analysis display/history."
+                    if redaction_count > 0
+                    else ""
+                ),
+            },
             "notice": (
                 "AI-generated analysis is analytical assistance, not Evidence "
                 "and not an independently verified fact. Facts shown here are "
