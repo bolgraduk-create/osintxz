@@ -94,7 +94,9 @@ class AnalysisHistoryService:
             if payload.get("kind") != HISTORY_MARKER:
                 continue
 
-            snapshot = payload.get("snapshot")
+            snapshot = sanitize_sensitive_value(
+                payload.get("snapshot")
+            )
             if not isinstance(snapshot, dict):
                 continue
 
