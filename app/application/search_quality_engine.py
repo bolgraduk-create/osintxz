@@ -13,6 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import re
 from typing import Any, Iterable
+from urllib.parse import urlsplit
 
 from app.application.adaptive_relevance import classify_suppressed_row
 from app.application.contextual_relevance import (
@@ -444,6 +445,18 @@ def assess_search_quality_row(
         corroboration=corroboration,
     )
 
+    derived_url_requires_review = _derived_url_requires_review(
+        row=row,
+        seed_kind=seed_kind,
+        corroboration=corroboration,
+    )
+    if derived_url_requires_review:
+        _append_unique(
+            negative,
+            "Derived URL is useful for exploration but is not persistence-grade from one source",
+        )
+        persistence_score = min(persistence_score, 79.0)
+
     account_requires_review = bool(
         family in _ACCOUNT_TYPES
         and verification_status in {
@@ -465,6 +478,7 @@ def assess_search_quality_row(
         not hard_reject
         and not candidate_only
         and not account_requires_review
+        and not derived_url_requires_review
         and persistence_score >= 82.0
     )
 
@@ -556,6 +570,60 @@ def _persistence_score(
         score -= 8.0
 
     return _clamp(score)
+
+
+def _derived_url_requires_review(
+    *,
+    row: dict[str, Any],
+    seed_kind: str,
+    corroboration: int,
+) -> bool:
+    """Keep one-source URL descendants exploratory until corroborated.
+
+    A URL discovered under a searched profile/path can be an excellent pivot
+    without being strong enough to assert as a persisted fact. Exact seed URLs
+    remain persistence-eligible. Two independent observations may promote a
+    descendant later through normal persistence scoring.
+    """
+    if seed_kind != "url" or corroboration > 1:
+        return False
+
+    seed = _canonical_url(str(row.get("seed") or ""))
+    found = _canonical_url(str(row.get("url") or row.get("title") or ""))
+    if not seed or not found or found == seed:
+        return False
+
+    try:
+        seed_parts = urlsplit(seed)
+        found_parts = urlsplit(found)
+    except ValueError:
+        return False
+
+    if seed_parts.hostname != found_parts.hostname:
+        return False
+
+    seed_path = (seed_parts.path or "/").rstrip("/") or "/"
+    found_path = (found_parts.path or "/").rstrip("/") or "/"
+    if seed_path == "/":
+        return found_path != "/"
+    return found_path.startswith(seed_path + "/")
+
+
+def _canonical_url(value: str) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    try:
+        parsed = urlsplit(raw)
+    except ValueError:
+        return ""
+    if parsed.scheme.casefold() not in {"http", "https"} or not parsed.hostname:
+        return ""
+    host = parsed.hostname.casefold()
+    if host.startswith("www."):
+        host = host[4:]
+    path = re.sub(r"/{2,}", "/", parsed.path or "/").rstrip("/") or "/"
+    return f"{parsed.scheme.casefold()}://{host}{path}"
 
 
 def _identity_component(row: dict[str, Any]) -> tuple[float, bool]:
