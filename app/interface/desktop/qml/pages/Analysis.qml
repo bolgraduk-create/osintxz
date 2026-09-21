@@ -297,6 +297,7 @@ Item {
 
             // Analysis navigation rail.
             Rectangle {
+                objectName: "analysisLayerRail"
                 Layout.preferredWidth: 188
                 Layout.fillHeight: true
                 radius: 10
@@ -450,6 +451,7 @@ Item {
 
                 // Chat-like analysis composer.
                 Rectangle {
+                    objectName: "analysisComposer"
                     Layout.fillWidth: true
                     Layout.preferredHeight: 206
                     radius: 12
@@ -464,6 +466,7 @@ Item {
 
                         Row {
                             id: modeRow
+                            objectName: "analysisModeRow"
                             width: parent.width
                             height: 38
                             spacing: 7
@@ -541,6 +544,7 @@ Item {
                         }
 
                         Row {
+                            objectName: "analysisControlRow"
                             width: parent.width
                             height: 48
                             spacing: 8
