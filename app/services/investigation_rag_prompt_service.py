@@ -62,6 +62,9 @@ from uuid import UUID
 from app.ai.prompts.prompt_manager import (
     PromptManager,
 )
+from app.security.sensitive_content import (
+    sanitize_sensitive_text,
+)
 
 from app.services.investigation_rag_context_builder import (
     InvestigationRAGContext,
@@ -229,6 +232,9 @@ class InvestigationRAGPromptService:
         question = self._normalize_question(
             context.question
         )
+        safe_question = sanitize_sensitive_text(
+            question
+        )
 
         source_references = tuple(
             source.reference_id
@@ -240,6 +246,10 @@ class InvestigationRAGPromptService:
         context_text = (
             context.text.strip()
         )
+        safe_context = sanitize_sensitive_text(
+            context_text
+        )
+        context_text = safe_context.text
 
         if not context_text:
 
@@ -254,7 +264,7 @@ class InvestigationRAGPromptService:
             .render_prompt(
                 RAG_INVESTIGATION_PROMPT_NAME,
                 {
-                    "question": question,
+                    "question": safe_question.text,
                     "context": context_text,
                 },
             )
@@ -347,6 +357,14 @@ class InvestigationRAGPromptService:
                 ),
                 "has_context": (
                     context.has_context
+                ),
+                "sensitive_redaction_count": (
+                    safe_question.redaction_count
+                    + safe_context.redaction_count
+                ),
+                "sensitive_material_redacted": bool(
+                    safe_question.redacted
+                    or safe_context.redacted
                 ),
             },
         )
