@@ -238,6 +238,23 @@ class Settings(BaseSettings):
     redis_port: int
 
     # ======================================================
+    # AI Analysis Provider
+    # ======================================================
+
+    # Generation/reasoning provider used by the investigation analysis stack.
+    # Embeddings remain independently configured and may continue to use
+    # Ollama even when AI analysis uses OpenAI.
+    ai_provider: str = "openai"
+
+    # OpenAI API credentials/configuration. The secret is read from the local
+    # environment/.env only and must never be exposed through desktop payloads.
+    openai_api_key: SecretStr | None = None
+    openai_model: str = "gpt-5.6"
+    openai_reasoning_effort: str = "medium"
+    openai_timeout_seconds: float = 120.0
+    openai_store_responses: bool = False
+
+    # ======================================================
     # Ollama
     # ======================================================
 
