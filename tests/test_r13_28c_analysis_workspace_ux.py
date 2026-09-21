@@ -15,6 +15,11 @@ from app.application.analysis_run_profile import (
 from app.interface.desktop.workers.investigation_analysis_worker import (
     InvestigationAnalysisWorker,
 )
+from app.security.sensitive_content import (
+    REDACTED,
+    sanitize_sensitive_text,
+    sanitize_sensitive_value,
+)
 
 
 def test_analysis_modes_have_real_ai_workflow_counts():
@@ -374,3 +379,130 @@ def test_conclusion_workflows_receive_the_same_analyst_question():
     assert "question=normalized_question" in source
     assert '"ANALYST QUESTION / FOCUS:\\n"' in source
     assert "question: str = \"\"" in source
+
+
+
+def test_sensitive_analysis_sanitizer_preserves_osint_identifiers_but_redacts_secrets():
+    ordinary = (
+        "email=user@example.com domain=example.com "
+        "sha256=0123456789abcdef0123456789abcdef"
+    )
+    ordinary_result = sanitize_sensitive_text(ordinary)
+    assert ordinary_result.text == ordinary
+    assert ordinary_result.redacted is False
+
+    sensitive = (
+        "password=SuperSecret123 "
+        "Authorization: Bearer abcdefghijklmnopqrstuvwxyz "
+        "user@example.com:LeakPassword42 "
+        "example.com:alice:StealerSecret99 "
+        "sk-abcdefghijklmnopqrstuvwx"
+    )
+    result = sanitize_sensitive_text(sensitive)
+
+    assert result.redacted is True
+    assert result.redaction_count >= 5
+    assert "SuperSecret123" not in result.text
+    assert "abcdefghijklmnopqrstuvwxyz" not in result.text
+    assert "LeakPassword42" not in result.text
+    assert "StealerSecret99" not in result.text
+    assert "sk-abcdefghijklmnopqrstuvwx" not in result.text
+    assert REDACTED in result.text
+    assert "user@example.com" in result.text
+    assert "example.com:alice:" in result.text
+
+
+def test_sensitive_analysis_sanitizer_redacts_private_keys_and_sensitive_mapping_keys():
+    private_key = (
+        "-----BEGIN PRIVATE KEY-----\n"
+        "VERYSECRETKEYMATERIAL\n"
+        "-----END PRIVATE KEY-----"
+    )
+    result = sanitize_sensitive_text(private_key)
+    assert "VERYSECRETKEYMATERIAL" not in result.text
+    assert "PRIVATE KEY REDACTED" in result.text
+
+    mapping = sanitize_sensitive_value(
+        {
+            "api_key": "plain-value-that-has-no-prefix",
+            "nested": {
+                "access_token": "another-plain-value",
+                "email": "user@example.com",
+            },
+            "inputTokens": 123,
+        }
+    )
+    assert mapping["api_key"] == REDACTED
+    assert mapping["nested"]["access_token"] == REDACTED
+    assert mapping["nested"]["email"] == "user@example.com"
+    assert mapping["inputTokens"] == 123
+
+
+def test_worker_redacts_sensitive_material_before_facts_sources_and_history_snapshot():
+    result = _analysis_result_with_source_text()
+    result.unified_context.rag.summary.summary = (
+        "Observed password=ModelEchoSecret [R1]"
+    )
+    source = result.unified_context.rag.context.included_sources[0]
+    source.title = "Authorization: Bearer abcdefghijklmnopqrstuvwxyz"
+    source.text = (
+        "user@example.com:LeakPassword42 "
+        "example.com:alice:StealerSecret99"
+    )
+
+    manager = SimpleNamespace(
+        metadata=lambda: {"type": "openai"},
+        info=lambda: {"model": "gpt-5.6"},
+    )
+    snapshot = InvestigationAnalysisWorker._snapshot_result(
+        result=result,
+        container=SimpleNamespace(ai_manager=manager),
+        question="password=QuestionSecret",
+    )
+
+    serialized = repr(snapshot)
+    for secret in (
+        "ModelEchoSecret",
+        "abcdefghijklmnopqrstuvwxyz",
+        "LeakPassword42",
+        "StealerSecret99",
+        "QuestionSecret",
+    ):
+        assert secret not in serialized
+
+    assert snapshot["redactions"]["active"] is True
+    assert snapshot["redactions"]["count"] >= 5
+    assert REDACTED in snapshot["summary"]
+    assert REDACTED in snapshot["facts"][0]["text"]
+    assert REDACTED in snapshot["sources"][0]["title"]
+
+
+def test_ai_prompt_layers_sanitize_context_before_remote_generation():
+    summary_service = Path(
+        "app/services/investigation_rag_prompt_service.py"
+    ).read_text(encoding="utf-8")
+    conclusions_service = Path(
+        "app/services/investigation_rag_conclusions_service.py"
+    ).read_text(encoding="utf-8")
+    history_service = Path(
+        "app/application/analysis_history_service.py"
+    ).read_text(encoding="utf-8")
+
+    assert "sanitize_sensitive_text(" in summary_service
+    assert '"question": safe_question.text' in summary_service
+    assert "safe_context.text" in summary_service
+
+    assert "sanitized_text(" in conclusions_service
+    assert 'f"{safe_context}"' in conclusions_service
+
+    assert "sanitize_sensitive_value(" in history_service
+    assert "safe_sanitized_snapshot" not in history_service
+
+
+def test_analysis_ui_surfaces_when_secret_material_was_redacted():
+    qml = Path(
+        "app/interface/desktop/qml/pages/Analysis.qml"
+    ).read_text(encoding="utf-8")
+
+    assert "root.run.redactions" in qml
+    assert "credential/secret fragment(s) were redacted" in qml
