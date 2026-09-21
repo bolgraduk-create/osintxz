@@ -70,6 +70,8 @@ class DesktopBridge(QObject):
         self._current_entity_snapshot: dict[str, Any] = {}
         self._current_report_id = ""
         self._current_report_snapshot: dict[str, Any] = {}
+        self._workspace_focus_page = ""
+        self._workspace_focus_id = ""
         self._avatar_cache: dict[str, str] = {}
         self._graph_focus_entity_id = ""
         self._desktop_settings = QSettings("OSINTXZ", "OSINTXZ")
@@ -160,6 +162,13 @@ class DesktopBridge(QObject):
     @Property("QVariantMap", notify=changed)
     def graphWorkspace(self) -> dict[str, Any]:
         return self._graph_workspace_payload()
+
+    @Property("QVariantMap", notify=changed)
+    def workspaceFocus(self) -> dict[str, str]:
+        return {
+            "page": self._workspace_focus_page,
+            "id": self._workspace_focus_id,
+        }
 
     @Property("QVariantMap", notify=changed)
     def osintRun(self) -> dict[str, Any]:
@@ -427,6 +436,8 @@ class DesktopBridge(QObject):
             self._current_entity_snapshot = {}
             self._current_report_id = ""
             self._current_report_snapshot = {}
+            self._workspace_focus_page = ""
+            self._workspace_focus_id = ""
             self._graph_focus_entity_id = ""
             self._dashboard_focus_entity_id = ""
             self._dashboard_path_start_id = ""
@@ -796,6 +807,75 @@ class DesktopBridge(QObject):
             self._set_message("The requested page is unavailable.")
             return False
         self.navigationRequested.emit(normalized)
+        return True
+
+    @Slot(str, str, result=bool)
+    def focusWorkspaceRecord(self, page: str, record_id: str) -> bool:
+        """Open a data workspace and focus one authoritative stored record."""
+
+        page_key = str(page or "").strip().lower()
+        normalized_id = str(record_id or "").strip()
+        if page_key not in {"evidence", "timeline"} or not normalized_id:
+            return False
+
+        service_name = {
+            "evidence": "evidence_service",
+            "timeline": "timeline_service",
+        }[page_key]
+        getter_name = {
+            "evidence": "get_evidence",
+            "timeline": "get_event",
+        }[page_key]
+
+        service = getattr(self._container, service_name, None)
+        getter = getattr(service, getter_name, None) if service is not None else None
+        if not callable(getter):
+            self._set_message("The selected source workspace is unavailable.")
+            return False
+
+        try:
+            row = getter(UUID(normalized_id))
+        except Exception as exc:
+            LOGGER.debug("Unable to resolve focused %s record", page_key, exc_info=True)
+            self._set_message(f"Unable to open selected {page_key} source: {exc}")
+            return False
+
+        if row is None:
+            self._set_message("The selected source record is unavailable.")
+            return False
+
+        row_case_id = str(getattr(row, "case_id", "") or "")
+        if self._current_case_id and row_case_id and row_case_id != self._current_case_id:
+            self._set_message("The selected source is outside the current investigation.")
+            return False
+
+        if page_key not in self._page_records:
+            self._load_page(page_key, 0, notify=False)
+
+        mapped = self._workspace_record(
+            page_key,
+            self._model_dict(row),
+        )
+        current = list(self._page_records.get(page_key, []))
+        if not any(
+            str(item.get("id") or "") == normalized_id
+            for item in current
+        ):
+            current.insert(0, mapped)
+            self._page_records[page_key] = current
+
+        self._workspace_focus_page = page_key
+        self._workspace_focus_id = normalized_id
+        self._set_message(
+            "Focused "
+            + page_key.replace("_", " ")
+            + " source "
+            + normalized_id[:8]
+            + "."
+        )
+        self._generation += 1
+        self.changed.emit()
+        self.navigationRequested.emit(page_key)
         return True
 
     @Slot(str, result=bool)
