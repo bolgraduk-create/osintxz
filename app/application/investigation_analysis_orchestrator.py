@@ -1179,8 +1179,12 @@ class InvestigationAnalysisOrchestrator:
         """Execute one focused, case-scoped RAG package and selected AI work."""
 
         metadata = dict(request.metadata or {})
+        # Preserve the pre-R13.28c canonical behavior for non-UI callers:
+        # no explicit mode means the full legacy conclusion set (Deep).
         profile = normalize_analysis_mode(
             metadata.get("analysis_mode")
+            if metadata.get("analysis_mode") is not None
+            else "deep"
         )
 
         user_question = str(
