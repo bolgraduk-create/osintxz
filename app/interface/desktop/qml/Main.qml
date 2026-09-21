@@ -33,6 +33,7 @@ ApplicationWindow {
         case "person": return "pages/Person.qml"
         case "graph": return "pages/Graph.qml"
         case "timeline": return "pages/Timeline.qml"
+        case "analysis": return "pages/Analysis.qml"
         case "osint": return "pages/Osint.qml"
         case "sources": return "pages/Sources.qml"
         case "evidence": return "pages/Evidence.qml"
