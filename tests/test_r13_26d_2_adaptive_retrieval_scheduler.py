@@ -220,6 +220,19 @@ def test_pivot_route_scheduler_receives_runtime_feedback_and_time_budget():
     assert "time_budget_seconds=(" in source
 
 
+def test_schedule_ui_exposes_adaptive_time_and_health_fields():
+    qml = Path("app/interface/desktop/qml/pages/Search.qml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "TIME BUDGET SKIP" in qml
+    assert "SELECTED · DEPRIORITIZED" in qml
+    assert "row.estimatedSeconds" in qml
+    assert "row.timeoutRisk" in qml
+    assert "row.healthState" in qml
+    assert "skippedDueToTimeBudget" in qml
+
+
 def test_fair_scheduler_regression_contract_stays_present():
     source = Path(
         "app/application/search_retrieval_scheduler.py"
