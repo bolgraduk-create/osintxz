@@ -114,7 +114,9 @@ Item {
         if (activeTab === "accounts") return String(row.accountVerificationStatus || "reported").replace(/_/g, " ").toUpperCase()
         if (activeTab === "quality") return (row.qualityDisagreement ? "DISAGREEMENT · " : "") + String(row.qualityLabel || row.qualityTier || "QUALITY").toUpperCase()
         if (activeTab === "exploration") return Boolean(row.executed) ? "EXECUTED · EPHEMERAL" : "EPHEMERAL"
-        if (activeTab === "schedule") return Boolean(row.selected) ? "SELECTED" : "BUDGET SKIP"
+        if (activeTab === "schedule") return Boolean(row.selected)
+            ? (Boolean(row.deprioritized) ? "SELECTED · DEPRIORITIZED" : "SELECTED")
+            : (Boolean(row.timeBudgetSkip) ? "TIME BUDGET SKIP" : "BUDGET SKIP")
         if (activeTab === "mentions") return String(row.mentionLabel || "CORROBORATING MENTION").toUpperCase()
         if (activeTab === "providers") return String(row.healthLabel || row.status || "provider").replace(/_/g, " ").toUpperCase()
         if (activeTab === "pivots") return Boolean(row.queued) ? "QUEUED" : "REVIEW"
@@ -154,9 +156,15 @@ Item {
                 + (row.parentSeedValue ? " · from " + String(row.parentSeedValue) : "")
         }
         if (activeTab === "schedule") {
+            const estimate = Number(row.estimatedSeconds || 0)
+            const risk = Number(row.timeoutRisk || 0)
+            const health = String(row.healthState || "unknown")
             return "wave " + Number(row.wave || 0)
                 + (row.source ? " · " + String(row.source) : "")
                 + (row.capability ? " · " + String(row.capability) : "")
+                + " · est " + estimate.toFixed(1) + "s"
+                + " · health " + health.replace(/_/g, " ")
+                + (risk > 0 ? " · timeout risk " + Math.round(risk * 100) + "%" : "")
         }
         if (activeTab === "mentions") {
             const mentionScore = Number(row.mentionScore || 0).toFixed(0)
@@ -602,7 +610,7 @@ Item {
                             text: root.busy
                                 ? String(root.runData.progressText || "Searching…")
                                 : root.runData.hasRun
-                                    ? (String(root.summary.results || 0) + " relevant · " + String(root.summary.possible || 0) + " possible · " + String(root.summary.rawResults || root.summary.results || 0) + " raw · " + String(root.summary.lowValueSuppressed || 0) + " suppressed · " + String(root.summary.missedDueToBudget || 0) + " budget-skipped")
+                                    ? (String(root.summary.results || 0) + " relevant · " + String(root.summary.possible || 0) + " possible · " + String(root.summary.rawResults || root.summary.results || 0) + " raw · " + String(root.summary.lowValueSuppressed || 0) + " suppressed · " + String(root.summary.missedDueToBudget || 0) + " budget-skipped" + (Number(root.summary.skippedDueToTimeBudget || 0) > 0 ? " · " + String(root.summary.skippedDueToTimeBudget) + " time-skipped" : ""))
                                     : "Fill any known fields and run all compatible source layers."
                             color: root.busy ? Theme.accent : Theme.textSecondary
                             font.pixelSize: 10
