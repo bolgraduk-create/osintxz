@@ -87,9 +87,13 @@ class InvestigationAnalysisWorker(QObject):
                     container.ai_manager.model_name or ""
                 ).strip()
 
-            selected_reasoning = normalize_reasoning_effort(
-                self.reasoning_effort,
-                fallback=profile.recommended_reasoning,
+            selected_reasoning = (
+                normalize_reasoning_effort(
+                    self.reasoning_effort,
+                    fallback=profile.recommended_reasoning,
+                )
+                if provider_name == "openai"
+                else ""
             )
 
             scope_type = (
