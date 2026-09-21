@@ -1,5 +1,8 @@
 """Background workers used by the QML desktop interface."""
 
+from app.interface.desktop.workers.investigation_analysis_worker import (
+    InvestigationAnalysisWorker,
+)
 from app.interface.desktop.workers.federated_source_search_worker import (
     FederatedSourceSearchWorker,
 )
@@ -17,6 +20,7 @@ from app.interface.desktop.workers.registry_search_worker import (
 )
 
 __all__ = [
+    "InvestigationAnalysisWorker",
     "FederatedSourceSearchWorker",
     "OsintCollectionWorker",
     "RegistryCenterWorker",
