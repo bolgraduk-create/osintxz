@@ -336,7 +336,18 @@ class OsintEnrichmentExecutionService:
         include_related: bool = True,
         entity_budget_limit: int | None = None,
     ) -> tuple[EnrichmentExecutionResult, ...]:
-        goals = self.router.default_goals_for(target_type)
+        default_goals_for = getattr(
+            self.router,
+            "default_goals_for",
+            None,
+        )
+        if callable(default_goals_for):
+            goals = default_goals_for(target_type)
+        else:
+            # Backward-compatible boundary for legacy/custom routers and
+            # test doubles that still expose goals through router.policy.
+            goals = self.router.policy.default_goals(target_type)
+
         limits = self.router.policy.limits
 
         remaining_global_budget = state.remaining_new_entities(
