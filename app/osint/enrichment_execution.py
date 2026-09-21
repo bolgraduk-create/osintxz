@@ -303,7 +303,7 @@ class OsintEnrichmentExecutionService:
         include_related: bool = True,
         entity_budget_limit: int | None = None,
     ) -> tuple[EnrichmentExecutionResult, ...]:
-        goals = self.router.policy.default_goals(target_type)
+        goals = self.router.default_goals_for(target_type)
         limits = self.router.policy.limits
 
         remaining_global_budget = state.remaining_new_entities(
