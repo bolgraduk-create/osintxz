@@ -22,8 +22,8 @@ from typing import Any
 
 import requests
 
-from app.core.config import settings
 from app.osint.base_connector import BaseConnector
+from app.osint.credential_policy import connector_secret
 from app.osint.models import (
     ConnectorRequest,
     OsintTargetType,
@@ -63,10 +63,7 @@ class AbuseIPDBConnector(BaseConnector):
         is configured.
         """
 
-        return (
-            settings.abuseipdb_api_key
-            is not None
-        )
+        return bool(connector_secret("abuseipdb_api_key"))
 
     def execute(
         self,
@@ -98,11 +95,7 @@ class AbuseIPDBConnector(BaseConnector):
             )
 
         headers = {
-            "Key": (
-                settings
-                .abuseipdb_api_key
-                .get_secret_value()
-            ),
+            "Key": connector_secret("abuseipdb_api_key"),
             "Accept": "application/json",
         }
 
