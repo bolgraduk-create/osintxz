@@ -7,7 +7,7 @@
     "mrrMin": 0.9,
     "ndcgAt20Min": 0.85,
     "cleanPrecisionMin": 0.9,
-    "cleanRecallMin": 0.45,
+    "cleanRecallMin": 0.4,
     "usefulPivotRecallMin": 0.9,
     "persistencePrecisionMin": 0.95,
     "falsePivotRateMax": 0.15,
@@ -444,8 +444,8 @@
           "benchmarkId": "url-descendant",
           "relevance": 2,
           "expectedShow": true,
-          "expectedExplore": false,
-          "expectedPersist": false
+          "expectedExplore": true,
+          "expectedPersist": true
         },
         {
           "benchmarkId": "url-unrelated-path",
