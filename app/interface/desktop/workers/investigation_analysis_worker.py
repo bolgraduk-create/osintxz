@@ -71,6 +71,8 @@ class InvestigationAnalysisWorker(QObject):
 
             UUID(self.case_id)
             session = create_session()
+            # Canonical ownership remains ServiceContainer(session); the
+            # optional keywords only select the AI stack for this run.
             container = ServiceContainer(
                 session,
                 ai_provider_name=self.provider_name or None,
