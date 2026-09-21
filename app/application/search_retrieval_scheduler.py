@@ -701,6 +701,12 @@ def _route_source(route: Any) -> str:
         if value:
             return str(value)
 
+    sources = getattr(route, "sources", None)
+    if sources:
+        values = [str(item).strip() for item in list(sources) if str(item).strip()]
+        if len(values) == 1:
+            return values[0]
+
     domain = getattr(route, "domain", None)
     if domain is not None:
         return str(getattr(domain, "value", None) or domain)
