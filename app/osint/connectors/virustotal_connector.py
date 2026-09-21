@@ -19,11 +19,12 @@ Does NOT:
 from __future__ import annotations
 
 from typing import Any
+import base64
 
 import requests
 
-from app.core.config import settings
 from app.osint.base_connector import BaseConnector
+from app.osint.credential_policy import connector_secret
 from app.osint.models import (
     ConnectorRequest,
     OsintTargetType,
@@ -66,10 +67,7 @@ class VirusTotalConnector(BaseConnector):
         credentials are configured.
         """
 
-        return (
-            settings.virustotal_api_key
-            is not None
-        )
+        return bool(connector_secret("virustotal_api_key"))
 
     def execute(
         self,
@@ -116,11 +114,7 @@ class VirusTotalConnector(BaseConnector):
             )
 
         headers = {
-            "x-apikey": (
-                settings
-                .virustotal_api_key
-                .get_secret_value()
-            )
+            "x-apikey": connector_secret("virustotal_api_key")
         }
 
         try:
@@ -230,10 +224,14 @@ class VirusTotalConnector(BaseConnector):
             )
 
         if target_type == OsintTargetType.URL:
-
+            url_id = (
+                base64.urlsafe_b64encode(value.encode("utf-8"))
+                .decode("ascii")
+                .rstrip("=")
+            )
             return (
                 "urls",
-                value,
+                url_id,
             )
 
         if target_type == OsintTargetType.HASH:
