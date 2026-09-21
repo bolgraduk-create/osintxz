@@ -18,6 +18,9 @@ from app.osint.pipeline import OsintPipeline
 from app.osint.pivot_policy import PivotKey, PivotTraversalState
 from app.osint.pivot_router import OsintCapabilityRouter, PivotRoute
 from app.osint.result import OsintResult, ResultStatus
+from app.osint.threat_intelligence_policy import (
+    AUTO_CREDENTIALED_THREAT_MODULES,
+)
 
 
 class EnrichmentExecutionStatus(str, Enum):
@@ -275,6 +278,15 @@ class OsintEnrichmentExecutionService:
                     },
                 )
             else:
+                if (
+                    capability.module
+                    in AUTO_CREDENTIALED_THREAT_MODULES
+                    and capability.requires_api_key
+                ):
+                    state.mark_credentialed_call(
+                        capability.module
+                    )
+
                 result = self._execute_connector(
                     runtime_name=runtime_name,
                     capability=capability,
