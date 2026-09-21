@@ -1013,6 +1013,7 @@ class UnifiedInvestigationSearchWorker(QObject):
                 ):
                     pivot_by_provider[provider_name] = pivot_by_provider.get(provider_name, 0) + 1
 
+            registry_feedback_rows: list[dict[str, Any]] = []
             for provider in list(getattr(search, "provider_results", ()) or ()):
                 snap = RegistrySearchWorker._snapshot_provider_result(provider)
                 provider_name = str(snap.get("provider") or "registry")
@@ -1032,6 +1033,7 @@ class UnifiedInvestigationSearchWorker(QObject):
                 )
                 provider_row["durationSeconds"] = round(query_duration, 3)
                 providers.append(provider_row)
+                registry_feedback_rows.append(provider_row)
                 if feedback is not None:
                     feedback.observe_provider_row(provider_row)
                 if snap.get("error") and snap.get("status") == "failed":
@@ -1040,6 +1042,31 @@ class UnifiedInvestigationSearchWorker(QObject):
                             "Registry", provider_name, str(snap.get("error")), seed
                         )
                     )
+
+            if feedback is not None and registry_feedback_rows:
+                statuses = {
+                    str(row.get("status") or "").strip().casefold()
+                    for row in registry_feedback_rows
+                }
+                aggregate_status = (
+                    "success"
+                    if "success" in statuses
+                    else ("partial" if "partial" in statuses else "failed")
+                )
+                aggregate_detail = " | ".join(
+                    str(row.get("detail") or "")
+                    for row in registry_feedback_rows
+                    if str(row.get("detail") or "").strip()
+                )[:1200]
+                feedback.observe_provider_row(
+                    {
+                        "source": query.domain.value,
+                        "status": aggregate_status,
+                        "detail": aggregate_detail,
+                        "records": relevant_count,
+                        "durationSeconds": round(query_duration, 3),
+                    }
+                )
 
             for row_index, record in enumerate(raw_records):
                 row = RegistrySearchWorker._snapshot_record(record)
