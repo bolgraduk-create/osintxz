@@ -561,7 +561,7 @@ Item {
                             spacing: 8
 
                             Column {
-                                width: Math.max(170, (parent.width - 190) * 0.31)
+                                width: Math.max(1, (parent.width - 182) * 0.28)
                                 height: 48
                                 spacing: 3
                                 Text {
@@ -581,7 +581,7 @@ Item {
                             }
 
                             Column {
-                                width: Math.max(220, (parent.width - 190) * 0.39)
+                                width: Math.max(1, (parent.width - 182) * 0.44)
                                 height: 48
                                 spacing: 3
                                 Text {
@@ -605,7 +605,7 @@ Item {
                             }
 
                             Column {
-                                width: Math.max(112, (parent.width - 190) * 0.20)
+                                width: Math.max(1, (parent.width - 182) * 0.28)
                                 height: 48
                                 spacing: 3
                                 Text {
@@ -628,16 +628,6 @@ Item {
                                             root.selectedReasoning = String(values[currentIndex])
                                     }
                                 }
-                            }
-
-                            Item {
-                                width: Math.max(0, parent.width
-                                    - scopeBox.parent.width
-                                    - modelBox.parent.width
-                                    - reasoningBox.parent.width
-                                    - runButton.width
-                                    - 32)
-                                height: 1
                             }
 
                             AppButton {
@@ -784,7 +774,8 @@ Item {
                                     }
 
                                     Row {
-                                        x: (parent.width - width) / 2
+                                        id: suggestionRow
+                                        width: parent.width
                                         spacing: 8
 
                                         Repeater {
@@ -797,7 +788,7 @@ Item {
                                             delegate: Rectangle {
                                                 id: promptCard
                                                 required property var modelData
-                                                width: 190
+                                                width: (suggestionRow.width - 16) / 3
                                                 height: 70
                                                 radius: 10
                                                 color: promptMouse.containsMouse ? Theme.surfaceHover : Theme.surface
