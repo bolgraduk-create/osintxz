@@ -104,18 +104,66 @@ def _provider_config(
 
 def create_ai_stack(
     config: Settings = settings,
+    *,
+    provider_name: str | None = None,
+    model_name: str | None = None,
+    reasoning_effort: str | None = None,
 ) -> tuple[AIManager, AIAnalyzer]:
-    """Create the complete lazy AI stack."""
+    """Create the complete lazy AI stack.
 
-    provider_name, model_name = resolve_ai_configuration(config)
+    Optional runtime overrides are used by the desktop Analysis workspace.
+    They do not mutate global Settings and therefore let one analysis run use
+    OpenAI while another uses Ollama in the same application session.
+    """
+
+    configured_provider, configured_model = resolve_ai_configuration(config)
+    selected_provider = str(
+        provider_name or configured_provider
+    ).strip().casefold()
+
+    if selected_provider not in SUPPORTED_AI_PROVIDERS:
+        supported = ", ".join(sorted(SUPPORTED_AI_PROVIDERS))
+        raise ValueError(
+            f"Unsupported AI provider '{selected_provider}'. "
+            f"Supported providers: {supported}."
+        )
+
+    if str(model_name or "").strip():
+        selected_model = str(model_name).strip()
+    elif selected_provider == configured_provider:
+        selected_model = configured_model
+    elif selected_provider == "openai":
+        selected_model = str(
+            getattr(config, "openai_model", None) or DEFAULT_OPENAI_MODEL
+        ).strip()
+    else:
+        selected_model = str(
+            getattr(config, "ollama_model", None)
+            or getattr(config, "ai_model", None)
+            or getattr(config, "default_model", None)
+            or DEFAULT_OLLAMA_MODEL
+        ).strip()
+
+    if not selected_model:
+        raise ValueError("Configured AI model name cannot be empty.")
+
+    provider_config = _provider_config(
+        config=config,
+        provider_name=selected_provider,
+    )
+    if (
+        selected_provider == "openai"
+        and reasoning_effort is not None
+        and str(reasoning_effort).strip()
+    ):
+        provider_config["reasoning_effort"] = (
+            str(reasoning_effort).strip().casefold()
+        )
 
     manager = AIManager(
-        provider_name=provider_name,
-        model_name=model_name,
-        **_provider_config(
-            config=config,
-            provider_name=provider_name,
-        ),
+        provider_name=selected_provider,
+        model_name=selected_model,
+        **provider_config,
     )
 
     managed_ai = ManagedAI(manager)
