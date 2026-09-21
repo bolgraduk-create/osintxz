@@ -309,6 +309,24 @@ def _candidate_seeds_from_row(
                         )
                     )
 
+    row_url = str(row.get("url") or "").strip()
+    if row_url:
+        url_seed = _make_seed(
+            kind=UnifiedSeedKind.URL,
+            value=row_url,
+            depth=depth,
+            country=country,
+            parent_ref=parent_ref,
+            metadata=metadata,
+        )
+        if url_seed is not None:
+            out.append(
+                (
+                    url_seed,
+                    "Quality-approved source/profile URL",
+                )
+            )
+
     family = _kind(row.get("type"))
     row_kind = _ROW_TYPE_MAP.get(family)
     if row_kind is UnifiedSeedKind.URL:
