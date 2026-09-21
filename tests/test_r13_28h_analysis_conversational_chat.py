@@ -14,6 +14,11 @@ def test_chat_prompt_preserves_multi_turn_context_and_case_boundaries():
         ],
         case_context="[R1] Timeline source text",
         has_case_context=True,
+        analysis_context={
+            "summary": "Earlier structured summary [R1].",
+            "conclusions": [],
+            "runConfig": {"provider": "openai", "model": "gpt-5.6", "mode": "standard"},
+        },
         scope_type="case",
         focus_entity_label="",
     )
@@ -24,6 +29,8 @@ def test_chat_prompt_preserves_multi_turn_context_and_case_boundaries():
     assert "CURRENT USER MESSAGE" in prompt
     assert "And what does that mean for the timeline?" in prompt
     assert "[R1] Timeline source text" in prompt
+    assert "CURRENT STRUCTURED ANALYSIS" in prompt
+    assert "Earlier structured summary [R1]." in prompt
     assert "Never invent case-specific facts" in prompt
     assert "AI output is analysis and assistance, not Evidence." in prompt
     assert "R# references are turn-local." in prompt
@@ -84,6 +91,7 @@ def test_chat_worker_uses_selected_real_provider_model_and_persists_turn():
     assert "ai_provider_name=self.provider_name or None" in source
     assert "ai_model_name=self.model or None" in source
     assert "ai_reasoning_effort=self.reasoning_effort or None" in source
+    assert "analysis_context=self.analysis_context" in source
     assert "container.analysis_chat_service.reply(" in source
     assert "AnalysisChatHistoryService" in source
     assert "history.save_turn(" in source
