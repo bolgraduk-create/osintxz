@@ -13,6 +13,7 @@ from app.osint.capabilities import (
 )
 from app.osint.threat_intelligence_policy import (
     AUTO_CREDENTIALED_THREAT_MODULES,
+    AUTO_CREDENTIALED_THREAT_RUN_LIMITS,
 )
 from app.osint.models import OsintTargetType
 from app.osint.pivot_policy import (
@@ -95,6 +96,7 @@ class OsintCapabilityRouter:
                     and self._capability_is_automatic(
                         capability=capability,
                         goal=goal,
+                        state=state,
                     )
                 ),
                 key=lambda item: (
@@ -146,6 +148,7 @@ class OsintCapabilityRouter:
         *,
         capability: OsintConnectorCapability,
         goal: DiscoveryGoal,
+        state: PivotTraversalState | None = None,
     ) -> bool:
         allowed_dispositions = self._allowed_dispositions_for_goal(goal)
 
@@ -164,14 +167,19 @@ class OsintCapabilityRouter:
 
         return bool(
             goal is DiscoveryGoal.THREAT_INTELLIGENCE
-            and self._credentialed_threat_capability_allowed(capability)
+            and self._credentialed_threat_capability_allowed(
+                capability,
+                state=state,
+            )
         )
 
     def _credentialed_threat_capability_allowed(
         self,
         capability: OsintConnectorCapability,
+        *,
+        state: PivotTraversalState | None = None,
     ) -> bool:
-        return bool(
+        base_allowed = bool(
             capability.module in AUTO_CREDENTIALED_THREAT_MODULES
             and capability.module in self.configured_credential_modules
             and capability.requires_api_key
@@ -179,6 +187,23 @@ class OsintCapabilityRouter:
             and capability.disposition is ConnectorDisposition.CONDITIONAL
             and capability.network_mode is NetworkMode.PASSIVE_REMOTE
             and DiscoveryGoal.THREAT_INTELLIGENCE in capability.goals
+        )
+        if not base_allowed:
+            return False
+
+        if state is None:
+            return True
+
+        run_limit = AUTO_CREDENTIALED_THREAT_RUN_LIMITS.get(
+            capability.module,
+            0,
+        )
+        if run_limit <= 0:
+            return False
+
+        return (
+            state.credentialed_call_count(capability.module)
+            < run_limit
         )
 
     @staticmethod
