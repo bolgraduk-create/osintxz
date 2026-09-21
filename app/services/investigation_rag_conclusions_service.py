@@ -75,6 +75,9 @@ from uuid import UUID
 from app.ai.prompts.prompt_manager import (
     PromptManager,
 )
+from app.security.sensitive_content import (
+    sanitized_text,
+)
 
 from app.services.investigation_rag_context_builder import (
     DEFAULT_MAX_CONTEXT_CHARS,
@@ -1030,9 +1033,16 @@ class InvestigationRAGConclusionsService:
         preserved exactly after the instruction header.
         """
 
+        safe_question = sanitized_text(
+            str(question or "").strip()
+        )
+        safe_context = sanitized_text(
+            context.text
+        )
+
         return (
             "ANALYST QUESTION / FOCUS:\n"
-            f"{str(question or '').strip()}\n\n"
+            f"{safe_question}\n\n"
             "GROUNDING RULES:\n"
             "- Use only the investigation sources supplied below.\n"
             "- Source-specific statements should identify the "
@@ -1053,7 +1063,7 @@ class InvestigationRAGConclusionsService:
             "grounded citation validation occurs separately.\n\n"
 
             "RETRIEVED INVESTIGATION SOURCES:\n"
-            f"{context.text}"
+            f"{safe_context}"
         )
 
     # ======================================================
