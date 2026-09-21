@@ -70,7 +70,10 @@ class DesktopApplication:
         qml_file = base_dir / "qml" / "Main.qml"
 
         self.bridge = DesktopBridge(container=self.container)
-        self.analysis_bridge = AnalysisBridge(container=self.container)
+        self.analysis_bridge = AnalysisBridge(
+            container=self.container,
+            desktop_bridge=self.bridge,
+        )
         self.source_bridge = SourceCenterBridge(container=self.container)
         self.registry_bridge = RegistryCenterBridge(container=self.container)
         self.investigation_search_bridge = InvestigationSearchBridge(
