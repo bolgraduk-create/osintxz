@@ -271,3 +271,72 @@ def test_urlscan_execute_uses_get_search_and_never_submit_scan(monkeypatch):
     assert calls[0][0] == "GET"
     assert calls[0][1].endswith("/api/v1/search")
     assert calls[0][2]["params"]["datasource"] == "scans"
+
+
+def test_four_primary_threat_keys_are_secretstr_settings():
+    from pathlib import Path
+
+    source = Path("app/core/config.py").read_text(encoding="utf-8")
+    for name in (
+        "abuseipdb_api_key",
+        "otx_api_key",
+        "urlscan_api_key",
+        "virustotal_api_key",
+    ):
+        assert f"{name}: SecretStr | None = None" in source
+
+
+def test_service_container_injects_configured_threat_modules_into_router():
+    from pathlib import Path
+
+    source = Path("app/core/service_container.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "configured_threat_intelligence_modules(settings)" in source
+    assert "OsintCapabilityRouter(" in source
+    assert "router=(" in source
+    assert "self.osint_capability_router" in source
+
+
+def test_osint_direct_collection_exposes_hash_target():
+    from pathlib import Path
+
+    bridge = Path(
+        "app/interface/desktop/bridges/desktop_bridge.py"
+    ).read_text(encoding="utf-8")
+    qml = Path(
+        "app/interface/desktop/qml/pages/Osint.qml"
+    ).read_text(encoding="utf-8")
+
+    assert '"hash": OsintTargetType.HASH' in bridge
+    assert '"Hash"' in qml
+
+
+def test_urlscan_source_cannot_submit_scans_automatically():
+    from pathlib import Path
+
+    source = Path(
+        "app/osint/connectors/urlscan_connector.py"
+    ).read_text(encoding="utf-8")
+
+    assert "requests.get(" in source
+    assert "requests.post(" not in source
+    assert 'f"{self.BASE_URL}/search"' in source
+    assert '"mode": "passive_search"' in source
+
+
+def test_live_smoke_script_never_prints_secret_values():
+    from pathlib import Path
+
+    source = Path(
+        "tools/check_threat_intelligence_apis.py"
+    ).read_text(encoding="utf-8")
+
+    assert "configured_threat_intelligence_modules()" in source
+    assert "get_secret_value" not in source
+    assert "OPENAI_API_KEY" not in source
+    assert "ABUSEIPDB_API_KEY" not in source
+    assert "OTX_API_KEY" not in source
+    assert "URLSCAN_API_KEY" not in source
+    assert "VIRUSTOTAL_API_KEY" not in source
