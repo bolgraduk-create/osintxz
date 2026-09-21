@@ -634,6 +634,10 @@ class ServiceContainer:
     def __init__(
         self,
         session: Session,
+        *,
+        ai_provider_name: str | None = None,
+        ai_model_name: str | None = None,
+        ai_reasoning_effort: str | None = None,
     ) -> None:
 
         self.session = session
@@ -657,7 +661,11 @@ class ServiceContainer:
         (
             self.ai_manager,
             self.ai_analyzer,
-        ) = create_ai_stack()
+        ) = create_ai_stack(
+            provider_name=ai_provider_name,
+            model_name=ai_model_name,
+            reasoning_effort=ai_reasoning_effort,
+        )
 
         # ==================================================
         # Core Domain Services
