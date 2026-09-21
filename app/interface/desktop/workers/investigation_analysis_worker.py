@@ -362,7 +362,10 @@ class InvestigationAnalysisWorker(QObject):
             if rag_context is not None:
                 for source in rag_context.included_sources:
                     source_text = " ".join(
-                        str(source.text or "").split()
+                        str(
+                            getattr(source, "text", "")
+                            or ""
+                        ).split()
                     )
                     source_row = {
                         "reference": str(
