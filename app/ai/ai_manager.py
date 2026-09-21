@@ -167,6 +167,47 @@ class AIManager:
 
 
     # ==========================================================
+    # Usage telemetry
+    # ==========================================================
+
+    def usage_snapshot(
+        self,
+    ) -> dict[str, Any]:
+        """Return provider-reported usage without triggering a request."""
+
+        if self.provider is None:
+            return {
+                "provider": self.provider_name,
+                "requests": 0,
+                "inputTokens": 0,
+                "cachedInputTokens": 0,
+                "outputTokens": 0,
+                "reasoningTokens": 0,
+                "totalTokens": 0,
+                "events": [],
+            }
+
+        method = getattr(
+            self.provider,
+            "usage_snapshot",
+            None,
+        )
+        if not callable(method):
+            return {
+                "provider": self.provider_name,
+                "requests": 0,
+                "inputTokens": 0,
+                "cachedInputTokens": 0,
+                "outputTokens": 0,
+                "reasoningTokens": 0,
+                "totalTokens": 0,
+                "events": [],
+            }
+
+        result = method()
+        return dict(result) if isinstance(result, dict) else {}
+
+    # ==========================================================
     # Information
     # ==========================================================
 
