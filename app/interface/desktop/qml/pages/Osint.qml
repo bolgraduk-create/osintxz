@@ -757,7 +757,7 @@ Item {
                 id: typeBox
                 objectName: "collectionTargetType"
                 width: parent.width
-                model: ["Email", "Username", "Domain", "IP", "URL", "Phone"]
+                model: ["Email", "Username", "Domain", "IP", "URL", "Phone", "Hash"]
             }
 
             Item { width: 1; height: 3 }
