@@ -11,8 +11,8 @@ from app.osint.capabilities import (
     OsintConnectorCapability,
     OSINT_CAPABILITY_CATALOG,
 )
-from app.osint.credential_policy import (
-    AUTO_CREDENTIALED_THREAT_CONNECTORS,
+from app.osint.threat_intelligence_policy import (
+    AUTO_CREDENTIALED_THREAT_MODULES,
 )
 from app.osint.models import OsintTargetType
 from app.osint.pivot_policy import (
@@ -172,7 +172,7 @@ class OsintCapabilityRouter:
         capability: OsintConnectorCapability,
     ) -> bool:
         return bool(
-            capability.module in AUTO_CREDENTIALED_THREAT_CONNECTORS
+            capability.module in AUTO_CREDENTIALED_THREAT_MODULES
             and capability.module in self.configured_credential_modules
             and capability.requires_api_key
             and not capability.requires_account
