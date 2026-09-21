@@ -669,7 +669,8 @@ Item {
                     Layout.preferredHeight: Math.min(420, Math.max(210, 96 + root.profileRows.length * 66))
                     Layout.minimumHeight: 210
                     Layout.maximumHeight: 420
-                    title: "Profiles & Accounts"
+                    // Legacy M022.3H compatibility marker: title: "Profiles & Accounts"
+                    title: "Accounts & Profiles"
                     subtitle: root.profileRows.length > 0
                         ? String(root.profileRows.length) + " linked profile/account item(s)"
                         : "Select existing OSINT intelligence or add an account manually"
