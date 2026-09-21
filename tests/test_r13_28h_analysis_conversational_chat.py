@@ -20,12 +20,13 @@ def test_chat_prompt_preserves_multi_turn_context_and_case_boundaries():
 
     assert "RECENT CONVERSATION" in prompt
     assert "USER: What happened first?" in prompt
-    assert "ASSISTANT: Event A appears before Event B [R1]." in prompt
+    assert "ASSISTANT: Event A appears before Event B [previous-turn source]." in prompt
     assert "CURRENT USER MESSAGE" in prompt
     assert "And what does that mean for the timeline?" in prompt
     assert "[R1] Timeline source text" in prompt
     assert "Never invent case-specific facts" in prompt
     assert "AI output is analysis and assistance, not Evidence." in prompt
+    assert "R# references are turn-local." in prompt
 
 
 def test_chat_retrieval_query_uses_recent_user_context_for_followups():
