@@ -20,6 +20,7 @@ from PySide6.QtGui import QDesktopServices, QGuiApplication
 
 from app.application.person_attachment_service import PersonAttachmentService
 from app.application.person_profile_selection_service import PersonProfileSelectionService
+from app.application.unified_target_profile import build_unified_target_profile
 from app.investigation.search_query import InvestigationSearchQuery, SearchMethod
 from app.models.entity import EntityType
 from app.interface.desktop.workers import (
@@ -3282,7 +3283,7 @@ class DesktopBridge(QObject):
             related_rows=related_rows,
         )
 
-        return {
+        snapshot = {
             "id": str(getattr(entity, "id", "") or ""),
             "title": str(getattr(entity, "value", "") or "Unnamed person"),
             "type": EntityType.PERSON.value,
@@ -3309,6 +3310,9 @@ class DesktopBridge(QObject):
                 "not by itself prove account ownership or identity."
             ),
         }
+        snapshot["unifiedProfile"] = build_unified_target_profile(snapshot)
+        return snapshot
+
 
     def _person_avatar_url(self, entity_id: Any) -> str:
         """Return the newest managed person photo as a local QML URL."""
