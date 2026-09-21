@@ -889,7 +889,10 @@ class InvestigationRAGConclusionsService:
                 },
             )
 
-        workflow_context = self._build_workflow_context(context)
+        workflow_context = self._build_workflow_context(
+            context,
+            question=normalized_question,
+        )
         kwargs = dict(generation_kwargs or {})
 
         generated: list[InvestigationRAGConclusion] = []
@@ -1016,6 +1019,8 @@ class InvestigationRAGConclusionsService:
     @staticmethod
     def _build_workflow_context(
         context: InvestigationRAGContext,
+        *,
+        question: str,
     ) -> str:
         """
         Prepare bounded RAG material for legacy analytical
@@ -1026,6 +1031,8 @@ class InvestigationRAGConclusionsService:
         """
 
         return (
+            "ANALYST QUESTION / FOCUS:\n"
+            f"{str(question or '').strip()}\n\n"
             "GROUNDING RULES:\n"
             "- Use only the investigation sources supplied below.\n"
             "- Source-specific statements should identify the "
