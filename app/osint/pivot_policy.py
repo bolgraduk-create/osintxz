@@ -153,12 +153,18 @@ _DEFAULT_GOALS: dict[OsintTargetType, tuple[DiscoveryGoal, ...]] = {
     OsintTargetType.DOMAIN: (
         DiscoveryGoal.DOMAIN_DISCOVERY,
         DiscoveryGoal.HISTORICAL_WEB,
+        DiscoveryGoal.THREAT_INTELLIGENCE,
     ),
     OsintTargetType.URL: (
         DiscoveryGoal.HISTORICAL_WEB,
+        DiscoveryGoal.THREAT_INTELLIGENCE,
     ),
     OsintTargetType.IP: (
         DiscoveryGoal.NETWORK_ENRICHMENT,
+        DiscoveryGoal.THREAT_INTELLIGENCE,
+    ),
+    OsintTargetType.HASH: (
+        DiscoveryGoal.THREAT_INTELLIGENCE,
     ),
 }
 
