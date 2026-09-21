@@ -349,7 +349,6 @@ Item {
                             lineHeight: 1.45
                             wrapMode: Text.Wrap
                             textFormat: Text.PlainText
-                            selectByMouse: true
                         }
 
                         ScrollBar.vertical: ScrollBar {
@@ -390,8 +389,7 @@ Item {
                                 lineHeight: 1.45
                                 wrapMode: Text.Wrap
                                 textFormat: Text.PlainText
-                                selectByMouse: true
-                            }
+                                }
 
                             ScrollBar.vertical: ScrollBar {
                                 policy: ScrollBar.AsNeeded
