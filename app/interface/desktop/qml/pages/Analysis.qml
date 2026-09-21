@@ -119,6 +119,15 @@ Item {
         return 0
     }
 
+    function selectedProviderReady() {
+        const info = root.selectedProviderInfo()
+        if (!Boolean(info.configured))
+            return false
+        if (String(info.provider || "") === "ollama")
+            return info.online === true && root.models().length > 0
+        return root.models().length > 0
+    }
+
     function models() {
         const info = root.selectedProviderInfo()
         return info.models || []
@@ -1755,8 +1764,12 @@ Item {
                             enabled: !analysisBridge.busy
                             onActivated: function(index) {
                                 const values = root.providers()
-                                if (index >= 0 && index < values.length)
-                                    root.applyProvider(String(values[index].provider || "ollama"))
+                                if (index >= 0 && index < values.length) {
+                                    const providerId = String(values[index].provider || "ollama")
+                                    root.applyProvider(providerId)
+                                    if (providerId === "ollama")
+                                        analysisBridge.refreshProviders()
+                                }
                             }
                         }
                     }
@@ -1829,8 +1842,7 @@ Item {
                             : (desktopBridge.hasCurrentCase ? "Run Analysis" : "Select Case")
                         primary: true
                         enabled: !analysisBridge.busy
-                            && Boolean(root.selectedProviderInfo().configured)
-                            && String(root.selectedModel || "") !== ""
+                            && (!desktopBridge.hasCurrentCase || root.selectedProviderReady())
                         onClicked: {
                             if (!desktopBridge.hasCurrentCase)
                                 desktopBridge.navigateTo("cases")
