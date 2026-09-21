@@ -27,6 +27,11 @@ Item {
     property var otherIntelligenceRows: []
     property var intelligenceGroups: []
     property var summaryMetrics: []
+    // R13.27a UNIFIED TARGET PROFILE
+    property var unifiedProfile: ({})
+    property var unifiedGroups: []
+    property var unifiedProvenance: []
+    property var profileCoverage: ({})
     // R13.23.1 PERSON CARD POLISH + MENTIONS
     property var webRows: []
     property var mentionRows: []
@@ -182,7 +187,8 @@ Item {
         if (other.length > 0)
             groups.push({ title: "OTHER INTELLIGENCE", rows: other, empty: "" })
         root.intelligenceGroups = groups
-        root.summaryMetrics = [
+        var backendMetrics = root.unifiedProfile.metrics || []
+        root.summaryMetrics = backendMetrics.length > 0 ? backendMetrics : [
             { label: "Accounts", value: root.profileRows.length },
             { label: "Contacts", value: contacts.length },
             { label: "Organizations", value: organizations.length },
@@ -191,6 +197,16 @@ Item {
             { label: "Evidence", value: root.evidenceRows.length },
             { label: "Review", value: root.reviewRows.length }
         ]
+    }
+
+    function unifiedProvenanceText() {
+        var rows = root.unifiedProvenance || []
+        if (!rows.length) return "No linked provenance yet"
+        var parts = []
+        for (var i = 0; i < rows.length && i < 4; ++i) {
+            parts.push(String(rows[i].label || rows[i].basis || "Source") + " " + String(rows[i].count || 0))
+        }
+        return parts.join(" · ")
     }
 
     function intelligenceRowDetail(item) {
@@ -247,6 +263,10 @@ Item {
         root.relatedRows = root.person.relatedEntities || []
         root.profileCandidates = root.person.profileCandidates || []
         root.metadataRows = root.person.metadataRows || []
+        root.unifiedProfile = root.person.unifiedProfile || ({})
+        root.unifiedGroups = root.unifiedProfile.groups || []
+        root.unifiedProvenance = root.unifiedProfile.provenance || []
+        root.profileCoverage = root.unifiedProfile.coverage || ({})
         root.profileRows = root.buildProfileRows()
         root.rebuildIntelligenceSections()
     }
@@ -500,8 +520,10 @@ Item {
                     Layout.preferredHeight: 166
                     Layout.minimumHeight: 166
                     Layout.maximumHeight: 166
-                    title: "Intelligence Summary"
-                    subtitle: "Structured view of linked intelligence · provenance remains authoritative"
+                    title: "Unified Target Profile"
+                    subtitle: (root.profileCoverage.label
+                        ? String(root.profileCoverage.label) + " · "
+                        : "") + root.unifiedProvenanceText()
                     iconSource: "../../assets/icons/chart_blue.svg"
 
                     RowLayout {
@@ -546,7 +568,7 @@ Item {
                     Layout.minimumHeight: 352
                     Layout.maximumHeight: 560
                     title: "Core Intelligence"
-                    subtitle: "Contacts, organizations, locations, web pages and technical identifiers grouped by type"
+                    subtitle: "Evidence-linked profile sections · grouped view does not change association provenance"
                     iconSource: "../../assets/icons/users_cyan.svg"
 
                     GridLayout {
