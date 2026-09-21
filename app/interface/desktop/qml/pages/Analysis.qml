@@ -915,7 +915,7 @@ Item {
                         Rectangle {
                             visible: Boolean(root.run.hasRun)
                             width: overviewColumn.width
-                            height: 64
+                            height: root.run.redactions && root.run.redactions.active ? 82 : 64
                             radius: 8
                             color: Theme.surface
                             border.width: 1
@@ -925,6 +925,10 @@ Item {
                                 anchors.fill: parent
                                 anchors.margins: 14
                                 text: String(root.run.notice || "AI-generated analysis is analytical assistance, not Evidence or an independently verified fact.")
+                                    + (root.run.redactions && root.run.redactions.active
+                                        ? ("\n\nSECURITY · " + String(root.run.redactions.count || 0)
+                                            + " credential/secret fragment(s) were redacted before display and history.")
+                                        : "")
                                 color: Theme.textMuted
                                 font.pixelSize: 9
                                 wrapMode: Text.Wrap
