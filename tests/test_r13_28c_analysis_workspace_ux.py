@@ -364,3 +364,13 @@ def test_rag_source_navigation_can_focus_exact_evidence_and_timeline_rows():
     assert "positionViewAtIndex(i, ListView.Center)" in workspace_qml
     assert "externallyFocused" in workspace_qml
     assert "Theme.accentSoft" in workspace_qml
+
+
+def test_conclusion_workflows_receive_the_same_analyst_question():
+    source = Path(
+        "app/services/investigation_rag_conclusions_service.py"
+    ).read_text(encoding="utf-8")
+
+    assert "question=normalized_question" in source
+    assert '"ANALYST QUESTION / FOCUS:\\n"' in source
+    assert "question: str = \"\"" in source
