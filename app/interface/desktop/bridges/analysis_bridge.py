@@ -679,7 +679,7 @@ class AnalysisBridge(QObject):
 
     def _initial_provider_catalog(self) -> list[dict[str, Any]]:
         secret = settings.openai_api_key
-        openai_configured = bool(
+        configured = bool(
             secret
             and secret.get_secret_value().strip()
         )
@@ -716,11 +716,11 @@ class AnalysisBridge(QObject):
             {
                 "provider": "openai",
                 "label": "OpenAI",
-                "configured": openai_configured,
+                "configured": configured,
                 "online": None,
                 "status": (
                     "configured"
-                    if openai_configured
+                    if configured
                     else "not_configured"
                 ),
                 "model": str(settings.openai_model or ""),
