@@ -102,6 +102,41 @@ def test_gate_uses_fixture_thresholds_and_is_diagnostic():
     assert all(isinstance(item, str) for item in failures)
 
 
+def test_single_source_url_descendant_is_explorable_but_not_persisted():
+    fixture = load_benchmark_fixture(FIXTURE)
+    report = run_search_quality_benchmark(fixture)
+
+    scenario = next(
+        item
+        for item in report.scenarios
+        if item.name == "url_scope_and_pivots"
+    )
+    row = next(
+        item
+        for item in scenario.rows
+        if item["_benchmarkId"] == "url-descendant"
+    )
+
+    assert row["qualityWouldExplore"] is True
+    assert row["qualityWouldPersist"] is False
+    assert row["qualityPersistenceScore"] < 82
+    assert any(
+        "exploration" in signal.casefold()
+        for signal in row["qualityNegativeSignals"]
+    )
+
+
+def test_benchmark_gate_requires_zero_false_persist():
+    fixture = load_benchmark_fixture(FIXTURE)
+    assert fixture["thresholds"]["falsePersist"] == 0
+
+    report = run_search_quality_benchmark(fixture)
+    passed, failures = evaluate_gate(report, fixture["thresholds"])
+
+    assert report.metrics.false_persist == 0
+    assert passed is True, failures
+
+
 def test_username_dead_profile_is_ranked_as_noise():
     fixture = load_benchmark_fixture(FIXTURE)
     report = run_search_quality_benchmark(fixture)
