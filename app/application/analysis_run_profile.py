@@ -176,6 +176,17 @@ def generation_kwargs_for_profile(
     return kwargs
 
 
+def _pricing_model_id(value: Any) -> str:
+    raw = str(value or "").strip().casefold()
+    if raw.startswith("gpt-5.6-luna"):
+        return "gpt-5.6-luna"
+    if raw.startswith("gpt-5.6-terra"):
+        return "gpt-5.6-terra"
+    if raw.startswith("gpt-5.6"):
+        return "gpt-5.6"
+    return ""
+
+
 def estimate_openai_cost(
     usage: dict[str, Any] | None,
 ) -> dict[str, Any]:
@@ -198,7 +209,8 @@ def estimate_openai_cost(
 
     for event in events:
         raw_model = str(event.get("model") or "").strip()
-        rates = OPENAI_MODEL_PRICING.get(raw_model)
+        pricing_model = _pricing_model_id(raw_model)
+        rates = OPENAI_MODEL_PRICING.get(pricing_model)
         if not rates:
             unpriced_requests += 1
             continue
