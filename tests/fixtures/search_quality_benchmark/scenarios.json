@@ -9,7 +9,7 @@
     "pivotRecall": 0.50,
     "persistRecall": 0.50,
     "falsePivotRate": 0.35,
-    "falsePersist": 1
+    "falsePersist": 0
   },
   "scenarios": [
     {
