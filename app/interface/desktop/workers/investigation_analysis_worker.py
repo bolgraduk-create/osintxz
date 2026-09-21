@@ -38,6 +38,7 @@ class InvestigationAnalysisWorker(QObject):
         mode: str = "standard",
         model: str = "",
         reasoning_effort: str = "",
+        provider_name: str = "",
         scope_type: str = "case",
         focus_entity_id: str = "",
         focus_entity_label: str = "",
@@ -48,6 +49,7 @@ class InvestigationAnalysisWorker(QObject):
         self.mode = str(mode or "standard").strip().casefold()
         self.model = str(model or "").strip()
         self.reasoning_effort = str(reasoning_effort or "").strip().casefold()
+        self.provider_name = str(provider_name or "").strip().casefold()
         self.scope_type = str(scope_type or "case").strip().casefold()
         self.focus_entity_id = str(focus_entity_id or "").strip()
         self.focus_entity_label = str(focus_entity_label or "").strip()
@@ -69,7 +71,12 @@ class InvestigationAnalysisWorker(QObject):
 
             UUID(self.case_id)
             session = create_session()
-            container = ServiceContainer(session)
+            container = ServiceContainer(
+                session,
+                ai_provider_name=self.provider_name or None,
+                ai_model_name=self.model or None,
+                ai_reasoning_effort=self.reasoning_effort or None,
+            )
 
             profile = normalize_analysis_mode(self.mode)
             provider_name = str(
