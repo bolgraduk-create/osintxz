@@ -12,6 +12,7 @@ OSINTXZ boundaries:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import re
 from typing import Any
 from uuid import UUID
 
@@ -270,14 +271,22 @@ class AnalysisChatService:
         scope_type: str,
         focus_entity_label: str,
     ) -> str:
-        history_text = "\n".join(
-            (
-                ("USER" if row["role"] == "user" else "ASSISTANT")
-                + ": "
-                + row["text"]
-            )
-            for row in history
-        ).strip()
+        history_lines: list[str] = []
+        for row in history:
+            role = "USER" if row["role"] == "user" else "ASSISTANT"
+            text = row["text"]
+            if row["role"] == "assistant":
+                # R1/R2 numbering is turn-local. Do not let a follow-up prompt
+                # accidentally reinterpret an old citation against the new
+                # turn's freshly retrieved source set.
+                text = re.sub(
+                    r"\[[Rr]\d+(?:\s*[,;/]\s*[Rr]\d+)*\]",
+                    "[previous-turn source]",
+                    text,
+                )
+            history_lines.append(role + ": " + text)
+
+        history_text = "\n".join(history_lines).strip()
         if not history_text:
             history_text = "[NO PRIOR CONVERSATION]"
 
@@ -307,6 +316,8 @@ class AnalysisChatService:
             "- Never invent case-specific facts, identities, links, dates, or events.\n"
             "- When a case-specific claim comes from retrieved material, cite the "
             "supporting source as [R1], [R2], etc. immediately near the claim.\n"
+            "- R# references are turn-local. Previous-turn source labels in the "
+            "conversation are not valid citations for this turn.\n"
             "- Never cite a reference that is not present in CASE SOURCES.\n"
             "- If the case sources do not support a requested case-specific fact, say "
             "that the available investigation data is insufficient.\n"
