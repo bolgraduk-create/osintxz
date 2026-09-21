@@ -354,10 +354,14 @@ class AnalysisBridge(QObject):
                 fallback=profile.recommended_reasoning,
             )
         else:
+            # Local providers own their model selection. A model chosen in the
+            # UI is passed through; otherwise fall back to the configured
+            # Ollama model without ever reusing stale GPT state.
+            if not selected_model:
+                selected_model = str(provider.get("model") or "").strip()
             if not selected_model:
                 selected_model = str(
                     provider.get("defaultModel")
-                    or provider.get("model")
                     or ""
                 ).strip()
             selected_reasoning = ""
