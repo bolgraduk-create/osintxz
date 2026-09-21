@@ -381,7 +381,7 @@ class AnalysisChatService:
         has_case_context: bool,
         analysis_context: dict[str, Any] | None = None,
         scope_type: str = "case",
-        focus_entity_label: str,
+        focus_entity_label: str = "",
         prompt_manager: PromptManager | None = None,
     ) -> str:
         history_lines: list[str] = []
