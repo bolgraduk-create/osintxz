@@ -241,15 +241,29 @@ class AnalysisBridge(QObject):
                 "timeline",
                 "timeline_event",
                 "event",
-            }:
-                opened = bool(bridge.navigateTo("timeline"))
+            } and object_id:
+                opened = bool(
+                    bridge.focusWorkspaceRecord(
+                        "timeline",
+                        object_id,
+                    )
+                )
+            elif object_type == "evidence" and object_id:
+                opened = bool(
+                    bridge.focusWorkspaceRecord(
+                        "evidence",
+                        object_id,
+                    )
+                )
             elif object_type in {
-                "evidence",
                 "message",
                 "document",
                 "source",
                 "file",
             }:
+                # These search objects do not necessarily share an Evidence
+                # primary key. Open the authoritative Evidence workspace while
+                # keeping the exact R-source visible in Analysis.
                 opened = bool(bridge.navigateTo("evidence"))
             else:
                 opened = bool(bridge.navigateTo("search"))
