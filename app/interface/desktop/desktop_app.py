@@ -35,6 +35,7 @@ from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtWidgets import QApplication
 
 from app.interface.desktop.bridges import (
+    AnalysisBridge,
     DesktopBridge,
     InvestigationSearchBridge,
     RegistryCenterBridge,
@@ -69,6 +70,7 @@ class DesktopApplication:
         qml_file = base_dir / "qml" / "Main.qml"
 
         self.bridge = DesktopBridge(container=self.container)
+        self.analysis_bridge = AnalysisBridge(container=self.container)
         self.source_bridge = SourceCenterBridge(container=self.container)
         self.registry_bridge = RegistryCenterBridge(container=self.container)
         self.investigation_search_bridge = InvestigationSearchBridge(
@@ -79,6 +81,10 @@ class DesktopApplication:
         self.engine.rootContext().setContextProperty(
             "desktopBridge",
             self.bridge,
+        )
+        self.engine.rootContext().setContextProperty(
+            "analysisBridge",
+            self.analysis_bridge,
         )
         self.engine.rootContext().setContextProperty(
             "sourceBridge",
