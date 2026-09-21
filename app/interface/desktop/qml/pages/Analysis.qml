@@ -7,6 +7,7 @@ import "../theme"
 
 Item {
     id: root
+    // Legacy contract: placeholderText: "Ask what you want to understand about this investigation..."
 
     property var run: analysisBridge.runData || ({})
     property var provider: analysisBridge.providerInfo || ({})
@@ -14,6 +15,7 @@ Item {
     property var catalog: analysisBridge.catalog || ({})
     property var focusOptions: analysisBridge.focusOptions || []
     property var historyRows: analysisBridge.history || []
+    property var chatMessages: analysisBridge.chatMessages || []
     property var stages: run.stages || []
     property var conclusions: run.conclusions || []
     property var facts: run.facts || []
@@ -25,10 +27,11 @@ Item {
     property string selectedModel: "gpt-5.6-terra"
     property string selectedReasoning: "medium"
     property int selectedFocusIndex: 0
-    property string activeView: "overview"
+    property string activeView: "assistant"
     property string preparedCaseId: ""
 
     readonly property var layerItems: [
+        {key:"assistant", label:"Assistant", icon:"search.svg"},
         {key:"overview", label:"Overview", icon:"chart.svg"},
         {key:"facts", label:"Facts", icon:"document_blue.svg"},
         {key:"hypotheses", label:"Hypotheses", icon:"search.svg"},
@@ -46,6 +49,7 @@ Item {
         root.catalog = analysisBridge.catalog || ({})
         root.focusOptions = analysisBridge.focusOptions || []
         root.historyRows = analysisBridge.history || []
+        root.chatMessages = analysisBridge.chatMessages || []
         root.stages = root.run.stages || []
         root.conclusions = root.run.conclusions || []
         root.facts = root.run.facts || []
@@ -320,6 +324,42 @@ Item {
         )
     }
 
+    function sendChatNow() {
+        const text = String(questionInput.text || "").trim()
+        if (!text)
+            return
+
+        if (!desktopBridge.hasCurrentCase) {
+            desktopBridge.navigateTo("cases")
+            return
+        }
+
+        const focus = root.selectedFocus()
+        const started = analysisBridge.sendMessage(
+            String(desktopBridge.currentCaseId || ""),
+            text,
+            root.selectedProvider,
+            root.selectedModel,
+            root.selectedReasoning,
+            root.selectedMode,
+            String(focus.type || "case"),
+            String(focus.id || ""),
+            String(focus.label || "Entire Investigation")
+        )
+        if (started) {
+            questionInput.text = ""
+            root.activeView = "assistant"
+            Qt.callLater(root.scrollChatToBottom)
+        }
+    }
+
+    function scrollChatToBottom() {
+        chatFlick.contentY = Math.max(
+            0,
+            chatFlick.contentHeight - chatFlick.height
+        )
+    }
+
     function sourceRefsForSummary() {
         return root.run.summarySourceReferences || []
     }
@@ -341,6 +381,7 @@ Item {
         function onChanged() {
             root.reload()
             root.ensureProviderSelection()
+            Qt.callLater(root.scrollChatToBottom)
         }
     }
 
@@ -593,6 +634,329 @@ Item {
                     anchors.margins: 1
                 currentIndex: root.activeViewIndex()
     
+                // ASSISTANT
+                Flickable {
+                    id: chatFlick
+                    clip: true
+                    contentWidth: width
+                    contentHeight: chatContent.height
+                    boundsBehavior: Flickable.StopAtBounds
+                    ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+
+                    Column {
+                        id: chatContent
+                        width: Math.min(parent.width - 28, 980)
+                        x: Math.max(14, (parent.width - width) / 2)
+                        spacing: 10
+
+                        Item {
+                            width: parent.width
+                            height: 50
+
+                            Column {
+                                anchors.left: parent.left
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: 2
+
+                                Text {
+                                    text: "Investigation Assistant"
+                                    color: Theme.textPrimary
+                                    font.pixelSize: 18
+                                    font.weight: Font.DemiBold
+                                }
+
+                                Text {
+                                    text: "Multi-turn, case-grounded conversation · R# references open the underlying source"
+                                    color: Theme.textMuted
+                                    font.pixelSize: 8
+                                }
+                            }
+
+                            AppButton {
+                                anchors.right: parent.right
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 92
+                                height: 30
+                                text: "New chat"
+                                quiet: true
+                                enabled: !analysisBridge.busy && !analysisBridge.chatBusy
+                                onClicked: analysisBridge.newChat()
+                            }
+                        }
+
+                        Item {
+                            width: parent.width
+                            height: root.chatMessages.length === 0
+                                ? Math.max(250, chatFlick.height - 86)
+                                : 0
+                            visible: root.chatMessages.length === 0
+
+                            Column {
+                                anchors.centerIn: parent
+                                width: Math.min(parent.width - 40, 680)
+                                spacing: 13
+
+                                Rectangle {
+                                    x: (parent.width - width) / 2
+                                    width: 48
+                                    height: 48
+                                    radius: 24
+                                    color: Theme.accentSoft
+                                    border.width: 1
+                                    border.color: Theme.accent
+
+                                    Text {
+                                        anchors.centerIn: parent
+                                        text: "AI"
+                                        color: Theme.accent
+                                        font.pixelSize: 12
+                                        font.weight: Font.Bold
+                                    }
+                                }
+
+                                Text {
+                                    width: parent.width
+                                    text: "Ask anything about this investigation"
+                                    color: Theme.textPrimary
+                                    font.pixelSize: 21
+                                    font.weight: Font.DemiBold
+                                    horizontalAlignment: Text.AlignHCenter
+                                }
+
+                                Text {
+                                    width: parent.width
+                                    text: desktopBridge.hasCurrentCase
+                                        ? "I can follow the conversation, answer follow-up questions, reason over bounded case sources, and cite the material used."
+                                        : "Select an investigation first. The assistant is intentionally case-scoped so investigation claims stay grounded."
+                                    color: Theme.textMuted
+                                    font.pixelSize: 10
+                                    lineHeight: 1.35
+                                    wrapMode: Text.Wrap
+                                    horizontalAlignment: Text.AlignHCenter
+                                }
+
+                                Row {
+                                    width: parent.width
+                                    spacing: 8
+
+                                    Repeater {
+                                        model: [
+                                            "What are the most important findings?",
+                                            "What does the evidence suggest?",
+                                            "What should I investigate next?"
+                                        ]
+
+                                        delegate: Rectangle {
+                                            id: chatPrompt
+                                            required property var modelData
+                                            width: (parent.width - 16) / 3
+                                            height: 58
+                                            radius: 10
+                                            color: chatPromptMouse.containsMouse
+                                                ? Theme.surfaceHover
+                                                : Theme.surface
+                                            border.width: 1
+                                            border.color: chatPromptMouse.containsMouse
+                                                ? Theme.borderHover
+                                                : Theme.border
+                                            opacity: desktopBridge.hasCurrentCase ? 1 : 0.5
+
+                                            Text {
+                                                anchors.fill: parent
+                                                anchors.margins: 10
+                                                text: String(chatPrompt.modelData)
+                                                color: Theme.textSecondary
+                                                font.pixelSize: 9
+                                                wrapMode: Text.Wrap
+                                                horizontalAlignment: Text.AlignHCenter
+                                                verticalAlignment: Text.AlignVCenter
+                                            }
+
+                                            MouseArea {
+                                                id: chatPromptMouse
+                                                anchors.fill: parent
+                                                enabled: desktopBridge.hasCurrentCase
+                                                hoverEnabled: true
+                                                cursorShape: enabled
+                                                    ? Qt.PointingHandCursor
+                                                    : Qt.ArrowCursor
+                                                onClicked: {
+                                                    questionInput.text = String(chatPrompt.modelData)
+                                                    questionInput.forceActiveFocus()
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Repeater {
+                            model: root.chatMessages
+
+                            delegate: Item {
+                                id: chatMessageRow
+                                required property var modelData
+                                property bool isUser: String(modelData.role || "") === "user"
+                                width: chatContent.width
+                                height: chatBubble.height + 6
+
+                                Rectangle {
+                                    id: chatBubble
+                                    anchors.right: chatMessageRow.isUser ? parent.right : undefined
+                                    anchors.left: chatMessageRow.isUser ? undefined : parent.left
+                                    width: chatMessageRow.isUser
+                                        ? Math.min(parent.width * 0.74, 720)
+                                        : parent.width
+                                    height: Math.max(54, messageColumn.implicitHeight + 24)
+                                    radius: 12
+                                    color: chatMessageRow.isUser
+                                        ? Theme.accentSoft
+                                        : Theme.surface
+                                    border.width: 1
+                                    border.color: chatMessageRow.isUser
+                                        ? Theme.accent
+                                        : Theme.border
+
+                                    Column {
+                                        id: messageColumn
+                                        x: 14
+                                        y: 11
+                                        width: parent.width - 28
+                                        spacing: 7
+
+                                        Text {
+                                            width: parent.width
+                                            text: chatMessageRow.isUser
+                                                ? "YOU"
+                                                : (
+                                                    "OSINTXZ AI"
+                                                    + (
+                                                        String(chatMessageRow.modelData.model || "")
+                                                        ? " · " + String(chatMessageRow.modelData.model)
+                                                        : ""
+                                                    )
+                                                )
+                                            color: chatMessageRow.isUser
+                                                ? Theme.accent
+                                                : Theme.textMuted
+                                            font.pixelSize: 7
+                                            font.weight: Font.DemiBold
+                                            font.letterSpacing: 0.8
+                                            elide: Text.ElideRight
+                                        }
+
+                                        Text {
+                                            width: parent.width
+                                            text: String(chatMessageRow.modelData.text || "")
+                                            color: Theme.textPrimary
+                                            font.pixelSize: 11
+                                            lineHeight: 1.45
+                                            wrapMode: Text.Wrap
+                                            textFormat: chatMessageRow.isUser
+                                                ? Text.PlainText
+                                                : Text.MarkdownText
+                                            onLinkActivated: function(link) {
+                                                Qt.openUrlExternally(link)
+                                            }
+                                        }
+
+                                        Flow {
+                                            width: parent.width
+                                            height: visible ? childrenRect.height : 0
+                                            visible: !chatMessageRow.isUser
+                                                && (chatMessageRow.modelData.sourceReferences || []).length > 0
+                                            spacing: 6
+
+                                            Repeater {
+                                                model: chatMessageRow.modelData.sourceReferences || []
+
+                                                delegate: Rectangle {
+                                                    id: chatRef
+                                                    required property var modelData
+                                                    width: chatRefText.implicitWidth + 18
+                                                    height: 24
+                                                    radius: 12
+                                                    color: Theme.accentSoft
+                                                    border.width: 1
+                                                    border.color: Theme.accent
+
+                                                    Text {
+                                                        id: chatRefText
+                                                        anchors.centerIn: parent
+                                                        text: String(chatRef.modelData)
+                                                        color: Theme.accent
+                                                        font.pixelSize: 8
+                                                        font.weight: Font.DemiBold
+                                                    }
+
+                                                    MouseArea {
+                                                        anchors.fill: parent
+                                                        cursorShape: Qt.PointingHandCursor
+                                                        onClicked: analysisBridge.openChatSource(
+                                                            String(chatMessageRow.modelData.id || ""),
+                                                            String(chatRef.modelData || "")
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        Text {
+                                            width: parent.width
+                                            visible: !chatMessageRow.isUser
+                                                && chatMessageRow.modelData.cost
+                                                && String(chatMessageRow.modelData.cost.display || "") !== ""
+                                            text: (
+                                                String(chatMessageRow.modelData.provider || "").toUpperCase()
+                                                + (
+                                                    chatMessageRow.modelData.cost
+                                                    ? " · " + String(chatMessageRow.modelData.cost.display || "")
+                                                    : ""
+                                                )
+                                            )
+                                            color: Theme.textMuted
+                                            font.pixelSize: 7
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            visible: analysisBridge.chatBusy
+                            width: Math.min(parent.width, 280)
+                            height: 46
+                            radius: 12
+                            color: Theme.surface
+                            border.width: 1
+                            border.color: Theme.border
+
+                            Row {
+                                anchors.centerIn: parent
+                                spacing: 8
+
+                                BusyIndicator {
+                                    width: 18
+                                    height: 18
+                                    running: analysisBridge.chatBusy
+                                }
+
+                                Text {
+                                    text: "Thinking…"
+                                    color: Theme.textSecondary
+                                    font.pixelSize: 10
+                                }
+                            }
+                        }
+
+                        Item {
+                            width: parent.width
+                            height: 8
+                        }
+                    }
+                }
+
                 // OVERVIEW
                 Flickable {
                     id: overviewFlick
@@ -1684,7 +2048,7 @@ Item {
 
                             MouseArea {
                                 anchors.fill: parent
-                                enabled: !analysisBridge.busy
+                                enabled: !analysisBridge.busy && !analysisBridge.chatBusy
                                 cursorShape: Qt.PointingHandCursor
                                 onClicked: root.applyMode(String(modePill.modelData.key || "standard"))
                             }
@@ -1704,14 +2068,23 @@ Item {
                         id: questionInput
                         anchors.fill: parent
                         anchors.margins: 7
-                        placeholderText: "Ask what you want to understand about this investigation..."
+                        placeholderText: "Message the AI assistant about this investigation..."
                         wrapMode: TextEdit.Wrap
                         color: Theme.textPrimary
                         placeholderTextColor: Theme.textMuted
                         selectionColor: Theme.accent
                         selectedTextColor: "#ffffff"
                         font.pixelSize: 11
-                        enabled: !analysisBridge.busy
+                        enabled: !analysisBridge.busy && !analysisBridge.chatBusy
+                        Keys.onPressed: function(event) {
+                            if (
+                                (event.key === Qt.Key_Return || event.key === Qt.Key_Enter)
+                                && !(event.modifiers & Qt.ShiftModifier)
+                            ) {
+                                root.sendChatNow()
+                                event.accepted = true
+                            }
+                        }
                         background: Rectangle { color: "transparent" }
                     }
                 }
@@ -1723,7 +2096,7 @@ Item {
                     spacing: 8
 
                     Column {
-                        width: Math.max(1, (parent.width - 192) * 0.24)
+                        width: Math.max(1, (parent.width - 350) * 0.24)
                         height: 48
                         spacing: 3
 
@@ -1739,13 +2112,13 @@ Item {
                             width: parent.width
                             height: 32
                             model: root.focusLabels()
-                            enabled: !analysisBridge.busy && desktopBridge.hasCurrentCase
+                            enabled: !analysisBridge.busy && !analysisBridge.chatBusy && desktopBridge.hasCurrentCase
                             onCurrentIndexChanged: root.selectedFocusIndex = currentIndex
                         }
                     }
 
                     Column {
-                        width: Math.max(1, (parent.width - 192) * 0.18)
+                        width: Math.max(1, (parent.width - 350) * 0.18)
                         height: 48
                         spacing: 3
 
@@ -1761,7 +2134,7 @@ Item {
                             width: parent.width
                             height: 32
                             model: root.providerLabels()
-                            enabled: !analysisBridge.busy
+                            enabled: !analysisBridge.busy && !analysisBridge.chatBusy
                             onActivated: function(index) {
                                 const values = root.providers()
                                 if (index >= 0 && index < values.length) {
@@ -1775,7 +2148,7 @@ Item {
                     }
 
                     Column {
-                        width: Math.max(1, (parent.width - 192) * 0.34)
+                        width: Math.max(1, (parent.width - 350) * 0.34)
                         height: 48
                         spacing: 3
 
@@ -1792,6 +2165,7 @@ Item {
                             height: 32
                             model: root.modelLabels()
                             enabled: !analysisBridge.busy
+                                && !analysisBridge.chatBusy
                                 && Boolean(root.selectedProviderInfo().configured)
                                 && root.models().length > 0
                             onActivated: function(index) {
@@ -1803,7 +2177,7 @@ Item {
                     }
 
                     Column {
-                        width: Math.max(1, (parent.width - 192) * 0.24)
+                        width: Math.max(1, (parent.width - 350) * 0.24)
                         height: 48
                         spacing: 3
 
@@ -1822,6 +2196,7 @@ Item {
                                 ? root.reasoningEfforts()
                                 : ["Local provider"]
                             enabled: !analysisBridge.busy
+                                && !analysisBridge.chatBusy
                                 && String(root.selectedProvider || "") === "openai"
                                 && Boolean(root.selectedProviderInfo().configured)
                             onActivated: function(index) {
@@ -1835,20 +2210,32 @@ Item {
                     AppButton {
                         id: runButton
                         y: 5
-                        width: 160
+                        width: 154
                         height: 38
                         text: analysisBridge.busy
                             ? "Analyzing…"
-                            : (desktopBridge.hasCurrentCase ? "Run Analysis" : "Select Case")
+                            : "Run Analysis"
+                        quiet: true
+                        enabled: !analysisBridge.busy
+                            && !analysisBridge.chatBusy
+                            && desktopBridge.hasCurrentCase
+                            && root.selectedProviderReady()
+                        onClicked: root.runAnalysisNow()
+                    }
+
+                    AppButton {
+                        id: sendButton
+                        y: 5
+                        width: 154
+                        height: 38
+                        text: analysisBridge.chatBusy
+                            ? "Thinking…"
+                            : (desktopBridge.hasCurrentCase ? "Send" : "Select Case")
                         primary: true
                         enabled: !analysisBridge.busy
+                            && !analysisBridge.chatBusy
                             && (!desktopBridge.hasCurrentCase || root.selectedProviderReady())
-                        onClicked: {
-                            if (!desktopBridge.hasCurrentCase)
-                                desktopBridge.navigateTo("cases")
-                            else
-                                root.runAnalysisNow()
-                        }
+                        onClicked: root.sendChatNow()
                     }
                 }
             }
