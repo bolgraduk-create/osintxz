@@ -340,3 +340,66 @@ def test_live_smoke_script_never_prints_secret_values():
     assert "OTX_API_KEY" not in source
     assert "URLSCAN_API_KEY" not in source
     assert "VIRUSTOTAL_API_KEY" not in source
+
+
+def test_virustotal_drops_out_after_per_run_budget_is_exhausted():
+    state = PivotTraversalState()
+    state.mark_credentialed_call("virustotal_connector")
+    state.mark_credentialed_call("virustotal_connector")
+
+    router = OsintCapabilityRouter(
+        configured_credential_modules=frozenset(
+            {
+                "alienvault_otx_connector",
+                "virustotal_connector",
+            }
+        )
+    )
+    route = router.route(
+        target_type=OsintTargetType.DOMAIN,
+        value="example.com",
+        goal=DiscoveryGoal.THREAT_INTELLIGENCE,
+        depth=0,
+        entity_identity="entity:domain:quota",
+        state=state,
+    )
+
+    names = {item.display_name for item in route.connectors}
+    assert "VirusTotal" not in names
+    assert "AlienVault OTX" in names
+
+
+def test_urlscan_run_budget_is_three_attempts():
+    state = PivotTraversalState()
+    for _ in range(3):
+        state.mark_credentialed_call("urlscan_connector")
+
+    router = OsintCapabilityRouter(
+        configured_credential_modules=frozenset(
+            {"urlscan_connector"}
+        )
+    )
+    route = router.route(
+        target_type=OsintTargetType.URL,
+        value="https://example.com/",
+        goal=DiscoveryGoal.THREAT_INTELLIGENCE,
+        depth=0,
+        entity_identity="entity:url:quota",
+        state=state,
+    )
+
+    assert route.allowed
+    assert route.connectors == ()
+
+
+def test_threat_retrieval_budget_is_independent_from_prior_finding_budget():
+    from pathlib import Path
+
+    source = Path(
+        "app/osint/enrichment_execution.py"
+    ).read_text(encoding="utf-8")
+
+    assert "bounded_threat_intelligence" in source
+    assert "independent_retrieval_budget" in source
+    assert "if goal is not DiscoveryGoal.THREAT_INTELLIGENCE" in source
+    assert "state.mark_credentialed_call(" in source
