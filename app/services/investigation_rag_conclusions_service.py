@@ -1020,7 +1020,7 @@ class InvestigationRAGConclusionsService:
     def _build_workflow_context(
         context: InvestigationRAGContext,
         *,
-        question: str,
+        question: str = "",
     ) -> str:
         """
         Prepare bounded RAG material for legacy analytical
