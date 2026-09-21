@@ -20,11 +20,12 @@ Does NOT:
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import quote
 
 import requests
 
-from app.core.config import settings
 from app.osint.base_connector import BaseConnector
+from app.osint.credential_policy import connector_secret
 from app.osint.models import (
     ConnectorRequest,
     OsintTargetType,
@@ -67,10 +68,7 @@ class AlienVaultOTXConnector(BaseConnector):
         is configured.
         """
 
-        return (
-            settings.otx_api_key
-            is not None
-        )
+        return bool(connector_secret("otx_api_key"))
 
     def execute(
         self,
@@ -115,11 +113,7 @@ class AlienVaultOTXConnector(BaseConnector):
             )
 
         headers = {
-            "X-OTX-API-KEY": (
-                settings
-                .otx_api_key
-                .get_secret_value()
-            )
+            "X-OTX-API-KEY": connector_secret("otx_api_key")
         }
 
         try:
@@ -214,25 +208,25 @@ class AlienVaultOTXConnector(BaseConnector):
         if target_type == OsintTargetType.IP:
 
             return (
-                f"indicators/IPv4/{value}/general"
+                f"indicators/IPv4/{quote(value, safe='')}/general"
             )
 
         if target_type == OsintTargetType.DOMAIN:
 
             return (
-                f"indicators/domain/{value}/general"
+                f"indicators/domain/{quote(value, safe='')}/general"
             )
 
         if target_type == OsintTargetType.HASH:
 
             return (
-                f"indicators/file/{value}/general"
+                f"indicators/file/{quote(value, safe='')}/general"
             )
 
         if target_type == OsintTargetType.URL:
 
             return (
-                f"indicators/url/{value}/general"
+                f"indicators/url/{quote(value, safe='')}/general"
             )
 
         return None
