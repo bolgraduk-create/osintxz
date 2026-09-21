@@ -83,7 +83,7 @@ class AIManager:
 
                 model_name=
                     self.model_name
-                    or "gpt-4.1-mini",
+                    or "gpt-5.6",
 
                 **self.config,
             )
