@@ -3,11 +3,14 @@ from __future__ import annotations
 from datetime import datetime
 import logging
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from PySide6.QtCore import QObject, Property, QThread, Signal, Slot
 
 from app.application.analysis_history_service import AnalysisHistoryService
+from app.application.analysis_chat_history_service import (
+    AnalysisChatHistoryService,
+)
 from app.application.analysis_run_profile import (
     analysis_workspace_catalog,
     normalize_analysis_mode,
@@ -21,6 +24,9 @@ from app.interface.desktop.workers.investigation_analysis_worker import (
 )
 from app.interface.desktop.workers.analysis_provider_discovery_worker import (
     AnalysisProviderDiscoveryWorker,
+)
+from app.interface.desktop.workers.analysis_chat_worker import (
+    AnalysisChatWorker,
 )
 
 
@@ -55,6 +61,11 @@ class AnalysisBridge(QObject):
         self._provider_catalog = self._initial_provider_catalog()
         self._provider_thread: QThread | None = None
         self._provider_worker: AnalysisProviderDiscoveryWorker | None = None
+        self._chat_messages: list[dict[str, Any]] = []
+        self._chat_session_id = str(uuid4())
+        self._chat_busy = False
+        self._chat_thread: QThread | None = None
+        self._chat_worker: AnalysisChatWorker | None = None
 
     @Property("QVariantMap", notify=changed)
     def runData(self) -> dict[str, Any]:
@@ -67,6 +78,18 @@ class AnalysisBridge(QObject):
     @Property(str, notify=messageChanged)
     def message(self) -> str:
         return self._message
+
+    @Property("QVariantList", notify=changed)
+    def chatMessages(self) -> list[dict[str, Any]]:
+        return [dict(item) for item in self._chat_messages]
+
+    @Property(bool, notify=changed)
+    def chatBusy(self) -> bool:
+        return self._chat_busy
+
+    @Property(str, notify=changed)
+    def chatSessionId(self) -> str:
+        return self._chat_session_id
 
     @Property("QVariantMap", constant=True)
     def catalog(self) -> dict[str, Any]:
@@ -130,6 +153,8 @@ class AnalysisBridge(QObject):
         self._case_id = normalized
         self._focus_options = []
         self._history = []
+        self._chat_messages = []
+        self._chat_session_id = str(uuid4())
 
         if not normalized:
             self.changed.emit()
@@ -179,6 +204,7 @@ class AnalysisBridge(QObject):
             )
 
         self._load_history(normalized)
+        self._load_chat_history(normalized)
         self.changed.emit()
 
     @Slot(str, result=bool)
@@ -223,67 +249,7 @@ class AnalysisBridge(QObject):
             self._set_message("The selected RAG source is unavailable.")
             return False
 
-        object_type = str(source.get("objectType") or "").strip().casefold()
-        object_id = str(source.get("objectId") or "").strip()
-        bridge = self._desktop_bridge
-        if bridge is None:
-            self._set_message("Desktop source navigation is unavailable.")
-            return False
-
-        opened = False
-        try:
-            if object_type in {"entity", "person"} and object_id:
-                opened = bool(bridge.openEntity(object_id))
-                if not opened:
-                    opened = bool(bridge.navigateTo("entities"))
-            elif object_type == "report" and object_id:
-                opened = bool(bridge.openReport(object_id))
-            elif object_type in {
-                "timeline",
-                "timeline_event",
-                "event",
-            } and object_id:
-                opened = bool(
-                    bridge.focusWorkspaceRecord(
-                        "timeline",
-                        object_id,
-                    )
-                )
-            elif object_type == "evidence" and object_id:
-                opened = bool(
-                    bridge.focusWorkspaceRecord(
-                        "evidence",
-                        object_id,
-                    )
-                )
-            elif object_type in {
-                "message",
-                "document",
-                "source",
-                "file",
-            }:
-                # These search objects do not necessarily share an Evidence
-                # primary key. Open the authoritative Evidence workspace while
-                # keeping the exact R-source visible in Analysis.
-                opened = bool(bridge.navigateTo("evidence"))
-            else:
-                opened = bool(bridge.navigateTo("search"))
-        except Exception:
-            LOGGER.exception("Unable to navigate to Analysis source")
-            opened = False
-
-        if opened:
-            self._set_message(
-                "Opened source workspace for "
-                + (normalized or "selected source")
-                + "."
-            )
-        else:
-            self._set_message(
-                "The source is listed in Analysis, but no dedicated "
-                "detail route is available for this object type."
-            )
-        return opened
+        return self._open_source_row(source, normalized)
 
     @Slot(str, str, result=bool)
     @Slot(
@@ -306,9 +272,9 @@ class AnalysisBridge(QObject):
         focus_entity_label: str = "",
         provider_name: str = "",
     ) -> bool:
-        if self._busy:
+        if self._busy or self._chat_busy:
             self._set_message(
-                "An investigation analysis is already running."
+                "Wait for the current AI operation to finish."
             )
             return False
 
@@ -501,6 +467,197 @@ class AnalysisBridge(QObject):
             self.changed.emit()
             return False
 
+    @Slot(
+        str, str, str, str, str, str, str, str, str,
+        result=bool,
+    )
+    def sendMessage(
+        self,
+        case_id: str,
+        message: str,
+        provider_name: str,
+        model: str,
+        reasoning_effort: str,
+        mode: str,
+        scope_type: str,
+        focus_entity_id: str,
+        focus_entity_label: str,
+    ) -> bool:
+        if self._busy or self._chat_busy:
+            self._set_message("Wait for the current AI operation to finish.")
+            return False
+
+        normalized_case_id = str(case_id or "").strip()
+        normalized_message = str(message or "").strip()
+        if not normalized_case_id:
+            self._set_message("Select an investigation before chatting with AI.")
+            return False
+        if not normalized_message:
+            self._set_message("Enter a message for the AI assistant.")
+            return False
+
+        selected_provider = str(
+            provider_name or settings.ai_provider or "ollama"
+        ).strip().casefold()
+        provider = self._provider_entry(selected_provider)
+        if not provider:
+            self._set_message(
+                "Unsupported Analysis provider: " + selected_provider
+            )
+            return False
+        if not provider.get("configured"):
+            self._set_message(
+                (
+                    "OpenAI is selected but OPENAI_API_KEY is not configured."
+                    if selected_provider == "openai"
+                    else "Ollama is selected but no local endpoint is configured."
+                )
+            )
+            return False
+        if (
+            selected_provider == "ollama"
+            and provider.get("online") is not True
+        ):
+            self._set_message("Ollama is not currently available.")
+            return False
+
+        profile = normalize_analysis_mode(mode)
+        selected_model = str(model or "").strip()
+        if selected_provider == "openai":
+            selected_model = normalize_openai_model(
+                selected_model,
+                fallback=profile.recommended_model,
+            )
+            selected_reasoning = normalize_reasoning_effort(
+                reasoning_effort,
+                fallback=profile.recommended_reasoning,
+            )
+        else:
+            selected_reasoning = ""
+            if not selected_model:
+                selected_model = str(
+                    provider.get("model")
+                    or provider.get("defaultModel")
+                    or ""
+                ).strip()
+
+        if not selected_model:
+            self._set_message("Select an AI model before sending a message.")
+            return False
+
+        normalized_scope = str(scope_type or "case").strip().casefold()
+        normalized_focus_id = str(focus_entity_id or "").strip()
+        normalized_focus_label = str(focus_entity_label or "").strip()
+        if (
+            normalized_scope != "person"
+            or not normalized_focus_id
+            or not normalized_focus_label
+        ):
+            normalized_scope = "case"
+            normalized_focus_id = ""
+            normalized_focus_label = "Entire Investigation"
+
+        previous_conversation = [
+            {
+                "role": str(item.get("role") or ""),
+                "text": str(item.get("text") or ""),
+            }
+            for item in self._chat_messages
+            if isinstance(item, dict)
+            and str(item.get("role") or "") in {"user", "assistant"}
+        ]
+
+        user_id = str(uuid4())
+        self._chat_messages.append(
+            {
+                "id": user_id,
+                "turnId": "",
+                "role": "user",
+                "text": normalized_message,
+                "createdAt": datetime.now().isoformat(),
+                "sourceReferences": [],
+                "sources": [],
+            }
+        )
+        self._chat_busy = True
+        self._set_message("AI assistant is thinking…")
+        self.changed.emit()
+
+        try:
+            thread = QThread(self)
+            worker = AnalysisChatWorker(
+                case_id=normalized_case_id,
+                session_id=self._chat_session_id,
+                message=normalized_message,
+                conversation=previous_conversation,
+                provider_name=selected_provider,
+                model=selected_model,
+                reasoning_effort=selected_reasoning,
+                mode=profile.key,
+                scope_type=normalized_scope,
+                focus_entity_id=normalized_focus_id,
+                focus_entity_label=normalized_focus_label,
+            )
+            worker.moveToThread(thread)
+            thread.started.connect(worker.run)
+            worker.succeeded.connect(self._on_chat_succeeded)
+            worker.failed.connect(self._on_chat_failed)
+            worker.succeeded.connect(thread.quit)
+            worker.failed.connect(thread.quit)
+            worker.succeeded.connect(worker.deleteLater)
+            worker.failed.connect(worker.deleteLater)
+            thread.finished.connect(self._on_chat_thread_finished)
+            thread.finished.connect(thread.deleteLater)
+
+            self._chat_thread = thread
+            self._chat_worker = worker
+            thread.start()
+            return True
+        except Exception as exc:
+            LOGGER.exception("Unable to start Analysis chat worker")
+            self._chat_busy = False
+            self._chat_thread = None
+            self._chat_worker = None
+            self._set_message(
+                "Unable to start AI chat: " + str(exc)
+            )
+            self.changed.emit()
+            return False
+
+    @Slot()
+    def newChat(self) -> None:
+        if self._busy or self._chat_busy:
+            return
+        self._chat_session_id = str(uuid4())
+        self._chat_messages = []
+        self._set_message("")
+        self.changed.emit()
+
+    @Slot(str, str, result=bool)
+    def openChatSource(self, message_id: str, reference: str) -> bool:
+        normalized_message = str(message_id or "").strip()
+        normalized_reference = str(reference or "").strip()
+        source: dict[str, Any] | None = None
+
+        for message in self._chat_messages:
+            if str(message.get("id") or "") != normalized_message:
+                continue
+            for item in list(message.get("sources") or []):
+                if (
+                    isinstance(item, dict)
+                    and str(item.get("reference") or "") == normalized_reference
+                ):
+                    source = dict(item)
+                    break
+            if source is not None:
+                break
+
+        if source is None:
+            self._set_message("The selected chat source is unavailable.")
+            return False
+
+        return self._open_source_row(source, normalized_reference)
+
     @Slot()
     def clear(self) -> None:
         if self._busy:
@@ -616,6 +773,53 @@ class AnalysisBridge(QObject):
         )
         self._run = current
         self._set_message("Investigation analysis failed: " + error)
+        self.changed.emit()
+
+    @Slot(object)
+    def _on_chat_succeeded(self, result: object) -> None:
+        payload = dict(result) if isinstance(result, dict) else {}
+        message_id = (
+            str(payload.get("turnId") or "")
+            + ":assistant"
+            if payload.get("turnId")
+            else str(uuid4())
+        )
+        payload.update(
+            {
+                "id": message_id,
+                "role": "assistant",
+                "createdAt": datetime.now().isoformat(),
+            }
+        )
+        self._chat_messages.append(payload)
+        self._set_message("AI reply completed.")
+        self.changed.emit()
+
+    @Slot(object)
+    def _on_chat_failed(self, result: object) -> None:
+        payload = dict(result) if isinstance(result, dict) else {}
+        error = str(payload.get("error") or "AI chat failed.")
+        self._chat_messages.append(
+            {
+                "id": str(uuid4()),
+                "turnId": "",
+                "role": "assistant",
+                "text": "I couldn't complete that reply. " + error,
+                "createdAt": datetime.now().isoformat(),
+                "sourceReferences": [],
+                "sources": [],
+                "warnings": [error],
+                "error": True,
+            }
+        )
+        self._set_message("AI chat failed: " + error)
+        self.changed.emit()
+
+    @Slot()
+    def _on_chat_thread_finished(self) -> None:
+        self._chat_busy = False
+        self._chat_worker = None
+        self._chat_thread = None
         self.changed.emit()
 
     @Slot(object)
@@ -767,6 +971,92 @@ class AnalysisBridge(QObject):
             if str(item.get("provider") or "").strip().casefold() == normalized:
                 return dict(item)
         return {}
+
+    def _open_source_row(
+        self,
+        source: dict[str, Any],
+        reference: str,
+    ) -> bool:
+        object_type = str(source.get("objectType") or "").strip().casefold()
+        object_id = str(source.get("objectId") or "").strip()
+        bridge = self._desktop_bridge
+        if bridge is None:
+            self._set_message("Desktop source navigation is unavailable.")
+            return False
+
+        opened = False
+        try:
+            if object_type in {"entity", "person"} and object_id:
+                opened = bool(bridge.openEntity(object_id))
+                if not opened:
+                    opened = bool(bridge.navigateTo("entities"))
+            elif object_type == "report" and object_id:
+                opened = bool(bridge.openReport(object_id))
+            elif object_type in {"timeline", "timeline_event", "event"} and object_id:
+                opened = bool(
+                    bridge.focusWorkspaceRecord("timeline", object_id)
+                )
+            elif object_type == "evidence" and object_id:
+                opened = bool(
+                    bridge.focusWorkspaceRecord("evidence", object_id)
+                )
+            elif object_type in {"message", "document", "source", "file"}:
+                opened = bool(bridge.navigateTo("evidence"))
+            else:
+                opened = bool(bridge.navigateTo("search"))
+        except Exception:
+            LOGGER.exception("Unable to navigate to Analysis source")
+            opened = False
+
+        if opened:
+            self._set_message(
+                "Opened source workspace for "
+                + (str(reference or "").strip() or "selected source")
+                + "."
+            )
+        else:
+            self._set_message(
+                "The source is listed in Analysis, but no dedicated "
+                "detail route is available for this object type."
+            )
+        return opened
+
+    def _load_chat_history(self, case_id: str) -> None:
+        normalized = str(case_id or "").strip()
+        if not normalized:
+            self._chat_messages = []
+            self._chat_session_id = str(uuid4())
+            return
+
+        from app.database.session import create_session
+
+        session = None
+        try:
+            session = create_session()
+            service = AnalysisChatHistoryService(session)
+            payload = service.load_latest_session(
+                normalized,
+                limit_turns=30,
+            )
+            session.rollback()
+            self._chat_session_id = str(
+                payload.get("sessionId") or uuid4()
+            )
+            self._chat_messages = [
+                dict(item)
+                for item in list(payload.get("messages") or [])
+                if isinstance(item, dict)
+            ]
+        except Exception:
+            LOGGER.exception("Unable to load Analysis chat history")
+            self._chat_session_id = str(uuid4())
+            self._chat_messages = []
+        finally:
+            if session is not None:
+                try:
+                    session.close()
+                except Exception:
+                    pass
 
     def _load_history(self, case_id: str) -> None:
         normalized = str(case_id or "").strip()
