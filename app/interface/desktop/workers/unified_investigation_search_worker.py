@@ -34,6 +34,7 @@ from app.application.exploration_graph import (
     build_exploration_graph,
 )
 from app.application.search_retrieval_scheduler import (
+    AdaptiveRetrievalFeedback,
     RetrievalScheduleBook,
     schedule_seed_routes,
     schedule_seeds,
@@ -75,6 +76,10 @@ class UnifiedInvestigationSearchWorker(QObject):
     OPEN_WEB_TIMEOUT = 18
     FEDERATION_ROUTE_LIMIT = 56
     REGISTRY_QUERY_LIMIT = 18
+    FEDERATION_TIME_BUDGET = 224.0
+    REGISTRY_TIME_BUDGET = 90.0
+    PIVOT_FEDERATION_TIME_BUDGET = 96.0
+    PIVOT_REGISTRY_TIME_BUDGET = 50.0
     DISCOVERED_PIVOT_LIMIT = 18
     SECOND_WAVE_OPEN_WEB_LIMIT = 4
     EXPLORATION_MAX_SEEDS = 8
@@ -141,6 +146,7 @@ class UnifiedInvestigationSearchWorker(QObject):
             open_web_snapshots: list[dict[str, Any]] = []
             state = PivotTraversalState()
             retrieval_schedule = RetrievalScheduleBook()
+            retrieval_feedback = AdaptiveRetrievalFeedback()
 
             for seed, route in plan.guarded_routes:
                 providers.append(
@@ -272,6 +278,8 @@ class UnifiedInvestigationSearchWorker(QObject):
                     plan.federation_routes,
                     limit=self.FEDERATION_ROUTE_LIMIT,
                     lane="federation_roots",
+                    feedback=retrieval_feedback,
+                    time_budget_seconds=self.FEDERATION_TIME_BUDGET,
                 )
                 retrieval_schedule.add(federation_schedule)
                 federation_records = self._run_federation_routes(
@@ -289,6 +297,8 @@ class UnifiedInvestigationSearchWorker(QObject):
                     plan.registry_queries,
                     limit=self.REGISTRY_QUERY_LIMIT,
                     lane="registry_roots",
+                    feedback=retrieval_feedback,
+                    time_budget_seconds=self.REGISTRY_TIME_BUDGET,
                 )
                 retrieval_schedule.add(registry_schedule)
                 registry_records = self._run_registry_queries(
@@ -398,6 +408,10 @@ class UnifiedInvestigationSearchWorker(QObject):
                                 pivot_plan.federation_routes,
                                 limit=24,
                                 lane="federation_pivots",
+                                feedback=retrieval_feedback,
+                                time_budget_seconds=(
+                                    self.PIVOT_FEDERATION_TIME_BUDGET
+                                ),
                             )
                         )
                         retrieval_schedule.add(pivot_federation_schedule)
@@ -415,6 +429,10 @@ class UnifiedInvestigationSearchWorker(QObject):
                                 pivot_plan.registry_queries,
                                 limit=10,
                                 lane="registry_pivots",
+                                feedback=retrieval_feedback,
+                                time_budget_seconds=(
+                                    self.PIVOT_REGISTRY_TIME_BUDGET
+                                ),
                             )
                         )
                         retrieval_schedule.add(pivot_registry_schedule)
