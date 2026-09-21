@@ -411,20 +411,37 @@ def schedule_seed_routes(
     *,
     limit: int,
     lane: str,
+    feedback: AdaptiveRetrievalFeedback | None = None,
+    time_budget_seconds: float | None = None,
 ) -> tuple[list[tuple[UnifiedSeed, Any]], RetrievalScheduleSummary]:
-    """Select route/query work fairly across seed identities."""
+    """Select route/query work fairly while accounting for cost/health."""
 
     candidates = list(items)
     bounded_limit = max(0, int(limit))
+    profile = feedback or AdaptiveRetrievalFeedback()
+    bounded_time_budget = (
+        None
+        if time_budget_seconds is None
+        else max(0.0, float(time_budget_seconds))
+    )
+
     grouped: OrderedDict[
         tuple[str, str, str],
         list[tuple[UnifiedSeed, Any]],
     ] = OrderedDict()
 
-    for seed, route in sorted(candidates, key=_route_priority_key):
+    for seed, route in sorted(
+        candidates,
+        key=lambda item: _route_priority_key(
+            item,
+            feedback=profile,
+            lane=lane,
+        ),
+    ):
         grouped.setdefault(seed.identity_key, []).append((seed, route))
 
-    if bounded_limit == 0 or not candidates:
+    if bounded_limit == 0 or not candidates or bounded_time_budget == 0.0:
+        time_skip = bool(candidates and bounded_time_budget == 0.0)
         decisions = tuple(
             _route_decision(
                 lane=lane,
@@ -432,7 +449,13 @@ def schedule_seed_routes(
                 route=route,
                 selected=False,
                 wave=0,
-                reason="lane budget exhausted before execution",
+                reason=(
+                    "skipped because estimated time budget was exhausted"
+                    if time_skip
+                    else "lane budget exhausted before execution"
+                ),
+                feedback=profile,
+                time_budget_skip=time_skip,
             )
             for seed, route in candidates
         )
@@ -445,27 +468,56 @@ def schedule_seed_routes(
             groups=len(grouped),
             waves=0,
             decisions=decisions,
+            time_budget_seconds=bounded_time_budget,
+            estimated_selected_seconds=0.0,
+            skipped_due_to_time_budget=(len(candidates) if time_skip else 0),
+            deprioritized=sum(item.deprioritized for item in decisions),
         )
 
     selected: list[tuple[UnifiedSeed, Any]] = []
     wave_by_key: dict[tuple[tuple[str, str, str], int], int] = {}
+    time_skipped: set[tuple[tuple[str, str, str], int]] = set()
+    estimated_selected_seconds = 0.0
     wave = 0
     offsets = {key: 0 for key in grouped}
 
     while len(selected) < bounded_limit:
         wave += 1
         added = False
+
         for group_key, group_items in grouped.items():
             offset = offsets[group_key]
             if offset >= len(group_items):
                 continue
+
             item = group_items[offset]
             offsets[group_key] = offset + 1
+            seed, route = item
+            route_key = (group_key, id(route))
+            source = _route_source(route)
+            estimate = profile.estimate_seconds(
+                source=source,
+                route=route,
+                lane=lane,
+            )
+
+            if (
+                bounded_time_budget is not None
+                and selected
+                and estimated_selected_seconds + estimate
+                    > bounded_time_budget
+            ):
+                time_skipped.add(route_key)
+                continue
+
             selected.append(item)
-            wave_by_key[(group_key, id(item[1]))] = wave
+            estimated_selected_seconds += estimate
+            wave_by_key[route_key] = wave
             added = True
+
             if len(selected) >= bounded_limit:
                 break
+
         if not added:
             break
 
@@ -473,10 +525,12 @@ def schedule_seed_routes(
         (seed.identity_key, id(route))
         for seed, route in selected
     }
+
     decisions: list[RetrievalScheduleDecision] = []
     for seed, route in candidates:
         key = (seed.identity_key, id(route))
         is_selected = key in selected_ids
+        is_time_skip = key in time_skipped
         decisions.append(
             _route_decision(
                 lane=lane,
@@ -485,10 +539,16 @@ def schedule_seed_routes(
                 selected=is_selected,
                 wave=wave_by_key.get(key, 0),
                 reason=(
-                    "selected by fair seed round-robin"
+                    "selected by adaptive fair round-robin"
                     if is_selected
-                    else "skipped because lane budget was exhausted"
+                    else (
+                        "skipped because estimated time budget was exhausted"
+                        if is_time_skip
+                        else "skipped because lane budget was exhausted"
+                    )
                 ),
+                feedback=profile,
+                time_budget_skip=is_time_skip,
             )
         )
 
@@ -504,6 +564,10 @@ def schedule_seed_routes(
             default=0,
         ),
         decisions=tuple(decisions),
+        time_budget_seconds=bounded_time_budget,
+        estimated_selected_seconds=estimated_selected_seconds,
+        skipped_due_to_time_budget=len(time_skipped),
+        deprioritized=sum(item.deprioritized for item in decisions),
     )
 
 
@@ -555,16 +619,28 @@ def _seed_priority_key(seed: UnifiedSeed) -> tuple[int, int, str, str]:
 
 def _route_priority_key(
     item: tuple[UnifiedSeed, Any],
-) -> tuple[int, int, str, str, str]:
+    *,
+    feedback: AdaptiveRetrievalFeedback,
+    lane: str,
+) -> tuple[int, float, float, int, str, str, str]:
     seed, route = item
+    source = _route_source(route)
     configured = getattr(route, "configured", None)
     configured_priority = 0 if configured is True else 1
+    health_penalty = feedback.health_penalty(source)
+    estimate = feedback.estimate_seconds(
+        source=source,
+        route=route,
+        lane=lane,
+    )
     return (
         _seed_priority_key(seed)[0],
+        health_penalty,
+        estimate,
         configured_priority,
         seed.kind.value,
         seed.value.casefold(),
-        _route_source(route).casefold(),
+        source.casefold(),
     )
 
 
@@ -576,7 +652,30 @@ def _route_decision(
     selected: bool,
     wave: int,
     reason: str,
+    feedback: AdaptiveRetrievalFeedback | None = None,
+    time_budget_skip: bool = False,
 ) -> RetrievalScheduleDecision:
+    profile = feedback or AdaptiveRetrievalFeedback()
+    source = _route_source(route)
+    health_penalty = profile.health_penalty(source)
+    timeout_risk = profile.timeout_risk(source)
+    estimated_seconds = profile.estimate_seconds(
+        source=source,
+        route=route,
+        lane=lane,
+    )
+    adaptive_score = profile.adaptive_score(
+        source=source,
+        route=route,
+        lane=lane,
+    )
+    configured = getattr(route, "configured", None)
+    deprioritized = bool(
+        configured is False
+        or health_penalty >= 4.0
+        or timeout_risk >= 0.5
+        or estimated_seconds >= 10.0
+    )
     return RetrievalScheduleDecision(
         lane=lane,
         selected=selected,
@@ -584,8 +683,15 @@ def _route_decision(
         reason=reason,
         seed_kind=seed.kind.value,
         seed_value=seed.value,
-        source=_route_source(route),
+        source=source,
         capability=_route_capability(route),
+        estimated_seconds=estimated_seconds,
+        health_state=profile.health_state(source),
+        health_penalty=health_penalty,
+        timeout_risk=timeout_risk,
+        adaptive_score=adaptive_score,
+        deprioritized=deprioritized,
+        time_budget_skip=time_budget_skip,
     )
 
 
@@ -609,3 +715,17 @@ def _route_capability(route: Any) -> str:
             continue
         return str(getattr(value, "value", None) or value)
     return ""
+
+
+def _safe_float(value: Any) -> float:
+    try:
+        return float(value or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _safe_int(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
