@@ -30,6 +30,7 @@ class AnalysisChatWorker(QObject):
         session_id: str,
         message: str,
         conversation: list[dict[str, Any]],
+        analysis_context: dict[str, Any],
         provider_name: str,
         model: str,
         reasoning_effort: str,
@@ -47,6 +48,11 @@ class AnalysisChatWorker(QObject):
             for item in list(conversation or [])
             if isinstance(item, dict)
         ]
+        self.analysis_context = (
+            dict(analysis_context)
+            if isinstance(analysis_context, dict)
+            else {}
+        )
         self.provider_name = str(provider_name or "").strip().casefold()
         self.model = str(model or "").strip()
         self.reasoning_effort = str(reasoning_effort or "").strip().casefold()
@@ -101,6 +107,7 @@ class AnalysisChatWorker(QObject):
                 case_id=case_uuid,
                 message=self.message,
                 conversation=self.conversation,
+                analysis_context=self.analysis_context,
                 scope_type=self.scope_type,
                 focus_entity_id=self.focus_entity_id,
                 focus_entity_label=self.focus_entity_label,
