@@ -33,6 +33,11 @@ from app.application.exploration_graph import (
     ExplorationGraph,
     build_exploration_graph,
 )
+from app.application.search_retrieval_scheduler import (
+    RetrievalScheduleBook,
+    schedule_seed_routes,
+    schedule_seeds,
+)
 from app.application.unified_investigation_search import (
     UnifiedSeed,
     UnifiedSeedKind,
@@ -135,6 +140,7 @@ class UnifiedInvestigationSearchWorker(QObject):
             osint_snapshots: list[dict[str, Any]] = []
             open_web_snapshots: list[dict[str, Any]] = []
             state = PivotTraversalState()
+            retrieval_schedule = RetrievalScheduleBook()
 
             for seed, route in plan.guarded_routes:
                 providers.append(
@@ -157,9 +163,15 @@ class UnifiedInvestigationSearchWorker(QObject):
             )
 
             if use_classic:
-                classic_roots = self._classic_seeds(container, plan.classic_seeds)[
-                    : self.ROOT_CLASSIC_LIMIT
-                ]
+                classic_candidates = self._classic_seeds(
+                    container, plan.classic_seeds
+                )
+                classic_roots, classic_schedule = schedule_seeds(
+                    classic_candidates,
+                    limit=self.ROOT_CLASSIC_LIMIT,
+                    lane="classic_roots",
+                )
+                retrieval_schedule.add(classic_schedule)
                 if classic_roots:
                     self._emit("classic", f"Classic OSINT: {len(classic_roots)} root target(s).")
                     max_targets = (
@@ -197,9 +209,15 @@ class UnifiedInvestigationSearchWorker(QObject):
                     self._append_osint_snapshot(snap, results, providers, errors)
 
             if use_open_web:
-                open_web_roots = self._open_web_seeds(container, plan.open_web_seeds)[
-                    : self.OPEN_WEB_ROOT_LIMIT
-                ]
+                open_web_candidates = self._open_web_seeds(
+                    container, plan.open_web_seeds
+                )
+                open_web_roots, open_web_schedule = schedule_seeds(
+                    open_web_candidates,
+                    limit=self.OPEN_WEB_ROOT_LIMIT,
+                    lane="open_web_roots",
+                )
+                retrieval_schedule.add(open_web_schedule)
                 for index, seed in enumerate(open_web_roots, start=1):
                     target_type = osint_target_for_seed(seed)
                     if target_type is None:
@@ -250,7 +268,12 @@ class UnifiedInvestigationSearchWorker(QObject):
 
             if use_federation:
                 self._emit("federation", "Searching safe automatic Federation sources…")
-                routes = plan.federation_routes[: self.FEDERATION_ROUTE_LIMIT]
+                routes, federation_schedule = schedule_seed_routes(
+                    plan.federation_routes,
+                    limit=self.FEDERATION_ROUTE_LIMIT,
+                    lane="federation_roots",
+                )
+                retrieval_schedule.add(federation_schedule)
                 federation_records = self._run_federation_routes(
                     container=container,
                     routes=routes,
@@ -262,9 +285,15 @@ class UnifiedInvestigationSearchWorker(QObject):
 
             if use_registry:
                 self._emit("registry", "Searching compatible Registry providers…")
+                registry_items, registry_schedule = schedule_seed_routes(
+                    plan.registry_queries,
+                    limit=self.REGISTRY_QUERY_LIMIT,
+                    lane="registry_roots",
+                )
+                retrieval_schedule.add(registry_schedule)
                 registry_records = self._run_registry_queries(
                     container=container,
-                    items=plan.registry_queries[: self.REGISTRY_QUERY_LIMIT],
+                    items=registry_items,
                     results=results,
                     providers=providers,
                     errors=errors,
@@ -291,14 +320,26 @@ class UnifiedInvestigationSearchWorker(QObject):
                     )
                 )
                 initial_keys = {seed.identity_key for seed in seeds}
-                pivots = [
+                pivot_candidates = [
                     seed
                     for seed in dedupe_seeds(pivots)
                     if seed.identity_key not in initial_keys
-                ][: self.DISCOVERED_PIVOT_LIMIT * 2]
-                queued_pivots = [
+                ]
+                pivots, pivot_review_schedule = schedule_seeds(
+                    pivot_candidates,
+                    limit=self.DISCOVERED_PIVOT_LIMIT * 2,
+                    lane="pivot_review",
+                )
+                retrieval_schedule.add(pivot_review_schedule)
+                queued_candidates = [
                     seed for seed in pivots if is_exact_recursive_seed(seed)
-                ][: self.DISCOVERED_PIVOT_LIMIT]
+                ]
+                queued_pivots, pivot_queue_schedule = schedule_seeds(
+                    queued_candidates,
+                    limit=self.DISCOVERED_PIVOT_LIMIT,
+                    lane="pivot_execution",
+                )
+                retrieval_schedule.add(pivot_queue_schedule)
 
                 if queued_pivots:
                     self._emit(
@@ -309,7 +350,15 @@ class UnifiedInvestigationSearchWorker(QObject):
                     )
 
                     if use_classic:
-                        classic_pivots = self._classic_seeds(container, queued_pivots)
+                        classic_pivot_candidates = self._classic_seeds(
+                            container, queued_pivots
+                        )
+                        classic_pivots, classic_pivot_schedule = schedule_seeds(
+                            classic_pivot_candidates,
+                            limit=12,
+                            lane="classic_pivots",
+                        )
+                        retrieval_schedule.add(classic_pivot_schedule)
                         if classic_pivots:
                             recursion = container.osint_recursive_enrichment_service.enrich(
                                 case_id=case_uuid,
@@ -344,27 +393,49 @@ class UnifiedInvestigationSearchWorker(QObject):
                         include_sensitive_name_routes=False,
                     )
                     if use_federation:
+                        pivot_federation_routes, pivot_federation_schedule = (
+                            schedule_seed_routes(
+                                pivot_plan.federation_routes,
+                                limit=24,
+                                lane="federation_pivots",
+                            )
+                        )
+                        retrieval_schedule.add(pivot_federation_schedule)
                         more_records = self._run_federation_routes(
                             container=container,
-                            routes=pivot_plan.federation_routes[:24],
+                            routes=pivot_federation_routes,
                             results=results,
                             providers=providers,
                             errors=errors,
                         )
                         all_federation_records.extend(more_records)
                     if use_registry:
+                        pivot_registry_items, pivot_registry_schedule = (
+                            schedule_seed_routes(
+                                pivot_plan.registry_queries,
+                                limit=10,
+                                lane="registry_pivots",
+                            )
+                        )
+                        retrieval_schedule.add(pivot_registry_schedule)
                         more_registry = self._run_registry_queries(
                             container=container,
-                            items=pivot_plan.registry_queries[:10],
+                            items=pivot_registry_items,
                             results=results,
                             providers=providers,
                             errors=errors,
                         )
                         all_registry_records.extend(more_registry)
                     if use_open_web:
-                        second_web = self._open_web_seeds(container, queued_pivots)[
-                            : self.SECOND_WAVE_OPEN_WEB_LIMIT
-                        ]
+                        second_web_candidates = self._open_web_seeds(
+                            container, queued_pivots
+                        )
+                        second_web, second_web_schedule = schedule_seeds(
+                            second_web_candidates,
+                            limit=self.SECOND_WAVE_OPEN_WEB_LIMIT,
+                            lane="open_web_pivots",
+                        )
+                        retrieval_schedule.add(second_web_schedule)
                         for seed in second_web:
                             target_type = osint_target_for_seed(seed)
                             if target_type is None:
@@ -546,6 +617,7 @@ class UnifiedInvestigationSearchWorker(QObject):
                 ),
                 "explorationValidationSummary": exploration_validation_summary,
                 "explorationBrowserSummary": exploration_browser_summary,
+                "retrievalSchedule": retrieval_schedule.to_dict(),
                 "providers": providers,
                 "healthSummary": health_summary,
                 "pivots": [self._snapshot_seed(item, queued=is_exact_recursive_seed(item)) for item in pivots],
@@ -590,6 +662,9 @@ class UnifiedInvestigationSearchWorker(QObject):
                     "explorationNodes": len(exploration_graph.nodes),
                     "explorationExecuted": len(exploration_executed_keys),
                     "explorationResults": len(exploration_rows),
+                    "retrievalCandidates": retrieval_schedule.candidates,
+                    "retrievalSelected": retrieval_schedule.selected,
+                    "missedDueToBudget": retrieval_schedule.missed_due_to_budget,
                     "providers": len(providers),
                     "healthReady": int(health_summary.get("ready") or 0),
                     "healthIssues": int(health_summary.get("issues") or 0),
