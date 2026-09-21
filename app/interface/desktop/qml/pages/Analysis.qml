@@ -291,7 +291,7 @@ Item {
                     text: String(root.provider.label || "AI")
                         + " · " + String(root.provider.model || "No model")
                         + (String(root.provider.provider || "") === "openai" && root.provider.storeResponses === false
-                            ? " · storage off"
+                            ? " · " + "storage off"
                             : "")
                     color: Boolean(root.provider.configured) ? Theme.textSecondary : Theme.danger
                     font.pixelSize: 9
@@ -752,9 +752,7 @@ Item {
 
                                     Text {
                                         width: parent.width
-                                        text: desktopBridge.hasCurrentCase
-                                            ? "What do you want to understand?"
-                                            : "Select an investigation first"
+                                        text: "What do you want to understand?"
                                         color: Theme.textPrimary
                                         font.pixelSize: 22
                                         font.weight: Font.DemiBold
@@ -765,7 +763,7 @@ Item {
                                         width: parent.width
                                         text: desktopBridge.hasCurrentCase
                                             ? "Ask a focused question, or use one of the starting points below. Analysis stays grounded in the investigation’s bounded sources."
-                                            : "Analysis needs an active case before it can build grounded context."
+                                            : "Select an investigation first. Once a case is active, ask a focused question or use one of the starting points below."
                                         color: Theme.textMuted
                                         font.pixelSize: 10
                                         lineHeight: 1.35
