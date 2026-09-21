@@ -29,6 +29,10 @@ from app.application.account_profile_validation import (
 from app.application.browser_account_verification import (
     annotate_browser_account_validation,
 )
+from app.application.exploration_graph import (
+    ExplorationGraph,
+    build_exploration_graph,
+)
 from app.application.unified_investigation_search import (
     UnifiedSeed,
     UnifiedSeedKind,
@@ -68,6 +72,10 @@ class UnifiedInvestigationSearchWorker(QObject):
     REGISTRY_QUERY_LIMIT = 18
     DISCOVERED_PIVOT_LIMIT = 18
     SECOND_WAVE_OPEN_WEB_LIMIT = 4
+    EXPLORATION_MAX_SEEDS = 8
+    EXPLORATION_MAX_DEPTH = 2
+    EXPLORATION_TIMEOUT = 12
+    EXPLORATION_FINDING_LIMIT = 6
 
     def __init__(
         self,
@@ -414,10 +422,73 @@ class UnifiedInvestigationSearchWorker(QObject):
                 max_concurrency=3,
             )
 
-            # R13.26a shadow quality assessment.  These annotations are
-            # diagnostic only: current consolidation, persistence and pivot
-            # decisions remain authoritative until the benchmark proves that
-            # the new engine is safer and higher-recall.
+            # R13.26a shadow quality assessment becomes the admission signal
+            # for the R13.26c in-memory Exploration Graph.  Persistence remains
+            # unchanged: exploratory execution uses the raw execution boundary
+            # and therefore creates no Entity/Evidence on its own.
+            preliminary_quality_rows, _preliminary_quality_summary = (
+                annotate_search_quality_rows(
+                    results,
+                    search_profile=self.profile,
+                )
+            )
+            results = preliminary_quality_rows
+
+            exploration_graph = ExplorationGraph()
+            exploration_executed_keys: set[tuple[str, str, str]] = set()
+            exploration_rows: list[dict[str, Any]] = []
+            exploration_validation_summary: dict[str, Any] = {}
+            exploration_browser_summary: dict[str, Any] = {}
+
+            if follow_pivots:
+                exploration_graph = build_exploration_graph(
+                    results,
+                    initial_seeds=seeds,
+                    existing_seeds=pivots,
+                    max_nodes=self.EXPLORATION_MAX_SEEDS,
+                    max_depth=self.EXPLORATION_MAX_DEPTH,
+                )
+                if exploration_graph.nodes:
+                    self._emit(
+                        "exploration",
+                        f"Exploring {len(exploration_graph.nodes)} quality-approved ephemeral pivot(s) without persistence…",
+                        pivots=len(exploration_graph.nodes),
+                    )
+                    exploration_executed_keys = self._run_ephemeral_exploration(
+                        container=container,
+                        graph=exploration_graph,
+                        results=exploration_rows,
+                        providers=providers,
+                        errors=errors,
+                    )
+
+                    if exploration_rows:
+                        exploration_rows, exploration_account_summary = (
+                            annotate_account_profile_validation(
+                                exploration_rows,
+                                max_live_checks=12,
+                                timeout=4.0,
+                                workers=4,
+                            )
+                        )
+                        exploration_validation_summary = (
+                            exploration_account_summary.to_dict()
+                        )
+                        exploration_rows, exploration_browser = (
+                            annotate_browser_account_validation(
+                                exploration_rows,
+                                max_browser_checks=6,
+                                navigation_timeout=8.0,
+                                max_concurrency=2,
+                            )
+                        )
+                        exploration_browser_summary = (
+                            exploration_browser.to_dict()
+                        )
+                        results.extend(exploration_rows)
+
+            # Re-score after the ephemeral wave so exploration observations are
+            # ranked by the same quality engine as first-wave results.
             quality_rows, quality_summary = annotate_search_quality_rows(
                 results,
                 search_profile=self.profile,
@@ -470,6 +541,11 @@ class UnifiedInvestigationSearchWorker(QObject):
                 "qualitySummary": quality_summary.to_dict(),
                 "accountValidationSummary": account_validation_summary.to_dict(),
                 "browserAccountValidationSummary": browser_validation_summary.to_dict(),
+                "explorationGraph": exploration_graph.to_dict(
+                    executed_keys=exploration_executed_keys
+                ),
+                "explorationValidationSummary": exploration_validation_summary,
+                "explorationBrowserSummary": exploration_browser_summary,
                 "providers": providers,
                 "healthSummary": health_summary,
                 "pivots": [self._snapshot_seed(item, queued=is_exact_recursive_seed(item)) for item in pivots],
@@ -511,6 +587,9 @@ class UnifiedInvestigationSearchWorker(QObject):
                     "browserUncertain": browser_validation_summary.uncertain,
                     "browserBlocked": browser_validation_summary.blocked,
                     "browserInvalid": browser_validation_summary.invalid,
+                    "explorationNodes": len(exploration_graph.nodes),
+                    "explorationExecuted": len(exploration_executed_keys),
+                    "explorationResults": len(exploration_rows),
                     "providers": len(providers),
                     "healthReady": int(health_summary.get("ready") or 0),
                     "healthIssues": int(health_summary.get("issues") or 0),
@@ -1107,6 +1186,200 @@ class UnifiedInvestigationSearchWorker(QObject):
                                 "sensitive": False,
                             }
                         )
+
+    def _run_ephemeral_exploration(
+        self,
+        *,
+        container: Any,
+        graph: ExplorationGraph,
+        results: list[dict[str, Any]],
+        providers: list[dict[str, Any]],
+        errors: list[dict[str, Any]],
+    ) -> set[tuple[str, str, str]]:
+        """Execute quality-approved seeds without persistence or recursion."""
+        execution_service = container.osint_enrichment_service.execution_service
+        state = PivotTraversalState()
+        executed: set[tuple[str, str, str]] = set()
+
+        for node in graph.nodes[: self.EXPLORATION_MAX_SEEDS]:
+            seed = node.seed
+            target_type = osint_target_for_seed(seed)
+            if target_type is None:
+                continue
+
+            try:
+                executions = execution_service.execute_defaults(
+                    target_type=target_type,
+                    value=seed.value,
+                    depth=seed.depth,
+                    entity_identity=(
+                        f"ephemeral:{seed.kind.value}:"
+                        f"{seed.value.strip().casefold()}"
+                    ),
+                    state=state,
+                    case_id=None,
+                    timeout=self.EXPLORATION_TIMEOUT,
+                    use_cache=True,
+                    save_raw_output=False,
+                    include_metadata=True,
+                    include_related=True,
+                    entity_budget_limit=self.EXPLORATION_FINDING_LIMIT,
+                )
+                executed.add(seed.identity_key)
+            except Exception as exc:
+                errors.append(
+                    self._error_row(
+                        "Exploration",
+                        "execution_boundary",
+                        f"{type(exc).__name__}: {exc}",
+                        seed,
+                    )
+                )
+                continue
+
+            for execution in executions:
+                route = getattr(execution, "route", None)
+                goal_object = getattr(route, "goal", None)
+                goal = (
+                    getattr(goal_object, "value", None)
+                    or str(goal_object or "exploration")
+                )
+                execution_status_object = getattr(execution, "status", None)
+                execution_status = (
+                    getattr(execution_status_object, "value", None)
+                    or str(execution_status_object or "unknown")
+                )
+
+                for record in list(getattr(execution, "records", ()) or ()):
+                    result = getattr(record, "result", None)
+                    if result is None:
+                        continue
+                    connector = str(
+                        getattr(result, "connector", None)
+                        or getattr(record, "runtime_connector_name", None)
+                        or "OSINT"
+                    )
+                    status_object = getattr(result, "status", None)
+                    status = (
+                        getattr(status_object, "value", None)
+                        or str(status_object or execution_status)
+                    )
+                    findings = list(getattr(result, "findings", ()) or ())
+                    providers.append(
+                        self._provider_row(
+                            lane="Exploration",
+                            source=connector,
+                            status=status,
+                            records=len(findings),
+                            seed=seed,
+                            detail=(
+                                str(getattr(result, "error", "") or "")
+                                or f"Ephemeral · {goal} · no persistence"
+                            ),
+                        )
+                    )
+                    if getattr(result, "error", None) and status == "failed":
+                        errors.append(
+                            self._error_row(
+                                "Exploration",
+                                connector,
+                                str(getattr(result, "error", "")),
+                                seed,
+                            )
+                        )
+
+                    for finding in findings:
+                        finding_type = str(
+                            getattr(finding, "category", "") or "finding"
+                        )
+                        finding_value = str(
+                            getattr(finding, "value", "") or ""
+                        )
+                        metadata = dict(
+                            getattr(finding, "metadata", {}) or {}
+                        )
+                        metadata.update(
+                            {
+                                "exploration_ephemeral": True,
+                                "exploration_persisted": False,
+                                "exploration_parent_observation": (
+                                    node.observation_id
+                                ),
+                            }
+                        )
+                        service = str(
+                            getattr(finding, "source", "")
+                            or metadata.get("service")
+                            or metadata.get("platform")
+                            or metadata.get("site_name")
+                            or ""
+                        )
+                        identifiers = self._exploration_identifiers(
+                            finding_type=finding_type,
+                            finding_value=finding_value,
+                            seed=seed,
+                        )
+                        results.append(
+                            {
+                                "lane": "Exploration",
+                                "source": connector,
+                                "title": finding_value or "Exploration finding",
+                                "detail": (
+                                    finding_type.replace("_", " ").title()
+                                    + " · ephemeral, not persisted"
+                                ),
+                                "type": finding_type,
+                                "status": "Exploration",
+                                "url": str(
+                                    getattr(finding, "url", "") or ""
+                                ),
+                                "meta": (
+                                    f"Ephemeral · D{seed.depth} · "
+                                    f"{seed.kind.value}: {seed.value}"
+                                ),
+                                "depth": seed.depth,
+                                "seed": seed.value,
+                                "seedType": seed.kind.value,
+                                "identifiers": identifiers,
+                                "findingMetadata": metadata,
+                                "service": service,
+                                "confidence": getattr(
+                                    finding, "confidence", None
+                                ),
+                                "reliability": getattr(
+                                    finding, "reliability", None
+                                ),
+                                "candidateOnly": False,
+                                "sensitive": False,
+                                "explorationOnly": True,
+                                "explorationPersisted": False,
+                                "explorationReason": node.reason,
+                                "explorationParentObservationId": (
+                                    node.observation_id
+                                ),
+                            }
+                        )
+
+        return executed
+
+    @staticmethod
+    def _exploration_identifiers(
+        *,
+        finding_type: str,
+        finding_value: str,
+        seed: UnifiedSeed,
+    ) -> dict[str, str]:
+        kind = str(finding_type or "").strip().casefold().replace("-", "_")
+        value = str(finding_value or "").strip()
+        identifiers: dict[str, str] = {}
+        if kind in {"username", "account", "profile", "social_profile"}:
+            if seed.kind is UnifiedSeedKind.USERNAME:
+                identifiers["username"] = seed.value
+            elif value:
+                identifiers["username"] = value.lstrip("@")
+        elif kind in {"email", "phone", "domain", "url", "ip", "hash"} and value:
+            identifiers[kind] = value
+        return identifiers
 
     @classmethod
     def _persistence_counts(cls, osint_snapshots, open_web_snapshots) -> tuple[int, int]:
