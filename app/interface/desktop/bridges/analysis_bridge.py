@@ -3,10 +3,19 @@ from __future__ import annotations
 from datetime import datetime
 import logging
 from typing import Any
+from uuid import UUID
 
 from PySide6.QtCore import QObject, Property, QThread, Signal, Slot
 
+from app.application.analysis_history_service import AnalysisHistoryService
+from app.application.analysis_run_profile import (
+    analysis_workspace_catalog,
+    normalize_analysis_mode,
+    normalize_openai_model,
+    normalize_reasoning_effort,
+)
 from app.core.config import settings
+from app.models.entity import EntityType
 from app.interface.desktop.workers.investigation_analysis_worker import (
     InvestigationAnalysisWorker,
 )
@@ -21,15 +30,25 @@ class AnalysisBridge(QObject):
     changed = Signal()
     messageChanged = Signal()
 
-    def __init__(self, container: Any, parent: QObject | None = None) -> None:
+    def __init__(
+        self,
+        container: Any,
+        desktop_bridge: Any | None = None,
+        parent: QObject | None = None,
+    ) -> None:
         super().__init__(parent)
         self._container = container
+        self._desktop_bridge = desktop_bridge
         self._run: dict[str, Any] = {}
         self._busy = False
         self._message = ""
         self._thread: QThread | None = None
         self._worker: InvestigationAnalysisWorker | None = None
         self._context: dict[str, Any] = {}
+        self._case_id = ""
+        self._focus_options: list[dict[str, Any]] = []
+        self._history: list[dict[str, Any]] = []
+        self._catalog = analysis_workspace_catalog()
 
     @Property("QVariantMap", notify=changed)
     def runData(self) -> dict[str, Any]:
@@ -42,6 +61,18 @@ class AnalysisBridge(QObject):
     @Property(str, notify=messageChanged)
     def message(self) -> str:
         return self._message
+
+    @Property("QVariantMap", constant=True)
+    def catalog(self) -> dict[str, Any]:
+        return dict(self._catalog)
+
+    @Property("QVariantList", notify=changed)
+    def focusOptions(self) -> list[dict[str, Any]]:
+        return [dict(item) for item in self._focus_options]
+
+    @Property("QVariantList", notify=changed)
+    def history(self) -> list[dict[str, Any]]:
+        return [dict(item) for item in self._history]
 
     @Property("QVariantMap", notify=changed)
     def providerInfo(self) -> dict[str, Any]:
@@ -87,11 +118,173 @@ class AnalysisBridge(QObject):
             "status": "configured",
         }
 
+    @Slot(str)
+    def prepareCase(self, case_id: str) -> None:
+        normalized = str(case_id or "").strip()
+        if normalized == self._case_id and self._focus_options:
+            self._load_history(normalized)
+            self.changed.emit()
+            return
+
+        self._case_id = normalized
+        self._focus_options = []
+        self._history = []
+
+        if not normalized:
+            self.changed.emit()
+            return
+
+        self._focus_options = [
+            {
+                "id": "",
+                "label": "Entire Investigation",
+                "type": "case",
+            }
+        ]
+
+        try:
+            service = getattr(self._container, "entity_service", None)
+            if service is not None:
+                people = service.get_page(
+                    limit=500,
+                    offset=0,
+                    case_id=UUID(normalized),
+                    entity_types=(EntityType.PERSON,),
+                )
+                rows = [
+                    {
+                        "id": str(getattr(item, "id", "") or ""),
+                        "label": str(
+                            getattr(item, "value", "")
+                            or "Unnamed person"
+                        ),
+                        "type": "person",
+                    }
+                    for item in people
+                    if str(getattr(item, "id", "") or "")
+                ]
+                rows.sort(
+                    key=lambda item: (
+                        str(item["label"]).casefold(),
+                        str(item["id"]),
+                    )
+                )
+                self._focus_options.extend(rows)
+        except Exception:
+            LOGGER.exception("Unable to load Analysis focus people")
+            self._set_message(
+                "Analysis is available, but person focus options "
+                "could not be loaded."
+            )
+
+        self._load_history(normalized)
+        self.changed.emit()
+
+    @Slot(str, result=bool)
+    def openHistory(self, history_id: str) -> bool:
+        normalized = str(history_id or "").strip()
+        item = next(
+            (
+                row
+                for row in self._history
+                if str(row.get("historyId") or "") == normalized
+            ),
+            None,
+        )
+        if item is None:
+            self._set_message("The selected analysis history item is unavailable.")
+            return False
+
+        self._run = dict(item)
+        self._run["hasRun"] = True
+        self._run["phase"] = "history"
+        self._run["progress"] = 1.0
+        self._run["progressText"] = "Viewing saved analysis history."
+        self._run.setdefault("durationText", self._duration_text(
+            self._run.get("durationSeconds")
+        ))
+        self._set_message("Saved analysis opened.")
+        self.changed.emit()
+        return True
+
+    @Slot(str, result=bool)
+    def openSource(self, reference: str) -> bool:
+        normalized = str(reference or "").strip()
+        source = next(
+            (
+                row
+                for row in list(self._run.get("sources") or [])
+                if str(row.get("reference") or "") == normalized
+            ),
+            None,
+        )
+        if not isinstance(source, dict):
+            self._set_message("The selected RAG source is unavailable.")
+            return False
+
+        object_type = str(source.get("objectType") or "").strip().casefold()
+        object_id = str(source.get("objectId") or "").strip()
+        bridge = self._desktop_bridge
+        if bridge is None:
+            self._set_message("Desktop source navigation is unavailable.")
+            return False
+
+        opened = False
+        try:
+            if object_type in {"entity", "person"} and object_id:
+                opened = bool(bridge.openEntity(object_id))
+                if not opened:
+                    opened = bool(bridge.navigateTo("entities"))
+            elif object_type == "report" and object_id:
+                opened = bool(bridge.openReport(object_id))
+            elif object_type in {
+                "timeline",
+                "timeline_event",
+                "event",
+            }:
+                opened = bool(bridge.navigateTo("timeline"))
+            elif object_type in {
+                "evidence",
+                "message",
+                "document",
+                "source",
+                "file",
+            }:
+                opened = bool(bridge.navigateTo("evidence"))
+            else:
+                opened = bool(bridge.navigateTo("search"))
+        except Exception:
+            LOGGER.exception("Unable to navigate to Analysis source")
+            opened = False
+
+        if opened:
+            self._set_message(
+                "Opened source workspace for "
+                + (normalized or "selected source")
+                + "."
+            )
+        else:
+            self._set_message(
+                "The source is listed in Analysis, but no dedicated "
+                "detail route is available for this object type."
+            )
+        return opened
+
     @Slot(str, str, result=bool)
+    @Slot(
+        str, str, str, str, str, str, str, str,
+        result=bool,
+    )
     def runAnalysis(
         self,
         case_id: str,
         question: str = "",
+        mode: str = "standard",
+        model: str = "",
+        reasoning_effort: str = "",
+        scope_type: str = "case",
+        focus_entity_id: str = "",
+        focus_entity_label: str = "",
     ) -> bool:
         if self._busy:
             self._set_message(
@@ -116,12 +309,45 @@ class AnalysisBridge(QObject):
             )
             return False
 
+        profile = normalize_analysis_mode(mode)
+        selected_model = str(model or "").strip()
+        if provider.get("provider") == "openai":
+            selected_model = normalize_openai_model(
+                selected_model,
+                fallback=profile.recommended_model,
+            )
+        elif not selected_model:
+            selected_model = str(provider.get("model") or "")
+
+        selected_reasoning = normalize_reasoning_effort(
+            reasoning_effort,
+            fallback=profile.recommended_reasoning,
+        )
+
+        normalized_scope = str(scope_type or "case").strip().casefold()
+        normalized_focus_id = str(focus_entity_id or "").strip()
+        normalized_focus_label = str(focus_entity_label or "").strip()
+        if (
+            normalized_scope != "person"
+            or not normalized_focus_id
+            or not normalized_focus_label
+        ):
+            normalized_scope = "case"
+            normalized_focus_id = ""
+            normalized_focus_label = "Entire Investigation"
+
         normalized_question = str(question or "").strip()
         started_at = datetime.now()
         self._context = {
             "caseId": normalized_case_id,
             "question": normalized_question,
             "startedAt": started_at,
+            "mode": profile.key,
+            "model": selected_model,
+            "reasoningEffort": selected_reasoning,
+            "scopeType": normalized_scope,
+            "focusEntityId": normalized_focus_id,
+            "focusEntityLabel": normalized_focus_label,
         }
         self._run = {
             "hasRun": True,
@@ -129,6 +355,20 @@ class AnalysisBridge(QObject):
             "phase": "starting",
             "caseId": normalized_case_id,
             "question": normalized_question,
+            "scope": {
+                "type": normalized_scope,
+                "entityId": normalized_focus_id,
+                "label": normalized_focus_label,
+            },
+            "runConfig": {
+                "mode": profile.key,
+                "modeLabel": profile.label,
+                "model": selected_model,
+                "reasoningEffort": selected_reasoning,
+                "plannedAiRequests": profile.ai_request_count,
+                "maxOutputTokensPerRequest": profile.max_output_tokens,
+                "provider": str(provider.get("provider") or ""),
+            },
             "progress": 0.0,
             "progressText": "Starting investigation analysis…",
             "currentStage": "",
@@ -138,8 +378,11 @@ class AnalysisBridge(QObject):
             "stages": [],
             "summary": "",
             "conclusions": [],
+            "facts": [],
             "sources": [],
             "warnings": [],
+            "usage": {},
+            "cost": {},
             "error": "",
             "startedLabel": started_at.strftime(
                 "%b %d, %Y · %H:%M:%S"
@@ -148,7 +391,15 @@ class AnalysisBridge(QObject):
             "provider": provider,
         }
         self._busy = True
-        self._set_message("Investigation analysis started.")
+        self._set_message(
+            profile.label
+            + " analysis started"
+            + (
+                " for " + normalized_focus_label
+                if normalized_scope == "person"
+                else "."
+            )
+        )
         self.changed.emit()
 
         try:
@@ -156,6 +407,12 @@ class AnalysisBridge(QObject):
             worker = InvestigationAnalysisWorker(
                 case_id=normalized_case_id,
                 question=normalized_question,
+                mode=profile.key,
+                model=selected_model,
+                reasoning_effort=selected_reasoning,
+                scope_type=normalized_scope,
+                focus_entity_id=normalized_focus_id,
+                focus_entity_label=normalized_focus_label,
             )
             worker.moveToThread(thread)
             thread.started.connect(worker.run)
@@ -189,7 +446,7 @@ class AnalysisBridge(QObject):
                 }
             )
             self._set_message(
-                f"Unable to start investigation analysis: {exc}"
+                "Unable to start investigation analysis: " + str(exc)
             )
             self.changed.emit()
             return False
@@ -256,7 +513,7 @@ class AnalysisBridge(QObject):
                     "Investigation analysis completed."
                 ),
                 "durationSeconds": round(duration, 3),
-                "durationText": f"{duration:.1f}s",
+                "durationText": self._duration_text(duration),
                 "startedLabel": (
                     self._context["startedAt"].strftime(
                         "%b %d, %Y · %H:%M:%S"
@@ -278,7 +535,12 @@ class AnalysisBridge(QObject):
         )
         self._set_message(
             "Investigation analysis completed "
-            f"({status}): {source_count} bounded source(s)."
+            + "(" + status + "): "
+            + str(source_count)
+            + " bounded source(s)."
+        )
+        self._load_history(
+            str(snapshot.get("caseId") or self._case_id)
         )
         self.changed.emit()
 
@@ -298,12 +560,12 @@ class AnalysisBridge(QObject):
                 "phase": "failed",
                 "progressText": error,
                 "durationSeconds": round(duration, 3),
-                "durationText": f"{duration:.1f}s",
+                "durationText": self._duration_text(duration),
                 "error": error,
             }
         )
         self._run = current
-        self._set_message(f"Investigation analysis failed: {error}")
+        self._set_message("Investigation analysis failed: " + error)
         self.changed.emit()
 
     @Slot()
@@ -313,6 +575,33 @@ class AnalysisBridge(QObject):
         self._thread = None
         self._context = {}
         self.changed.emit()
+
+    def _load_history(self, case_id: str) -> None:
+        normalized = str(case_id or "").strip()
+        if not normalized:
+            self._history = []
+            return
+
+        from app.database.session import create_session
+
+        session = None
+        try:
+            session = create_session()
+            service = AnalysisHistoryService(session)
+            self._history = service.list_for_case(
+                normalized,
+                limit=30,
+            )
+            session.rollback()
+        except Exception:
+            LOGGER.exception("Unable to load Analysis history")
+            self._history = []
+        finally:
+            if session is not None:
+                try:
+                    session.close()
+                except Exception:
+                    pass
 
     def _set_message(self, value: str) -> None:
         normalized = str(value or "")
@@ -331,3 +620,7 @@ class AnalysisBridge(QObject):
             return float(value or 0.0)
         except (TypeError, ValueError):
             return 0.0
+
+    @classmethod
+    def _duration_text(cls, value: Any) -> str:
+        return format(cls._safe_float(value), ".1f") + "s"
