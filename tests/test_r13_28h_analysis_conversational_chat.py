@@ -30,7 +30,7 @@ def test_chat_prompt_preserves_multi_turn_context_and_case_boundaries():
     assert "And what does that mean for the timeline?" in prompt
     assert "[R1] Timeline source text" in prompt
     assert "CURRENT STRUCTURED ANALYSIS" in prompt
-    assert "Earlier structured summary [R1]." in prompt
+    assert "Earlier structured summary [structured-analysis source]." in prompt
     assert "Never invent case-specific facts" in prompt
     assert "AI output is analysis and assistance, not Evidence." in prompt
     assert "R# references are turn-local." in prompt
