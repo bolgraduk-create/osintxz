@@ -303,6 +303,10 @@ from app.services.investigation_rag_grounded_citation_service import (
     InvestigationRAGGroundedCitationService,
 )
 
+from app.application.analysis_chat_service import (
+    AnalysisChatService,
+)
+
 from app.services.investigation_unified_analytical_context_service import (
     InvestigationUnifiedAnalyticalContextService,
 )
@@ -1251,6 +1255,27 @@ class ServiceContainer:
 
         self.investigation_rag_grounded_citation_service = (
             InvestigationRAGGroundedCitationService()
+        )
+
+        # ==================================================
+        # Conversational Analysis Chat
+        # ==================================================
+
+        self.analysis_chat_service = (
+            AnalysisChatService(
+                retrieval_service=(
+                    self.investigation_rag_retrieval_service
+                ),
+                context_builder=(
+                    self.investigation_rag_context_builder
+                ),
+                ai_execution_service=(
+                    self.ai_execution_service
+                ),
+                citation_service=(
+                    self.investigation_rag_grounded_citation_service
+                ),
+            )
         )
 
         # ==================================================
