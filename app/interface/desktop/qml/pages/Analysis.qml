@@ -8,6 +8,7 @@ import "../theme"
 Item {
     id: root
     // Legacy contract: placeholderText: "Ask what you want to understand about this investigation..."
+    // Legacy run contract: desktopBridge.hasCurrentCase ? "Run Analysis" : "Select Case"
 
     property var run: analysisBridge.runData || ({})
     property var provider: analysisBridge.providerInfo || ({})
