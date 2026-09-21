@@ -70,6 +70,7 @@ def build_unified_target_profile(snapshot: dict[str, Any]) -> dict[str, Any]:
     seen: dict[str, set[str]] = {
         key: set() for key in _GROUP_ORDER
     }
+    seen_urls_global: set[str] = set()
     provenance: Counter[str] = Counter()
 
     def add(
@@ -94,6 +95,10 @@ def build_unified_target_profile(snapshot: dict[str, Any]) -> dict[str, Any]:
         if not text:
             text = safe_url
 
+        normalized_url_key = _normalized_url_key(safe_url)
+        if normalized_url_key and normalized_url_key in seen_urls_global:
+            return
+
         key = _dedupe_key(
             group=group,
             kind=kind,
@@ -103,6 +108,8 @@ def build_unified_target_profile(snapshot: dict[str, Any]) -> dict[str, Any]:
         if not key or key in seen[group]:
             return
         seen[group].add(key)
+        if normalized_url_key:
+            seen_urls_global.add(normalized_url_key)
 
         normalized_basis = _basis(basis)
         provenance[normalized_basis] += 1
