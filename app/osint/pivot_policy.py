@@ -76,6 +76,9 @@ class PivotTraversalState:
     visited: set[PivotKey] = field(default_factory=set)
     pivots_by_entity: dict[str, int] = field(default_factory=dict)
     new_entities_count: int = 0
+    credentialed_calls_by_module: dict[str, int] = field(
+        default_factory=dict
+    )
 
     def entity_count(self, entity_identity: str) -> int:
         return self.pivots_by_entity.get(entity_identity, 0)
@@ -95,6 +98,20 @@ class PivotTraversalState:
         if count < 0:
             raise ValueError("count must be >= 0")
         self.new_entities_count += count
+
+    def credentialed_call_count(self, module: str) -> int:
+        return self.credentialed_calls_by_module.get(
+            str(module or "").strip(),
+            0,
+        )
+
+    def mark_credentialed_call(self, module: str) -> None:
+        key = str(module or "").strip()
+        if not key:
+            return
+        self.credentialed_calls_by_module[key] = (
+            self.credentialed_calls_by_module.get(key, 0) + 1
+        )
 
     def remaining_new_entities(
         self,
