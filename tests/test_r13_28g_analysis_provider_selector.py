@@ -83,6 +83,8 @@ def test_analysis_bridge_discovers_ollama_and_passes_selected_provider():
     assert "Local providers own their model selection" in bridge
     assert 'base_url + "/api/tags"' in discovery
     assert '"ollamaModels"' in discovery
+    assert 'payload["ollamaModels"] = discovered' in discovery
+    assert "configured-but-not-installed" in discovery
 
 
 def test_analysis_qml_provider_and_model_controls_are_functional():
@@ -101,6 +103,7 @@ def test_analysis_qml_provider_and_model_controls_are_functional():
     assert 'text: "MODEL"' in qml
     assert 'text: "REASONING"' in qml
     assert 'desktopBridge.hasCurrentCase ? "Run Analysis" : "Select Case"' in qml
+    assert "root.selectedProviderReady()" in qml
 
 
 def test_run_analysis_qml_passes_provider_as_ninth_argument():
