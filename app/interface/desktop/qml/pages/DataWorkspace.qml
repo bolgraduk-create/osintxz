@@ -36,6 +36,12 @@ Item {
     property bool loading: false
     property bool hasMore: false
     property bool updatingRecords: false
+    property var workspaceFocus: desktopBridge.workspaceFocus || ({})
+    property string focusedRecordId: (
+        String(workspaceFocus.page || "") === root.pageKey
+        ? String(workspaceFocus.id || "")
+        : ""
+    )
     property bool recordsInteractive: root.pageKey === "cases" || root.pageKey === "entities" || root.pageKey === "reports"
     property bool recordOptionsVisible: root.pageKey === "cases"
     property var liveData: ({ metrics: [], records: [], contextItems: [], emptyText: "No records available", actionEnabled: false, actionReason: "" })
@@ -67,6 +73,18 @@ Item {
         return root.emptyDescription
     }
 
+    function applyWorkspaceFocus() {
+        if (!root.focusedRecordId)
+            return
+        for (let i = 0; i < root.records.length; ++i) {
+            if (String(root.records[i].id || "") === root.focusedRecordId) {
+                recordsView.currentIndex = i
+                recordsView.positionViewAtIndex(i, ListView.Center)
+                return
+            }
+        }
+    }
+
     function reloadData() {
         if (!root.pageKey)
             return
@@ -77,6 +95,7 @@ Item {
         root.metrics = root.liveData.metrics || []
         root.records = root.liveData.records || []
         root.contextItems = root.liveData.contextItems || []
+        Qt.callLater(root.applyWorkspaceFocus)
         root.emptyText = root.liveData.emptyText || "No records available"
         root.actionEnabled = Boolean(root.liveData.actionEnabled)
         root.actionReason = root.liveData.actionReason || ""
@@ -333,9 +352,12 @@ Item {
                             height: 64
                             clip: true
                             activeFocusOnTab: root.recordsInteractive
-                            color: recordMouse.pressed ? "#182e3e" : (recordMouse.containsMouse ? "#142735" : "transparent")
-                            border.width: activeFocus ? 1 : 0
-                            border.color: activeFocus ? Theme.borderHover : "transparent"
+                            property bool externallyFocused: String(recordRow.modelData.id || "") === root.focusedRecordId
+                            color: externallyFocused
+                                ? Theme.accentSoft
+                                : (recordMouse.pressed ? "#182e3e" : (recordMouse.containsMouse ? "#142735" : "transparent"))
+                            border.width: activeFocus || externallyFocused ? 1 : 0
+                            border.color: externallyFocused ? Theme.accent : (activeFocus ? Theme.borderHover : "transparent")
                             Behavior on color { ColorAnimation { duration: Motion.hover } }
                             Keys.onReturnPressed: root.recordActivated(String(recordRow.modelData.id || ""))
                             Keys.onSpacePressed: root.recordActivated(String(recordRow.modelData.id || ""))
