@@ -1,0 +1,467 @@
+{
+  "version": 1,
+  "description": "R13.26b offline quality benchmark built from regressions observed in unified OSINT search.",
+  "thresholds": {
+    "recallAt100Min": 0.9,
+    "precisionAt10Min": 0.85,
+    "mrrMin": 0.9,
+    "ndcgAt20Min": 0.85,
+    "cleanPrecisionMin": 0.9,
+    "cleanRecallMin": 0.45,
+    "usefulPivotRecallMin": 0.9,
+    "persistencePrecisionMin": 0.95,
+    "falsePivotRateMax": 0.15,
+    "qualityMissedDueToGateMax": 1,
+    "noiseTop20Max": 1,
+    "invalidAccountLeakageMax": 0
+  },
+  "cases": [
+    {
+      "id": "username_account_availability",
+      "description": "Exact username across real, likely, uncertain and invalid profile observations.",
+      "seeds": [
+        {
+          "kind": "username",
+          "value": "texnobreath"
+        }
+      ],
+      "rows": [
+        {
+          "benchmarkId": "github-verified",
+          "lane": "Classic OSINT",
+          "source": "Maigret",
+          "service": "GitHub",
+          "title": "texnobreath",
+          "detail": "GitHub account",
+          "type": "account",
+          "status": "Finding",
+          "url": "https://github.com/texnobreath",
+          "seed": "texnobreath",
+          "seedType": "username",
+          "identifiers": {
+            "username": "texnobreath"
+          },
+          "findingMetadata": {
+            "registration_confirmed": true,
+            "service": "GitHub"
+          },
+          "accountVerificationStatus": "verified",
+          "accountVerificationReason": "Rendered profile-specific evidence matched.",
+          "accountVerificationChecked": true,
+          "confidence": 0.97,
+          "reliability": 0.94,
+          "candidateOnly": false,
+          "depth": 0
+        },
+        {
+          "benchmarkId": "github-verified",
+          "lane": "Classic OSINT",
+          "source": "Sherlock",
+          "service": "GitHub",
+          "title": "texnobreath",
+          "detail": "GitHub account",
+          "type": "account",
+          "status": "Finding",
+          "url": "https://github.com/texnobreath",
+          "seed": "texnobreath",
+          "seedType": "username",
+          "identifiers": {
+            "username": "texnobreath"
+          },
+          "findingMetadata": {
+            "provider_reported_claimed": true,
+            "registration_confirmed": false
+          },
+          "accountVerificationStatus": "verified",
+          "accountVerificationReason": "Rendered profile-specific evidence matched.",
+          "accountVerificationChecked": true,
+          "confidence": 0.94,
+          "reliability": 0.9,
+          "candidateOnly": false,
+          "depth": 0
+        },
+        {
+          "benchmarkId": "reddit-likely",
+          "lane": "Classic OSINT",
+          "source": "Sherlock",
+          "service": "Reddit",
+          "title": "texnobreath",
+          "detail": "Reddit account",
+          "type": "account",
+          "status": "Finding",
+          "url": "https://www.reddit.com/user/texnobreath",
+          "seed": "texnobreath",
+          "seedType": "username",
+          "identifiers": {
+            "username": "texnobreath"
+          },
+          "findingMetadata": {
+            "provider_reported_claimed": true,
+            "registration_confirmed": false
+          },
+          "accountVerificationStatus": "likely",
+          "accountVerificationReason": "Rendered username is visible on expected profile URL.",
+          "accountBrowserVerificationStatus": "likely",
+          "accountBrowserVerificationChecked": true,
+          "confidence": 0.94,
+          "reliability": 0.9,
+          "candidateOnly": false,
+          "depth": 0
+        },
+        {
+          "benchmarkId": "forum-uncertain",
+          "lane": "Classic OSINT",
+          "source": "Sherlock",
+          "service": "Example Forum",
+          "title": "texnobreath",
+          "detail": "Forum account candidate",
+          "type": "account",
+          "status": "Finding",
+          "url": "https://forum.example.test/u/texnobreath",
+          "seed": "texnobreath",
+          "seedType": "username",
+          "identifiers": {
+            "username": "texnobreath"
+          },
+          "findingMetadata": {
+            "provider_reported_claimed": true,
+            "registration_confirmed": false
+          },
+          "accountVerificationStatus": "uncertain",
+          "accountVerificationReason": "Rendered page is reachable but inconclusive.",
+          "accountBrowserVerificationStatus": "uncertain",
+          "accountBrowserVerificationChecked": true,
+          "confidence": 0.9,
+          "reliability": 0.82,
+          "candidateOnly": false,
+          "depth": 0
+        },
+        {
+          "benchmarkId": "dead-profile",
+          "lane": "Classic OSINT",
+          "source": "Sherlock",
+          "service": "Dead Forum",
+          "title": "texnobreath",
+          "detail": "Dead profile",
+          "type": "account",
+          "status": "Finding",
+          "url": "https://dead.example.test/u/texnobreath",
+          "seed": "texnobreath",
+          "seedType": "username",
+          "identifiers": {
+            "username": "texnobreath"
+          },
+          "findingMetadata": {
+            "provider_reported_claimed": true,
+            "registration_confirmed": false
+          },
+          "accountVerificationStatus": "invalid",
+          "accountVerificationReason": "Rendered page explicitly reports that the user/profile is absent.",
+          "accountBrowserVerificationStatus": "invalid",
+          "accountBrowserVerificationChecked": true,
+          "confidence": 0.94,
+          "reliability": 0.9,
+          "candidateOnly": false,
+          "depth": 0
+        },
+        {
+          "benchmarkId": "unrelated-page",
+          "lane": "Open-Web",
+          "source": "archive",
+          "title": "Unrelated project page",
+          "detail": "No account relation",
+          "type": "document",
+          "url": "https://example.test/projects/other",
+          "seed": "texnobreath",
+          "seedType": "username",
+          "identifiers": {},
+          "candidateOnly": false,
+          "depth": 0
+        }
+      ],
+      "judgments": [
+        {
+          "benchmarkId": "github-verified",
+          "relevance": 3,
+          "expectedShow": true,
+          "expectedExplore": true,
+          "expectedPersist": true
+        },
+        {
+          "benchmarkId": "reddit-likely",
+          "relevance": 3,
+          "expectedShow": true,
+          "expectedExplore": false,
+          "expectedPersist": false
+        },
+        {
+          "benchmarkId": "forum-uncertain",
+          "relevance": 1,
+          "expectedShow": true,
+          "expectedExplore": false,
+          "expectedPersist": false
+        },
+        {
+          "benchmarkId": "dead-profile",
+          "relevance": 0,
+          "expectedShow": false,
+          "expectedExplore": false,
+          "expectedPersist": false,
+          "invalidAccount": true
+        },
+        {
+          "benchmarkId": "unrelated-page",
+          "relevance": 0,
+          "expectedShow": false,
+          "expectedExplore": false,
+          "expectedPersist": false
+        }
+      ]
+    },
+    {
+      "id": "person_name_transliteration",
+      "description": "Full transliterated name is review-worthy while one-token/surname collisions stay noise.",
+      "seeds": [
+        {
+          "kind": "person_name",
+          "value": "Марк Кириченко"
+        }
+      ],
+      "rows": [
+        {
+          "benchmarkId": "person-full-latin",
+          "lane": "Federation",
+          "source": "academic",
+          "title": "Mark Kirichenko",
+          "detail": "Academic author",
+          "type": "person",
+          "seed": "Марк Кириченко",
+          "seedType": "person_name",
+          "candidateOnly": true,
+          "identityCandidateEligible": true,
+          "identityMatchScore": 100,
+          "identityMatchReason": "full_name_match",
+          "depth": 0
+        },
+        {
+          "benchmarkId": "person-alt-translit",
+          "lane": "Federation",
+          "source": "registry",
+          "title": "Mark Kyrychenko",
+          "detail": "Person registry candidate",
+          "type": "person",
+          "seed": "Марк Кириченко",
+          "seedType": "person_name",
+          "candidateOnly": true,
+          "identityCandidateEligible": true,
+          "identityMatchScore": 100,
+          "identityMatchReason": "full_name_match",
+          "depth": 0
+        },
+        {
+          "benchmarkId": "person-surname-collision",
+          "lane": "Federation",
+          "source": "registry",
+          "title": "Иван Кириченко",
+          "detail": "Different person",
+          "type": "person",
+          "seed": "Марк Кириченко",
+          "seedType": "person_name",
+          "candidateOnly": true,
+          "depth": 0
+        },
+        {
+          "benchmarkId": "person-firstname-collision",
+          "lane": "Federation",
+          "source": "academic",
+          "title": "Mark Twain",
+          "detail": "Different author",
+          "type": "person",
+          "seed": "Марк Кириченко",
+          "seedType": "person_name",
+          "candidateOnly": true,
+          "depth": 0
+        }
+      ],
+      "judgments": [
+        {
+          "benchmarkId": "person-full-latin",
+          "relevance": 3,
+          "expectedShow": true,
+          "expectedExplore": false,
+          "expectedPersist": false
+        },
+        {
+          "benchmarkId": "person-alt-translit",
+          "relevance": 3,
+          "expectedShow": true,
+          "expectedExplore": false,
+          "expectedPersist": false
+        },
+        {
+          "benchmarkId": "person-surname-collision",
+          "relevance": 0,
+          "expectedShow": false,
+          "expectedExplore": false,
+          "expectedPersist": false
+        },
+        {
+          "benchmarkId": "person-firstname-collision",
+          "relevance": 0,
+          "expectedShow": false,
+          "expectedExplore": false,
+          "expectedPersist": false
+        }
+      ]
+    },
+    {
+      "id": "organization_context",
+      "description": "Organization matching must not accept a shared generic token such as Foundation.",
+      "seeds": [
+        {
+          "kind": "organization",
+          "value": "Linux Foundation"
+        }
+      ],
+      "searchProfile": {
+        "organizations": "Linux Foundation",
+        "keywords": "Linux\nGit"
+      },
+      "rows": [
+        {
+          "benchmarkId": "org-exact",
+          "lane": "Federation",
+          "source": "wikidata_search",
+          "title": "The Linux Foundation",
+          "detail": "Organization",
+          "type": "organization",
+          "seed": "Linux Foundation",
+          "seedType": "organization",
+          "candidateOnly": true,
+          "depth": 0
+        },
+        {
+          "benchmarkId": "org-generic-collision",
+          "lane": "Federation",
+          "source": "registry",
+          "title": "Alfred Kordelin Foundation",
+          "detail": "Organization",
+          "type": "organization",
+          "seed": "Linux Foundation",
+          "seedType": "organization",
+          "candidateOnly": true,
+          "depth": 0
+        },
+        {
+          "benchmarkId": "org-unrelated",
+          "lane": "Federation",
+          "source": "offshore",
+          "title": "ASIARTA FOUNDATION",
+          "detail": "Match: False",
+          "type": "organization",
+          "seed": "Linux Foundation",
+          "seedType": "organization",
+          "candidateOnly": true,
+          "depth": 0
+        }
+      ],
+      "judgments": [
+        {
+          "benchmarkId": "org-exact",
+          "relevance": 3,
+          "expectedShow": true,
+          "expectedExplore": false,
+          "expectedPersist": false
+        },
+        {
+          "benchmarkId": "org-generic-collision",
+          "relevance": 0,
+          "expectedShow": false,
+          "expectedExplore": false,
+          "expectedPersist": false
+        },
+        {
+          "benchmarkId": "org-unrelated",
+          "relevance": 0,
+          "expectedShow": false,
+          "expectedExplore": false,
+          "expectedPersist": false
+        }
+      ]
+    },
+    {
+      "id": "url_scope",
+      "description": "Historical URL discovery keeps descendants but rejects unrelated paths on the same host.",
+      "seeds": [
+        {
+          "kind": "url",
+          "value": "https://example.com/torvalds"
+        }
+      ],
+      "rows": [
+        {
+          "benchmarkId": "url-descendant",
+          "lane": "Open-Web",
+          "source": "wayback",
+          "title": "Archived descendant",
+          "detail": "Historical page",
+          "type": "historical_url",
+          "url": "https://example.com/torvalds/linux",
+          "seed": "https://example.com/torvalds",
+          "seedType": "url",
+          "candidateOnly": false,
+          "depth": 1
+        },
+        {
+          "benchmarkId": "url-unrelated-path",
+          "lane": "Open-Web",
+          "source": "wayback",
+          "title": "Unrelated path",
+          "detail": "Historical page",
+          "type": "historical_url",
+          "url": "https://example.com/other/path",
+          "seed": "https://example.com/torvalds",
+          "seedType": "url",
+          "candidateOnly": false,
+          "depth": 1
+        },
+        {
+          "benchmarkId": "url-other-host",
+          "lane": "Open-Web",
+          "source": "wayback",
+          "title": "Other host",
+          "detail": "Historical page",
+          "type": "historical_url",
+          "url": "https://unrelated.example.net/other/path",
+          "seed": "https://example.com/torvalds",
+          "seedType": "url",
+          "candidateOnly": false,
+          "depth": 1
+        }
+      ],
+      "judgments": [
+        {
+          "benchmarkId": "url-descendant",
+          "relevance": 2,
+          "expectedShow": true,
+          "expectedExplore": false,
+          "expectedPersist": false
+        },
+        {
+          "benchmarkId": "url-unrelated-path",
+          "relevance": 0,
+          "expectedShow": false,
+          "expectedExplore": false,
+          "expectedPersist": false
+        },
+        {
+          "benchmarkId": "url-other-host",
+          "relevance": 0,
+          "expectedShow": false,
+          "expectedExplore": false,
+          "expectedPersist": false
+        }
+      ]
+    }
+  ]
+}
