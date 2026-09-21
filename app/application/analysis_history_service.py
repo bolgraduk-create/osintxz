@@ -10,6 +10,9 @@ from sqlalchemy.orm import Session
 
 from app.models.ai_analysis import AnalysisType
 from app.repositories.ai_analysis_repository import AIAnalysisRepository
+from app.security.sensitive_content import (
+    sanitize_sensitive_value,
+)
 
 
 HISTORY_MARKER = "analysis_workspace_history"
@@ -36,15 +39,15 @@ class AnalysisHistoryService:
         )
         safe_snapshot = self._safe_snapshot(snapshot)
 
-        model_info = dict(safe_snapshot.get("modelInfo") or {})
-        run_config = dict(safe_snapshot.get("runConfig") or {})
+        model_info = dict(safe_sanitized_snapshot.get("modelInfo") or {})
+        run_config = dict(safe_sanitized_snapshot.get("runConfig") or {})
         model_name = str(
             run_config.get("model")
             or model_info.get("model")
             or ""
         ).strip() or None
 
-        summary = str(safe_snapshot.get("summary") or "").strip()
+        summary = str(safe_sanitized_snapshot.get("summary") or "").strip()
         result_text = summary or "Analysis Workspace run"
 
         metadata = {
@@ -121,23 +124,29 @@ class AnalysisHistoryService:
     def _safe_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
         """Store the analytical result, never provider secrets or raw RAG text."""
 
+        sanitized_snapshot = sanitize_sensitive_value(
+            dict(snapshot or {})
+        )
+        if not isinstance(sanitized_snapshot, dict):
+            sanitized_snapshot = {}
+
         source_rows = [
             dict(item)
-            for item in list(snapshot.get("sources") or [])[:30]
+            for item in list(sanitized_snapshot.get("sources") or [])[:30]
             if isinstance(item, dict)
         ]
         conclusion_rows = [
             dict(item)
-            for item in list(snapshot.get("conclusions") or [])
+            for item in list(sanitized_snapshot.get("conclusions") or [])
             if isinstance(item, dict)
         ]
         stage_rows = [
             dict(item)
-            for item in list(snapshot.get("stages") or [])
+            for item in list(sanitized_snapshot.get("stages") or [])
             if isinstance(item, dict)
         ]
 
-        provider = dict(snapshot.get("provider") or {})
+        provider = dict(sanitized_snapshot.get("provider") or {})
         for key in (
             "api_key",
             "apiKey",
@@ -149,46 +158,46 @@ class AnalysisHistoryService:
 
         return {
             "hasRun": True,
-            "status": str(snapshot.get("status") or ""),
+            "status": str(sanitized_snapshot.get("status") or ""),
             "phase": "history",
-            "caseId": str(snapshot.get("caseId") or ""),
-            "question": str(snapshot.get("question") or ""),
-            "scope": dict(snapshot.get("scope") or {}),
-            "runConfig": dict(snapshot.get("runConfig") or {}),
-            "summary": str(snapshot.get("summary") or ""),
+            "caseId": str(sanitized_snapshot.get("caseId") or ""),
+            "question": str(sanitized_snapshot.get("question") or ""),
+            "scope": dict(sanitized_snapshot.get("scope") or {}),
+            "runConfig": dict(sanitized_snapshot.get("runConfig") or {}),
+            "summary": str(sanitized_snapshot.get("summary") or ""),
             "summarySourceReferences": list(
-                snapshot.get("summarySourceReferences") or []
+                sanitized_snapshot.get("summarySourceReferences") or []
             ),
             "conclusions": conclusion_rows,
             "facts": [
                 dict(item)
-                for item in list(snapshot.get("facts") or [])
+                for item in list(sanitized_snapshot.get("facts") or [])
                 if isinstance(item, dict)
             ],
             "sources": source_rows,
             "stages": stage_rows,
-            "warnings": list(snapshot.get("warnings") or []),
+            "warnings": list(sanitized_snapshot.get("warnings") or []),
             "citationSummary": dict(
-                snapshot.get("citationSummary") or {}
+                sanitized_snapshot.get("citationSummary") or {}
             ),
-            "modelInfo": dict(snapshot.get("modelInfo") or {}),
+            "modelInfo": dict(sanitized_snapshot.get("modelInfo") or {}),
             "provider": provider,
-            "usage": dict(snapshot.get("usage") or {}),
-            "cost": dict(snapshot.get("cost") or {}),
+            "usage": dict(sanitized_snapshot.get("usage") or {}),
+            "cost": dict(sanitized_snapshot.get("cost") or {}),
             "successfulStages": int(
-                snapshot.get("successfulStages") or 0
+                sanitized_snapshot.get("successfulStages") or 0
             ),
-            "failedStages": int(snapshot.get("failedStages") or 0),
-            "skippedStages": int(snapshot.get("skippedStages") or 0),
+            "failedStages": int(sanitized_snapshot.get("failedStages") or 0),
+            "skippedStages": int(sanitized_snapshot.get("skippedStages") or 0),
             "cancelledStages": int(
-                snapshot.get("cancelledStages") or 0
+                sanitized_snapshot.get("cancelledStages") or 0
             ),
             "durationSeconds": float(
-                snapshot.get("durationSeconds") or 0.0
+                sanitized_snapshot.get("durationSeconds") or 0.0
             ),
-            "durationText": str(snapshot.get("durationText") or ""),
-            "generatedAt": str(snapshot.get("generatedAt") or ""),
-            "notice": str(snapshot.get("notice") or ""),
+            "durationText": str(sanitized_snapshot.get("durationText") or ""),
+            "generatedAt": str(sanitized_snapshot.get("generatedAt") or ""),
+            "notice": str(sanitized_snapshot.get("notice") or ""),
         }
 
 
