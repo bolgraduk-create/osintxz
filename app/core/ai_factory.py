@@ -1,222 +1,137 @@
-"""
-AI Factory.
+"""AI stack composition for OSINTXZ.
 
-Creates the complete AI stack used by the application.
+The application has one generation/reasoning provider selected through the
+central Settings object.  Provider initialization and network use remain lazy,
+so a missing cloud/local backend never prevents the desktop from starting.
 
-Composition:
-
-AIManager
-    ↓
-ManagedAI
-    ↓
-KnowledgeStore
-    ↓
-RAGEngine
-    ↓
-AIAnalyzer
-
-Provider selection is explicit and deterministic.
-
-The provider is NOT connected during startup.
-Connection happens lazily when the first AI request is executed.
+R13.28a makes OpenAI the default analysis provider while preserving Ollama as a
+supported fallback.  Embedding services are configured separately and are not
+changed by this module.
 """
 
 from __future__ import annotations
 
-import os
+from urllib.parse import urlsplit
 
-from app.ai.ai_manager import (
-    AIManager,
-)
-
-from app.ai.managed_ai import (
-    ManagedAI,
-)
-
-from app.ai.analysis.ai_analyzer import (
-    AIAnalyzer,
-)
-
-from app.ai.rag.knowledge_store import (
-    KnowledgeStore,
-)
-
-from app.ai.rag.rag_engine import (
-    RAGEngine,
-)
+from app.ai.ai_manager import AIManager
+from app.ai.analysis.ai_analyzer import AIAnalyzer
+from app.ai.managed_ai import ManagedAI
+from app.ai.rag.knowledge_store import KnowledgeStore
+from app.ai.rag.rag_engine import RAGEngine
+from app.core.config import Settings, settings
 
 
-DEFAULT_AI_PROVIDER = "ollama"
+DEFAULT_AI_PROVIDER = "openai"
 DEFAULT_OLLAMA_MODEL = "qwen3:8b"
-DEFAULT_OPENAI_MODEL = "gpt-4.1-mini"
+DEFAULT_OPENAI_MODEL = "gpt-5.6"
 
-SUPPORTED_AI_PROVIDERS = frozenset(
-    {
-        "ollama",
-        "openai",
-    }
-)
+SUPPORTED_AI_PROVIDERS = frozenset({"ollama", "openai"})
 
 
-def _env_value(
-    name: str,
-) -> str | None:
-    """
-    Return a stripped non-empty environment value.
-    """
+def resolve_ai_configuration(
+    config: Settings = settings,
+) -> tuple[str, str]:
+    """Resolve provider/model only from the central application settings."""
 
-    value = os.getenv(
-        name
-    )
+    provider_name = str(
+        getattr(config, "ai_provider", None) or DEFAULT_AI_PROVIDER
+    ).strip().casefold()
 
-    if value is None:
-        return None
-
-    normalized = str(
-        value
-    ).strip()
-
-    return (
-        normalized
-        or None
-    )
-
-
-def resolve_ai_configuration() -> tuple[
-    str,
-    str,
-]:
-    """
-    Resolve the configured AI provider and model.
-
-    Contract:
-
-    - AI_PROVIDER controls provider selection.
-    - provider selection never depends on whether an API key exists.
-    - OLLAMA_MODEL controls the Ollama model.
-    - OPENAI_MODEL controls the OpenAI model.
-    - legacy AI_MODEL is accepted only as an Ollama fallback.
-    - legacy DEFAULT_MODEL is accepted only as a final Ollama fallback.
-
-    This prevents a local model name such as ``qwen3:8b`` from
-    accidentally being passed to an OpenAI provider merely because
-    OPENAI_API_KEY is present in the environment.
-    """
-
-    provider_name = (
-        _env_value(
-            "AI_PROVIDER"
-        )
-        or DEFAULT_AI_PROVIDER
-    ).lower()
-
-    if (
-        provider_name
-        not in SUPPORTED_AI_PROVIDERS
-    ):
-
-        supported = ", ".join(
-            sorted(
-                SUPPORTED_AI_PROVIDERS
-            )
-        )
-
+    if provider_name not in SUPPORTED_AI_PROVIDERS:
+        supported = ", ".join(sorted(SUPPORTED_AI_PROVIDERS))
         raise ValueError(
-            "Unsupported AI provider "
-            f"'{provider_name}'. "
+            f"Unsupported AI provider '{provider_name}'. "
             f"Supported providers: {supported}."
         )
 
-    if (
-        provider_name
-        == "ollama"
-    ):
-
-        model_name = (
-            _env_value(
-                "OLLAMA_MODEL"
-            )
-            or _env_value(
-                "AI_MODEL"
-            )
-            or _env_value(
-                "DEFAULT_MODEL"
-            )
-            or DEFAULT_OLLAMA_MODEL
-        )
-
+    if provider_name == "openai":
+        model_name = str(
+            getattr(config, "openai_model", None) or DEFAULT_OPENAI_MODEL
+        ).strip()
     else:
+        model_name = str(
+            getattr(config, "default_model", None) or DEFAULT_OLLAMA_MODEL
+        ).strip()
 
-        model_name = (
-            _env_value(
-                "OPENAI_MODEL"
-            )
-            or DEFAULT_OPENAI_MODEL
+    if not model_name:
+        raise ValueError("Configured AI model name cannot be empty.")
+
+    return provider_name, model_name
+
+
+def _provider_config(
+    *,
+    config: Settings,
+    provider_name: str,
+) -> dict[str, object]:
+    """Return provider-specific runtime config without exposing secrets."""
+
+    if provider_name == "openai":
+        secret = getattr(config, "openai_api_key", None)
+        api_key = (
+            secret.get_secret_value().strip()
+            if secret is not None
+            else ""
         )
+        return {
+            "api_key": api_key or None,
+            "reasoning_effort": str(
+                getattr(config, "openai_reasoning_effort", "medium")
+                or "medium"
+            ).strip().casefold(),
+            "timeout_seconds": float(
+                getattr(config, "openai_timeout_seconds", 120.0) or 120.0
+            ),
+            "store_responses": bool(
+                getattr(config, "openai_store_responses", False)
+            ),
+        }
 
-    return (
-        provider_name,
-        model_name,
-    )
+    # Preserve the existing Ollama provider contract while sourcing the host
+    # from Settings instead of reading the environment directly.
+    raw = str(getattr(config, "ollama_url", "") or "").strip()
+    parsed = urlsplit(raw if "://" in raw else f"http://{raw}")
+    host = parsed.hostname or "localhost"
+    port = int(parsed.port or 11434)
+    return {
+        "host": host,
+        "port": port,
+    }
 
 
-def create_ai_stack() -> tuple[
-    AIManager,
-    AIAnalyzer,
-]:
-    """
-    Create the complete AI stack.
+def create_ai_stack(
+    config: Settings = settings,
+) -> tuple[AIManager, AIAnalyzer]:
+    """Create the complete lazy AI stack."""
 
-    Returns:
-
-        (
-            AIManager,
-            AIAnalyzer,
-        )
-
-    The provider is neither initialized nor connected here.
-    """
-
-    (
-        provider_name,
-        model_name,
-    ) = resolve_ai_configuration()
+    provider_name, model_name = resolve_ai_configuration(config)
 
     manager = AIManager(
         provider_name=provider_name,
         model_name=model_name,
+        **_provider_config(
+            config=config,
+            provider_name=provider_name,
+        ),
     )
 
-    managed_ai = ManagedAI(
-        manager
-    )
-
-    knowledge_store = (
-        KnowledgeStore()
-    )
-
+    managed_ai = ManagedAI(manager)
+    knowledge_store = KnowledgeStore()
     rag_engine = RAGEngine(
         ai=managed_ai,
         knowledge_store=knowledge_store,
     )
-
     analyzer = AIAnalyzer(
         rag_engine=rag_engine,
     )
 
-    return (
-        manager,
-        analyzer,
-    )
+    return manager, analyzer
 
 
-def create_ai_analyzer() -> AIAnalyzer:
-    """
-    Backward-compatible helper.
+def create_ai_analyzer(
+    config: Settings = settings,
+) -> AIAnalyzer:
+    """Backward-compatible helper."""
 
-    Existing code may still call this function.
-    """
-
-    _, analyzer = create_ai_stack()
-
+    _, analyzer = create_ai_stack(config)
     return analyzer
