@@ -1,9 +1,4 @@
-"""
-M021.1 — OSINT Capability Router.
-
-Converts an allowed pivot into a deterministic set of connector capabilities.
-No connector execution happens here.
-"""
+"""M021.1 / R13.28.1 — deterministic OSINT capability routing."""
 
 from __future__ import annotations
 
@@ -15,6 +10,9 @@ from app.osint.capabilities import (
     NetworkMode,
     OsintConnectorCapability,
     OSINT_CAPABILITY_CATALOG,
+)
+from app.osint.credential_policy import (
+    AUTO_CREDENTIALED_THREAT_CONNECTORS,
 )
 from app.osint.models import OsintTargetType
 from app.osint.pivot_policy import (
@@ -39,20 +37,24 @@ class PivotRoute:
 
 
 class OsintCapabilityRouter:
-    """
-    Route automatic enrichment only through catalog entries that are:
-    - compatible with target type
-    - assigned to the requested discovery goal
-    - default-enabled
-    - not credentialed
-    - not CONDITIONAL / SEPARATE / REPLACE
+    """Select safe automatic connector capabilities.
+
+    Existing keyless defaults keep their old behavior. R13.28.1 additionally
+    permits an explicit allow-list of credentialed passive threat-intelligence
+    connectors, but only when the composition root confirms that their API
+    credential is actually configured.
     """
 
     def __init__(
         self,
         policy: OsintPivotPolicy | None = None,
+        *,
+        configured_credential_modules: frozenset[str] | None = None,
     ) -> None:
         self.policy = policy or OsintPivotPolicy()
+        self.configured_credential_modules = frozenset(
+            configured_credential_modules or ()
+        )
 
     def route(
         self,
@@ -83,8 +85,6 @@ class OsintCapabilityRouter:
                 connectors=(),
             )
 
-        allowed_dispositions = self._allowed_dispositions_for_goal(goal)
-
         connectors = tuple(
             sorted(
                 (
@@ -92,11 +92,7 @@ class OsintCapabilityRouter:
                     for capability in OSINT_CAPABILITY_CATALOG.values()
                     if target_type in capability.input_types
                     and goal in capability.goals
-                    and capability.default_enabled
-                    and not capability.requires_account
-                    and not capability.requires_api_key
-                    and capability.disposition in allowed_dispositions
-                    and self._network_mode_allowed_for_goal(
+                    and self._capability_is_automatic(
                         capability=capability,
                         goal=goal,
                     )
@@ -117,12 +113,78 @@ class OsintCapabilityRouter:
             connectors=connectors,
         )
 
+    def default_goals_for(
+        self,
+        target_type: OsintTargetType,
+    ) -> tuple[DiscoveryGoal, ...]:
+        """Return default goals that have an executable automatic route.
+
+        Threat-intelligence is policy-allowed for IP/domain/URL/hash, but it is
+        omitted unless at least one explicitly supported credentialed source is
+        configured. This keeps the historical keyless behavior deterministic.
+        """
+
+        goals: list[DiscoveryGoal] = []
+        for goal in self.policy.default_goals(target_type):
+            if goal is not DiscoveryGoal.THREAT_INTELLIGENCE:
+                goals.append(goal)
+                continue
+
+            has_configured_route = any(
+                target_type in capability.input_types
+                and goal in capability.goals
+                and self._credentialed_threat_capability_allowed(capability)
+                for capability in OSINT_CAPABILITY_CATALOG.values()
+            )
+            if has_configured_route:
+                goals.append(goal)
+
+        return tuple(goals)
+
+    def _capability_is_automatic(
+        self,
+        *,
+        capability: OsintConnectorCapability,
+        goal: DiscoveryGoal,
+    ) -> bool:
+        allowed_dispositions = self._allowed_dispositions_for_goal(goal)
+
+        standard_default = bool(
+            capability.default_enabled
+            and not capability.requires_account
+            and not capability.requires_api_key
+            and capability.disposition in allowed_dispositions
+            and self._network_mode_allowed_for_goal(
+                capability=capability,
+                goal=goal,
+            )
+        )
+        if standard_default:
+            return True
+
+        return bool(
+            goal is DiscoveryGoal.THREAT_INTELLIGENCE
+            and self._credentialed_threat_capability_allowed(capability)
+        )
+
+    def _credentialed_threat_capability_allowed(
+        self,
+        capability: OsintConnectorCapability,
+    ) -> bool:
+        return bool(
+            capability.module in AUTO_CREDENTIALED_THREAT_CONNECTORS
+            and capability.module in self.configured_credential_modules
+            and capability.requires_api_key
+            and not capability.requires_account
+            and capability.disposition is ConnectorDisposition.CONDITIONAL
+            and capability.network_mode is NetworkMode.PASSIVE_REMOTE
+            and DiscoveryGoal.THREAT_INTELLIGENCE in capability.goals
+        )
+
     @staticmethod
     def _allowed_dispositions_for_goal(
         goal: DiscoveryGoal,
     ) -> frozenset[ConnectorDisposition]:
-        """Return product roles allowed in an automatic route for a goal."""
-
         if goal in {
             DiscoveryGoal.ACCOUNT_DISCOVERY,
             DiscoveryGoal.EMAIL_REGISTRATION,
@@ -136,11 +198,7 @@ class OsintCapabilityRouter:
                 }
             )
 
-        return frozenset(
-            {
-                ConnectorDisposition.CORE,
-            }
-        )
+        return frozenset({ConnectorDisposition.CORE})
 
     @staticmethod
     def _network_mode_allowed_for_goal(
@@ -148,8 +206,6 @@ class OsintCapabilityRouter:
         capability: OsintConnectorCapability,
         goal: DiscoveryGoal,
     ) -> bool:
-        """Keep automatic account discovery strictly passive."""
-
         if goal in {
             DiscoveryGoal.ACCOUNT_DISCOVERY,
             DiscoveryGoal.EMAIL_REGISTRATION,
@@ -161,7 +217,6 @@ class OsintCapabilityRouter:
                 NetworkMode.PASSIVE_REMOTE,
             }
 
-        # Preserve pre-existing routing behavior for all other goals.
         return True
 
     def route_defaults(
@@ -182,5 +237,5 @@ class OsintCapabilityRouter:
                 entity_identity=entity_identity,
                 state=state,
             )
-            for goal in self.policy.default_goals(target_type)
+            for goal in self.default_goals_for(target_type)
         )
