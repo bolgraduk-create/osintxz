@@ -288,6 +288,7 @@ class UnifiedInvestigationSearchWorker(QObject):
                     results=results,
                     providers=providers,
                     errors=errors,
+                    feedback=retrieval_feedback,
                 )
                 all_federation_records.extend(federation_records)
 
@@ -307,6 +308,7 @@ class UnifiedInvestigationSearchWorker(QObject):
                     results=results,
                     providers=providers,
                     errors=errors,
+                    feedback=retrieval_feedback,
                 )
                 all_registry_records.extend(registry_records)
 
@@ -421,6 +423,7 @@ class UnifiedInvestigationSearchWorker(QObject):
                             results=results,
                             providers=providers,
                             errors=errors,
+                            feedback=retrieval_feedback,
                         )
                         all_federation_records.extend(more_records)
                     if use_registry:
@@ -442,6 +445,7 @@ class UnifiedInvestigationSearchWorker(QObject):
                             results=results,
                             providers=providers,
                             errors=errors,
+                            feedback=retrieval_feedback,
                         )
                         all_registry_records.extend(more_registry)
                     if use_open_web:
@@ -636,6 +640,7 @@ class UnifiedInvestigationSearchWorker(QObject):
                 "explorationValidationSummary": exploration_validation_summary,
                 "explorationBrowserSummary": exploration_browser_summary,
                 "retrievalSchedule": retrieval_schedule.to_dict(),
+                "retrievalFeedback": retrieval_feedback.to_dict(),
                 "providers": providers,
                 "healthSummary": health_summary,
                 "pivots": [self._snapshot_seed(item, queued=is_exact_recursive_seed(item)) for item in pivots],
@@ -683,6 +688,16 @@ class UnifiedInvestigationSearchWorker(QObject):
                     "retrievalCandidates": retrieval_schedule.candidates,
                     "retrievalSelected": retrieval_schedule.selected,
                     "missedDueToBudget": retrieval_schedule.missed_due_to_budget,
+                    "skippedDueToTimeBudget": (
+                        retrieval_schedule.skipped_due_to_time_budget
+                    ),
+                    "retrievalDeprioritized": retrieval_schedule.deprioritized,
+                    "retrievalEstimatedSeconds": round(
+                        retrieval_schedule.estimated_selected_seconds, 2
+                    ),
+                    "adaptiveSourcesObserved": len(
+                        retrieval_feedback.sources
+                    ),
                     "providers": len(providers),
                     "healthReady": int(health_summary.get("ready") or 0),
                     "healthIssues": int(health_summary.get("issues") or 0),
