@@ -150,6 +150,11 @@ def test_unified_profile_rejects_non_http_external_urls():
     ]
 
     assert "javascript:alert(1)" not in values
+    assert all(
+        "javascript:" not in str(row.get("value") or "").casefold()
+        for group in profile["groups"]
+        for row in group["rows"]
+    )
 
 
 def test_unified_profile_preserves_association_provenance():
