@@ -520,10 +520,13 @@ Item {
                     Layout.preferredHeight: 166
                     Layout.minimumHeight: 166
                     Layout.maximumHeight: 166
-                    title: "Unified Target Profile"
-                    subtitle: (root.profileCoverage.label
-                        ? String(root.profileCoverage.label) + " · "
-                        : "") + root.unifiedProvenanceText()
+                    title: "Intelligence Summary"
+                    subtitle: "Unified Target Profile · "
+                        + (root.profileCoverage.label
+                            ? String(root.profileCoverage.label) + " · "
+                            : "")
+                        + root.unifiedProvenanceText()
+                        + " · provenance remains authoritative"
                     iconSource: "../../assets/icons/chart_blue.svg"
 
                     RowLayout {
