@@ -308,11 +308,11 @@ def test_analysis_qml_is_an_analytical_console_not_a_single_text_page():
     for expected in (
         'text: "ANALYSIS LAB"',
         'text: "AI Analysis"',
-        'title: "Analysis Focus"',
+        'placeholderText: "Ask what you want to understand about this investigation..."',
         'title: "AI Summary"',
-        'title: "Hypotheses"',
-        'title: "Contradictions"',
-        'title: "Next Investigation Steps"',
+        'text: "Hypotheses"',
+        'text: "Contradictions"',
+        'text: "Next Steps"',
         'title: "RAG Sources"',
         'title: "Analysis Pipeline"',
         'title: "Analysis History"',
@@ -326,8 +326,8 @@ def test_analysis_qml_is_an_analytical_console_not_a_single_text_page():
         "analysisBridge.runAnalysis(",
         "analysisBridge.openSource(",
         "analysisBridge.openHistory(",
-        "API storage off",
-        "OPENAI_API_KEY",
+        '"storage off"',
+        '"Run Analysis"',
         "AI output is analysis, not Evidence.",
     ):
         assert expected in qml
