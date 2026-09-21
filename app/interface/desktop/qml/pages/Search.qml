@@ -26,6 +26,16 @@ Item {
     property bool accountEnrichmentBusy: investigationSearchBridge.accountEnrichmentBusy
     property var accountEnrichmentCapability: ({ available: false, reason: "", site: "" })
 
+    function retrievalScheduleRows() {
+        const lanes = (((runData.retrievalSchedule || {}).lanes) || [])
+        const rows = []
+        for (let i = 0; i < lanes.length; ++i) {
+            const decisions = (lanes[i].decisions || [])
+            for (let j = 0; j < decisions.length; ++j) rows.push(decisions[j])
+        }
+        return rows
+    }
+
     function itemCount(tab) {
         if (tab === "results") return (resultViewMode === "raw" ? (runData.rawResults || []) : (runData.results || [])).length
         if (tab === "identity") return (runData.identityCandidates || []).length
@@ -34,6 +44,7 @@ Item {
         if (tab === "accounts") return (runData.relatedAccounts || []).length
         if (tab === "quality") return (runData.qualityTrace || []).length
         if (tab === "exploration") return (((runData.explorationGraph || {}).nodes) || []).length
+        if (tab === "schedule") return retrievalScheduleRows().length
         if (tab === "mentions") return (runData.mentions || []).length
         if (tab === "providers") return (runData.providers || []).length
         if (tab === "pivots") return (runData.pivots || []).length
@@ -49,6 +60,7 @@ Item {
         if (activeTab === "accounts") return runData.relatedAccounts || []
         if (activeTab === "quality") return runData.qualityTrace || []
         if (activeTab === "exploration") return ((runData.explorationGraph || {}).nodes) || []
+        if (activeTab === "schedule") return retrievalScheduleRows()
         if (activeTab === "mentions") return runData.mentions || []
         if (activeTab === "providers") return runData.providers || []
         if (activeTab === "pivots") return runData.pivots || []
@@ -72,6 +84,7 @@ Item {
         if (activeTab === "accounts") return String(row.title || row.value || "Related account")
         if (activeTab === "quality") return String(row.title || "Quality observation")
         if (activeTab === "exploration") return String(row.kind || "pivot").toUpperCase() + ": " + String(row.value || "")
+        if (activeTab === "schedule") return String(row.seedKind || "seed").replace(/_/g, " ").toUpperCase() + ": " + String(row.seedValue || "")
         if (activeTab === "mentions") return String(row.title || "Corroborating mention")
         if (activeTab === "providers") return String(row.source || "Provider")
         if (activeTab === "pivots") return String(row.value || "Pivot")
@@ -86,6 +99,7 @@ Item {
         if (activeTab === "accounts") return String(row.accountVerificationReason || row.detail || "Online account linked by an exact username/account signal")
         if (activeTab === "quality") return String(row.qualitySummary || row.detail || "Shadow quality assessment")
         if (activeTab === "exploration") return String(row.reason || "Quality-approved ephemeral pivot")
+        if (activeTab === "schedule") return String(row.reason || "Retrieval scheduling decision")
         if (activeTab === "mentions") return String(row.mentionSummary || row.detail || "Multiple known-person signals occur in this source")
         if (activeTab === "providers") return String(row.lane || "") + " · " + String(row.detail || "") + (row.healthAction ? " · " + String(row.healthAction) : "")
         if (activeTab === "pivots") return String(row.kind || "pivot").replace(/_/g, " ").toUpperCase() + " · " + String(row.origin || "discovered")
@@ -100,6 +114,7 @@ Item {
         if (activeTab === "accounts") return String(row.accountVerificationStatus || "reported").replace(/_/g, " ").toUpperCase()
         if (activeTab === "quality") return (row.qualityDisagreement ? "DISAGREEMENT · " : "") + String(row.qualityLabel || row.qualityTier || "QUALITY").toUpperCase()
         if (activeTab === "exploration") return Boolean(row.executed) ? "EXECUTED · EPHEMERAL" : "EPHEMERAL"
+        if (activeTab === "schedule") return Boolean(row.selected) ? "SELECTED" : "BUDGET SKIP"
         if (activeTab === "mentions") return String(row.mentionLabel || "CORROBORATING MENTION").toUpperCase()
         if (activeTab === "providers") return String(row.healthLabel || row.status || "provider").replace(/_/g, " ").toUpperCase()
         if (activeTab === "pivots") return Boolean(row.queued) ? "QUEUED" : "REVIEW"
@@ -137,6 +152,11 @@ Item {
                 + " · pivot " + Number(row.pivotScore || 0).toFixed(0)
                 + " · persist " + Number(row.persistenceScore || 0).toFixed(0)
                 + (row.parentSeedValue ? " · from " + String(row.parentSeedValue) : "")
+        }
+        if (activeTab === "schedule") {
+            return "wave " + Number(row.wave || 0)
+                + (row.source ? " · " + String(row.source) : "")
+                + (row.capability ? " · " + String(row.capability) : "")
         }
         if (activeTab === "mentions") {
             const mentionScore = Number(row.mentionScore || 0).toFixed(0)
@@ -582,7 +602,7 @@ Item {
                             text: root.busy
                                 ? String(root.runData.progressText || "Searching…")
                                 : root.runData.hasRun
-                                    ? (String(root.summary.results || 0) + " relevant · " + String(root.summary.possible || 0) + " possible · " + String(root.summary.rawResults || root.summary.results || 0) + " raw · " + String(root.summary.lowValueSuppressed || 0) + " suppressed")
+                                    ? (String(root.summary.results || 0) + " relevant · " + String(root.summary.possible || 0) + " possible · " + String(root.summary.rawResults || root.summary.results || 0) + " raw · " + String(root.summary.lowValueSuppressed || 0) + " suppressed · " + String(root.summary.missedDueToBudget || 0) + " budget-skipped")
                                     : "Fill any known fields and run all compatible source layers."
                             color: root.busy ? Theme.accent : Theme.textSecondary
                             font.pixelSize: 10
@@ -617,6 +637,7 @@ Item {
                                     { key: "accounts", label: "Accounts" },
                                     { key: "quality", label: "Quality" },
                                     { key: "exploration", label: "Explore" },
+                                    { key: "schedule", label: "Schedule" },
                                     { key: "mentions", label: "Mentions" },
                                     { key: "providers", label: "Providers" },
                                     { key: "pivots", label: "Pivots" },
@@ -733,6 +754,8 @@ Item {
                                         ? root.statusColor(row.modelData.qualityTier === "noise" ? "failed" : (row.modelData.qualityTier === "possible" ? "possible" : "success"))
                                         : root.activeTab === "exploration"
                                             ? root.statusColor(row.modelData.executed ? "success" : "possible")
+                                        : root.activeTab === "schedule"
+                                            ? root.statusColor(row.modelData.selected ? "success" : "possible")
                                         : root.activeTab === "accounts"
                                             ? root.statusColor(row.modelData.accountVerificationStatus || "reported")
                                             : root.statusColor(root.activeTab === "identity" ? row.modelData.identityStatus : (row.modelData.status || (row.modelData.queued ? "success" : "candidate")))
@@ -790,6 +813,8 @@ Item {
                                     ? root.statusColor(row.modelData.qualityTier === "noise" ? "failed" : (row.modelData.qualityTier === "possible" ? "possible" : "success"))
                                     : root.activeTab === "exploration"
                                         ? root.statusColor(row.modelData.executed ? "success" : "possible")
+                                    : root.activeTab === "schedule"
+                                        ? root.statusColor(row.modelData.selected ? "success" : "possible")
                                     : root.activeTab === "accounts"
                                         ? root.statusColor(row.modelData.accountVerificationStatus || "reported")
                                         : root.statusColor(root.activeTab === "identity" ? row.modelData.identityStatus : (row.modelData.status || (row.modelData.queued ? "success" : "candidate")))
@@ -885,6 +910,8 @@ Item {
                                     ? "No shadow quality observations are available for this run."
                                 : root.activeTab === "exploration"
                                     ? "No quality-approved ephemeral pivots were created for this run."
+                                : root.activeTab === "schedule"
+                                    ? "No retrieval scheduling decisions are available for this run."
                                 : root.activeTab === "identity"
                                     ? "No person-like records contained enough structured identity signals to score."
                                     : root.activeTab === "candidates"
