@@ -1275,6 +1275,9 @@ class ServiceContainer:
                 citation_service=(
                     self.investigation_rag_grounded_citation_service
                 ),
+                prompt_manager=(
+                    self.prompt_manager
+                ),
             )
         )
 
