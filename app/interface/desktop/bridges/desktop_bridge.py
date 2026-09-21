@@ -54,7 +54,7 @@ class DesktopBridge(QObject):
     }
     NAVIGATION_PAGES = {
         "overview", "cases", "search", "registry", "entities", "person",
-        "graph", "timeline", "osint", "evidence", "reports", "report", "settings",
+        "graph", "timeline", "analysis", "osint", "evidence", "reports", "report", "settings",
     }
 
     def __init__(self, container: Any, parent: QObject | None = None) -> None:
