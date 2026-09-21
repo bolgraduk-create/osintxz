@@ -171,7 +171,7 @@ def test_analysis_page_has_structured_pipeline_sections():
 
     for expected in (
         'text: "AI Analysis"',
-        'title: "Analysis Focus"',
+        'placeholderText: "Ask what you want to understand about this investigation..."',
         'title: "AI Summary"',
         'title: "RAG Sources"',
         'title: "Analysis Pipeline"',
@@ -179,8 +179,8 @@ def test_analysis_page_has_structured_pipeline_sections():
         "root.sources",
         "root.stages",
         "analysisBridge.runAnalysis",
-        "OPENAI_API_KEY",
-        "API storage off",
+        '"storage off"',
+        '"Run Analysis"',
     ):
         assert expected in qml
 
