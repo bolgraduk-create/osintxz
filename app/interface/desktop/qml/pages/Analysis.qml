@@ -10,6 +10,7 @@ Item {
 
     property var run: analysisBridge.runData || ({})
     property var provider: analysisBridge.providerInfo || ({})
+    property var providerOptions: analysisBridge.providerCatalog || []
     property var catalog: analysisBridge.catalog || ({})
     property var focusOptions: analysisBridge.focusOptions || []
     property var historyRows: analysisBridge.history || []
@@ -20,6 +21,7 @@ Item {
     property var warnings: run.warnings || []
     property var citationSummary: run.citationSummary || ({})
     property string selectedMode: "standard"
+    property string selectedProvider: ""
     property string selectedModel: "gpt-5.6-terra"
     property string selectedReasoning: "medium"
     property int selectedFocusIndex: 0
@@ -40,6 +42,7 @@ Item {
     function reload() {
         root.run = analysisBridge.runData || ({})
         root.provider = analysisBridge.providerInfo || ({})
+        root.providerOptions = analysisBridge.providerCatalog || []
         root.catalog = analysisBridge.catalog || ({})
         root.focusOptions = analysisBridge.focusOptions || []
         root.historyRows = analysisBridge.history || []
@@ -64,12 +67,66 @@ Item {
         return root.catalog.modes || []
     }
 
+    function providers() {
+        return root.providerOptions || []
+    }
+
+    function providerInfoById(providerId) {
+        const values = root.providers()
+        for (let i = 0; i < values.length; ++i) {
+            if (String(values[i].provider || "") === String(providerId || ""))
+                return values[i]
+        }
+        return ({})
+    }
+
+    function selectedProviderInfo() {
+        const info = root.providerInfoById(root.selectedProvider)
+        if (String(info.provider || "") !== "")
+            return info
+        return root.provider || ({})
+    }
+
+    function providerLabels() {
+        const values = root.providers()
+        const out = []
+        for (let i = 0; i < values.length; ++i) {
+            const item = values[i]
+            let suffix = ""
+            if (String(item.provider || "") === "openai" && !Boolean(item.configured))
+                suffix = " · API key missing"
+            else if (String(item.provider || "") === "ollama") {
+                if (item.online === true)
+                    suffix = " · online"
+                else if (item.online === false)
+                    suffix = " · offline"
+                else
+                    suffix = " · checking"
+            }
+            out.push(String(item.label || item.provider || "AI") + suffix)
+        }
+        return out
+    }
+
+    function providerIndex(providerId) {
+        const values = root.providers()
+        for (let i = 0; i < values.length; ++i) {
+            if (String(values[i].provider || "") === String(providerId || ""))
+                return i
+        }
+        return 0
+    }
+
     function models() {
-        return root.catalog.models || []
+        const info = root.selectedProviderInfo()
+        return info.models || []
     }
 
     function reasoningEfforts() {
-        return root.catalog.reasoningEfforts || ["none", "low", "medium", "high", "xhigh", "max"]
+        if (String(root.selectedProvider || "") !== "openai")
+            return ["Local provider"]
+        const info = root.selectedProviderInfo()
+        return info.reasoningEfforts || root.catalog.reasoningEfforts || ["none", "low", "medium", "high", "xhigh", "max"]
     }
 
     function modeInfo(key) {
@@ -82,22 +139,32 @@ Item {
     }
 
     function modelLabels() {
-        if (String(root.provider.provider || "") !== "openai")
-            return [String(root.provider.model || "Local model")]
         const values = root.models()
         const out = []
-        for (let i = 0; i < values.length; ++i)
-            out.push(String(values[i].label) + " · " + String(values[i].tier))
+        for (let i = 0; i < values.length; ++i) {
+            const label = String(values[i].label || values[i].id || "Model")
+            const tier = String(values[i].tier || "")
+            out.push(tier ? label + " · " + tier : label)
+        }
+        if (out.length === 0)
+            return [String(root.provider.model || "Local model")]
         return out
     }
 
     function modelIndex(modelId) {
         const values = root.models()
         for (let i = 0; i < values.length; ++i) {
-            if (String(values[i].id) === String(modelId))
+            if (String(values[i].id || "") === String(modelId || ""))
                 return i
         }
         return 0
+    }
+
+    function modelIdAt(index) {
+        const values = root.models()
+        if (index >= 0 && index < values.length)
+            return String(values[index].id || "")
+        return ""
     }
 
     function reasoningIndex(value) {
@@ -107,6 +174,55 @@ Item {
                 return i
         }
         return 0
+    }
+
+    function applyProvider(providerId) {
+        const normalized = String(providerId || root.provider.provider || "ollama")
+        root.selectedProvider = normalized
+        const info = root.selectedProviderInfo()
+        const values = root.models()
+        const mode = root.modeInfo(root.selectedMode)
+
+        if (normalized === "openai") {
+            let wanted = String(mode.recommendedModel || info.defaultModel || info.model || "")
+            let found = false
+            for (let i = 0; i < values.length; ++i) {
+                if (String(values[i].id || "") === wanted) {
+                    found = true
+                    break
+                }
+            }
+            if (!found)
+                wanted = String(info.defaultModel || (values.length ? values[0].id : "gpt-5.6"))
+            root.selectedModel = wanted
+            root.selectedReasoning = String(mode.recommendedReasoning || info.reasoningEffort || "medium")
+        } else {
+            root.selectedModel = String(info.defaultModel || info.model || (values.length ? values[0].id : ""))
+            root.selectedReasoning = ""
+        }
+
+        providerBox.currentIndex = root.providerIndex(root.selectedProvider)
+        modelBox.currentIndex = root.modelIndex(root.selectedModel)
+        reasoningBox.currentIndex = root.reasoningIndex(root.selectedReasoning)
+    }
+
+    function ensureProviderSelection() {
+        if (!root.selectedProvider)
+            root.selectedProvider = String(root.provider.provider || "ollama")
+
+        const info = root.selectedProviderInfo()
+        const values = root.models()
+        let exists = false
+        for (let i = 0; i < values.length; ++i) {
+            if (String(values[i].id || "") === String(root.selectedModel || "")) {
+                exists = true
+                break
+            }
+        }
+        if (!exists) {
+            root.selectedModel = String(info.defaultModel || info.model || (values.length ? values[0].id : ""))
+            modelBox.currentIndex = root.modelIndex(root.selectedModel)
+        }
     }
 
     function focusLabels() {
@@ -127,19 +243,18 @@ Item {
     function applyMode(key) {
         const info = root.modeInfo(key)
         root.selectedMode = String(info.key || key || "standard")
-        if (String(root.provider.provider || "") === "openai") {
+        if (String(root.selectedProvider || "") === "openai") {
             if (info.recommendedModel)
                 root.selectedModel = String(info.recommendedModel)
             if (info.recommendedReasoning)
                 root.selectedReasoning = String(info.recommendedReasoning)
-            modelBox.currentIndex = root.modelIndex(root.selectedModel)
-            reasoningBox.currentIndex = root.reasoningIndex(root.selectedReasoning)
         } else {
-            root.selectedModel = String(root.provider.model || "")
+            const providerInfo = root.selectedProviderInfo()
+            root.selectedModel = String(providerInfo.defaultModel || providerInfo.model || root.selectedModel || "")
             root.selectedReasoning = ""
-            modelBox.currentIndex = 0
-            reasoningBox.currentIndex = 0
         }
+        modelBox.currentIndex = root.modelIndex(root.selectedModel)
+        reasoningBox.currentIndex = root.reasoningIndex(root.selectedReasoning)
     }
 
     function conclusionsFor(kind) {
@@ -189,7 +304,8 @@ Item {
             root.selectedReasoning,
             String(focus.type || "case"),
             String(focus.id || ""),
-            String(focus.label || "Entire Investigation")
+            String(focus.label || "Entire Investigation"),
+            root.selectedProvider
         )
     }
 
@@ -211,7 +327,10 @@ Item {
 
     Connections {
         target: analysisBridge
-        function onChanged() { root.reload() }
+        function onChanged() {
+            root.reload()
+            root.ensureProviderSelection()
+        }
     }
 
     Connections {
@@ -222,7 +341,10 @@ Item {
     Component.onCompleted: {
         root.reload()
         root.prepareCase()
+        root.selectedProvider = String(root.provider.provider || "ollama")
+        root.applyProvider(root.selectedProvider)
         root.applyMode("standard")
+        analysisBridge.refreshProviders()
     }
 
     ColumnLayout {
@@ -279,7 +401,7 @@ Item {
                 radius: 19
                 color: "#0d1c28"
                 border.width: 1
-                border.color: Boolean(root.provider.configured) ? Theme.border : Theme.danger
+                border.color: Boolean(root.selectedProviderInfo().configured) ? Theme.border : Theme.danger
 
                 Rectangle {
                     x: 12
@@ -287,19 +409,29 @@ Item {
                     width: 7
                     height: 7
                     radius: 4
-                    color: Boolean(root.provider.configured) ? Theme.success : Theme.danger
+                    color: {
+                        const info = root.selectedProviderInfo()
+                        if (!Boolean(info.configured)) return Theme.danger
+                        if (String(info.provider || "") === "ollama" && info.online === false) return Theme.danger
+                        if (String(info.provider || "") === "ollama" && info.online !== true) return Theme.warning
+                        return Theme.success
+                    }
                 }
 
                 Text {
                     x: 28
                     anchors.verticalCenter: parent.verticalCenter
                     width: parent.width - 40
-                    text: String(root.provider.label || "AI")
-                        + " · " + String(root.provider.model || "No model")
-                        + (String(root.provider.provider || "") === "openai" && root.provider.storeResponses === false
-                            ? " · " + "storage off"
-                            : (String(root.provider.provider || "") !== "openai" ? " · local fallback" : ""))
-                    color: Boolean(root.provider.configured) ? Theme.textSecondary : Theme.danger
+                    text: {
+                        const info = root.selectedProviderInfo()
+                        let status = ""
+                        if (String(info.provider || "") === "openai" && info.storeResponses === false)
+                            status = " · " + "storage off"
+                        else if (String(info.provider || "") === "ollama")
+                            status = info.online === true ? " · online" : (info.online === false ? " · offline" : " · checking")
+                        return String(info.label || "AI") + " · " + String(root.selectedModel || info.model || "No model") + status
+                    }
+                    color: Boolean(root.selectedProviderInfo().configured) ? Theme.textSecondary : Theme.danger
                     font.pixelSize: 9
                     font.weight: Font.Medium
                     elide: Text.ElideRight
@@ -1578,7 +1710,7 @@ Item {
                     spacing: 8
 
                     Column {
-                        width: Math.max(1, (parent.width - 184) * 0.28)
+                        width: Math.max(1, (parent.width - 192) * 0.24)
                         height: 48
                         spacing: 3
 
@@ -1594,13 +1726,39 @@ Item {
                             width: parent.width
                             height: 32
                             model: root.focusLabels()
-                            enabled: !analysisBridge.busy
+                            enabled: !analysisBridge.busy && desktopBridge.hasCurrentCase
                             onCurrentIndexChanged: root.selectedFocusIndex = currentIndex
                         }
                     }
 
                     Column {
-                        width: Math.max(1, (parent.width - 184) * 0.44)
+                        width: Math.max(1, (parent.width - 192) * 0.18)
+                        height: 48
+                        spacing: 3
+
+                        Text {
+                            text: "PROVIDER"
+                            color: Theme.textMuted
+                            font.pixelSize: 7
+                            font.letterSpacing: 0.9
+                        }
+
+                        AppComboBox {
+                            id: providerBox
+                            width: parent.width
+                            height: 32
+                            model: root.providerLabels()
+                            enabled: !analysisBridge.busy
+                            onActivated: function(index) {
+                                const values = root.providers()
+                                if (index >= 0 && index < values.length)
+                                    root.applyProvider(String(values[index].provider || "ollama"))
+                            }
+                        }
+                    }
+
+                    Column {
+                        width: Math.max(1, (parent.width - 192) * 0.34)
                         height: 48
                         spacing: 3
 
@@ -1616,17 +1774,19 @@ Item {
                             width: parent.width
                             height: 32
                             model: root.modelLabels()
-                            enabled: !analysisBridge.busy && String(root.provider.provider || "") === "openai"
-                            onCurrentIndexChanged: {
-                                const values = root.models()
-                                if (currentIndex >= 0 && currentIndex < values.length)
-                                    root.selectedModel = String(values[currentIndex].id || root.selectedModel)
+                            enabled: !analysisBridge.busy
+                                && Boolean(root.selectedProviderInfo().configured)
+                                && root.models().length > 0
+                            onActivated: function(index) {
+                                const value = root.modelIdAt(index)
+                                if (value)
+                                    root.selectedModel = value
                             }
                         }
                     }
 
                     Column {
-                        width: Math.max(1, (parent.width - 184) * 0.28)
+                        width: Math.max(1, (parent.width - 192) * 0.24)
                         height: 48
                         spacing: 3
 
@@ -1641,14 +1801,16 @@ Item {
                             id: reasoningBox
                             width: parent.width
                             height: 32
-                            model: String(root.provider.provider || "") === "openai"
+                            model: String(root.selectedProvider || "") === "openai"
                                 ? root.reasoningEfforts()
                                 : ["Local provider"]
-                            enabled: !analysisBridge.busy && String(root.provider.provider || "") === "openai"
-                            onCurrentIndexChanged: {
+                            enabled: !analysisBridge.busy
+                                && String(root.selectedProvider || "") === "openai"
+                                && Boolean(root.selectedProviderInfo().configured)
+                            onActivated: function(index) {
                                 const values = root.reasoningEfforts()
-                                if (currentIndex >= 0 && currentIndex < values.length)
-                                    root.selectedReasoning = String(values[currentIndex])
+                                if (index >= 0 && index < values.length)
+                                    root.selectedReasoning = String(values[index])
                             }
                         }
                     }
@@ -1658,12 +1820,19 @@ Item {
                         y: 5
                         width: 160
                         height: 38
-                        text: analysisBridge.busy ? "Analyzing…" : "Run Analysis"
+                        text: analysisBridge.busy
+                            ? "Analyzing…"
+                            : (desktopBridge.hasCurrentCase ? "Run Analysis" : "Select Case")
                         primary: true
                         enabled: !analysisBridge.busy
-                            && desktopBridge.hasCurrentCase
-                            && Boolean(root.provider.configured)
-                        onClicked: root.runAnalysisNow()
+                            && Boolean(root.selectedProviderInfo().configured)
+                            && String(root.selectedModel || "") !== ""
+                        onClicked: {
+                            if (!desktopBridge.hasCurrentCase)
+                                desktopBridge.navigateTo("cases")
+                            else
+                                root.runAnalysisNow()
+                        }
                     }
                 }
             }
