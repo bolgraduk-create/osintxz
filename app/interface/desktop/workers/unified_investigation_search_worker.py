@@ -788,6 +788,7 @@ class UnifiedInvestigationSearchWorker(QObject):
         results: list[dict[str, Any]],
         providers: list[dict[str, Any]],
         errors: list[dict[str, Any]],
+        feedback: AdaptiveRetrievalFeedback | None = None,
     ) -> list[Any]:
         records: list[Any] = []
         for index, (seed, route) in enumerate(routes, start=1):
@@ -804,7 +805,9 @@ class UnifiedInvestigationSearchWorker(QObject):
                 sources=(route.source_code,),
                 verified_scope=False,
             )
+            route_started = perf_counter()
             federated = container.remote_source_adapter_service.search(query)
+            route_duration = perf_counter() - route_started
             snap = FederatedSourceSearchWorker._snapshot_result(federated)
             raw_records = list(getattr(federated, "records", ()) or ())
 
@@ -847,24 +850,24 @@ class UnifiedInvestigationSearchWorker(QObject):
 
             records.extend(accepted_records)
             for provider in snap.get("providers", []):
-                providers.append(
-                    self._provider_row(
-                        lane="Federation",
-                        source=str(provider.get("source") or route.source_code),
-                        status=str(provider.get("status") or "unknown"),
-                        records=(
-                            relevant_count
-                        ),
-                        seed=seed,
-                        detail=(
-                            str(provider.get("error") or "")
-                            or (
-                                f"{route.capability} · {relevant_count}/{len(raw_records)} relevant · "
-                                f"{len(accepted_records)} pivot-safe record(s)"
-                            )
-                        ),
-                    )
+                provider_row = self._provider_row(
+                    lane="Federation",
+                    source=str(provider.get("source") or route.source_code),
+                    status=str(provider.get("status") or "unknown"),
+                    records=relevant_count,
+                    seed=seed,
+                    detail=(
+                        str(provider.get("error") or "")
+                        or (
+                            f"{route.capability} · {relevant_count}/{len(raw_records)} relevant · "
+                            f"{len(accepted_records)} pivot-safe record(s)"
+                        )
+                    ),
                 )
+                provider_row["durationSeconds"] = round(route_duration, 3)
+                providers.append(provider_row)
+                if feedback is not None:
+                    feedback.observe_provider_row(provider_row)
                 if provider.get("error") and provider.get("status") == "failed":
                     errors.append(
                         self._error_row(
@@ -930,6 +933,7 @@ class UnifiedInvestigationSearchWorker(QObject):
         results: list[dict[str, Any]],
         providers: list[dict[str, Any]],
         errors: list[dict[str, Any]],
+        feedback: AdaptiveRetrievalFeedback | None = None,
     ) -> list[Any]:
         records: list[Any] = []
         seen_queries: set[tuple[str, str, str, str]] = set()
@@ -942,7 +946,9 @@ class UnifiedInvestigationSearchWorker(QObject):
                 "registry",
                 f"Registry {index}/{len(items)} · {query.kind.value} · {query.value}",
             )
+            query_started = perf_counter()
             search = container.registry_intelligence_service.search(query)
+            query_duration = perf_counter() - query_started
             raw_records = list(getattr(search, "records", ()) or ())
 
             states: list[tuple[Any, Any, Any, Any]] = []
@@ -1010,24 +1016,24 @@ class UnifiedInvestigationSearchWorker(QObject):
             for provider in list(getattr(search, "provider_results", ()) or ()):
                 snap = RegistrySearchWorker._snapshot_provider_result(provider)
                 provider_name = str(snap.get("provider") or "registry")
-                providers.append(
-                    self._provider_row(
-                        lane="Registry",
-                        source=provider_name,
-                        status=str(snap.get("status") or "unknown"),
-                        records=(
-                            relevant_by_provider.get(provider_name, 0)
-                        ),
-                        seed=seed,
-                        detail=(
-                            str(snap.get("error") or "")
-                            or (
-                                f"{query.kind.value} · {relevant_by_provider.get(provider_name, 0)} relevant · "
-                                f"{pivot_by_provider.get(provider_name, 0)} pivot-safe record(s)"
-                            )
-                        ),
-                    )
+                provider_row = self._provider_row(
+                    lane="Registry",
+                    source=provider_name,
+                    status=str(snap.get("status") or "unknown"),
+                    records=relevant_by_provider.get(provider_name, 0),
+                    seed=seed,
+                    detail=(
+                        str(snap.get("error") or "")
+                        or (
+                            f"{query.kind.value} · {relevant_by_provider.get(provider_name, 0)} relevant · "
+                            f"{pivot_by_provider.get(provider_name, 0)} pivot-safe record(s)"
+                        )
+                    ),
                 )
+                provider_row["durationSeconds"] = round(query_duration, 3)
+                providers.append(provider_row)
+                if feedback is not None:
+                    feedback.observe_provider_row(provider_row)
                 if snap.get("error") and snap.get("status") == "failed":
                     errors.append(
                         self._error_row(
