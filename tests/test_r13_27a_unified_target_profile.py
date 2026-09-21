@@ -230,7 +230,8 @@ def test_person_qml_uses_backend_unified_profile_metrics_and_provenance():
 
     assert "R13.27a UNIFIED TARGET PROFILE" in qml
     assert "root.person.unifiedProfile" in qml
-    assert 'title: "Unified Target Profile"' in qml
+    assert 'title: "Intelligence Summary"' in qml
+    assert '"Unified Target Profile · "' in qml
     assert "root.unifiedProfile.metrics" in qml
     assert "unifiedProvenanceText" in qml
     assert "profileCoverage" in qml
