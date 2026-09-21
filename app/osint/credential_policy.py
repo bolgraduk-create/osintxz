@@ -5,14 +5,9 @@ from __future__ import annotations
 from typing import Any
 
 from app.core.config import Settings, settings
-
-
-AUTO_CREDENTIALED_THREAT_CONNECTORS: dict[str, str] = {
-    "abuseipdb_connector": "abuseipdb_api_key",
-    "alienvault_otx_connector": "otx_api_key",
-    "urlscan_connector": "urlscan_api_key",
-    "virustotal_connector": "virustotal_api_key",
-}
+from app.osint.threat_intelligence_policy import (
+    AUTO_CREDENTIALED_THREAT_CONNECTORS,
+)
 
 
 def secret_text(value: Any) -> str:
