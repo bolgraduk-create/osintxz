@@ -188,12 +188,24 @@ class OsintEnrichmentExecutionService:
             target_type is OsintTargetType.USERNAME
             and goal is DiscoveryGoal.ACCOUNT_DISCOVERY
         )
+        bounded_threat_intelligence = bool(
+            goal is DiscoveryGoal.THREAT_INTELLIGENCE
+        )
+        independent_retrieval_budget = (
+            broad_username_discovery
+            or bounded_threat_intelligence
+        )
+
         if broad_username_discovery:
-            # Discovery breadth and persistence are different budgets.  The
+            # Discovery breadth and persistence are different budgets. The
             # entity budget still limits what can be persisted/recursed, but it
-            # must not stop Sherlock/Maigret/User Scanner/SocialScan from
-            # reporting the public account observations they found.
+            # must not stop account observations from being retrieved.
             remaining_finding_budget = max(80, int(finding_limit or 0))
+        elif bounded_threat_intelligence:
+            # Credentialed TI sources are few, remote and quota-bounded. Give
+            # every selected provider a small independent result allowance so
+            # an earlier domain/history connector cannot starve the TI wave.
+            remaining_finding_budget = 5
         elif finding_limit is None:
             remaining_finding_budget = shared_entity_budget.remaining
         else:
@@ -218,11 +230,20 @@ class OsintEnrichmentExecutionService:
         records: list[ConnectorExecutionRecord] = []
 
         for capability in route.connectors:
-            if remaining_finding_budget <= 0 and not broad_username_discovery:
+            if (
+                remaining_finding_budget <= 0
+                and not independent_retrieval_budget
+            ):
                 break
 
             connector_finding_limit = (
-                80 if broad_username_discovery else remaining_finding_budget
+                80
+                if broad_username_discovery
+                else (
+                    5
+                    if bounded_threat_intelligence
+                    else remaining_finding_budget
+                )
             )
             request = ConnectorRequest(
                 target=OsintTarget(
@@ -265,7 +286,7 @@ class OsintEnrichmentExecutionService:
                 connector_finding_limit,
             )
 
-            if not broad_username_discovery:
+            if not independent_retrieval_budget:
                 remaining_finding_budget = max(
                     0,
                     remaining_finding_budget
@@ -355,11 +376,12 @@ class OsintEnrichmentExecutionService:
                 execution
             )
 
-            remaining_finding_budget = max(
-                0,
-                remaining_finding_budget
-                - execution.total_findings,
-            )
+            if goal is not DiscoveryGoal.THREAT_INTELLIGENCE:
+                remaining_finding_budget = max(
+                    0,
+                    remaining_finding_budget
+                    - execution.total_findings,
+                )
 
         return tuple(executions)
 
