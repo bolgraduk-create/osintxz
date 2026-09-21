@@ -45,6 +45,10 @@ from app.application.investigation_analysis_contracts import (
     InvestigationAnalysisStageStatus,
     InvestigationAnalysisStatus,
 )
+from app.application.analysis_run_profile import (
+    generation_kwargs_for_profile,
+    normalize_analysis_mode,
+)
 from app.application.investigation_anomaly_analysis_service import (
     InvestigationAnomalyAnalysisService,
 )
@@ -1172,90 +1176,127 @@ class InvestigationAnalysisOrchestrator:
         ],
         run_artifacts: dict[str, object],
     ) -> InvestigationRAGRetrievalResult:
-        """
-        Execute exactly one case-scoped RAG retrieval package.
+        """Execute one focused, case-scoped RAG package and selected AI work."""
 
-        All retrieval/ranking remains owned by the existing
-        InvestigationRAGRetrievalService -> UnifiedSearchService
-        pipeline.  No search or vector logic lives here.
-        """
+        metadata = dict(request.metadata or {})
+        profile = normalize_analysis_mode(
+            metadata.get("analysis_mode")
+        )
 
-        question = str(
+        user_question = str(
             request.question
-            or "What information in this investigation is most relevant to the current analysis?"
+            or (
+                "What information in this investigation is most relevant "
+                "to the current analysis?"
+            )
         ).strip()
+
+        scope_type = str(
+            metadata.get("scope_type")
+            or "case"
+        ).strip().casefold()
+        focus_label = str(
+            metadata.get("focus_entity_label")
+            or ""
+        ).strip()
+        focus_entity_id = str(
+            metadata.get("focus_entity_id")
+            or ""
+        ).strip()
+
+        analysis_question = user_question
+        if scope_type == "person" and focus_label:
+            analysis_question = (
+                "ANALYSIS FOCUS: Person '"
+                + focus_label
+                + "'. Prioritize source material directly concerning this "
+                "person and relationships, events, accounts, contacts and "
+                "evidence connected to them. Preserve relevant surrounding "
+                "case context and do not assume that similarly named "
+                "identities are the same person.\n\n"
+                "ANALYST QUESTION: "
+                + user_question
+            )
 
         retrieval = (
             self.investigation_rag_retrieval_service
             .retrieve(
-                question=question,
+                question=analysis_question,
                 case_id=case_id,
                 metadata={
                     "orchestrated": True,
                     "orchestrator_version": self.VERSION,
+                    "analysis_mode": profile.key,
+                    "scope_type": scope_type,
+                    "focus_entity_id": focus_entity_id,
+                    "focus_entity_label": focus_label,
                 },
             )
         )
 
-        # Build one bounded context for the whole Analyze run.
-        # Future Summary/Conclusions handlers consume this exact
-        # object instead of rebuilding retrieval/context independently.
         rag_context = (
             self.investigation_rag_context_builder
             .build(retrieval)
         )
-
         run_artifacts["rag_context"] = rag_context
 
-        # Generate the investigation summary from the exact retrieval
-        # and bounded context already created in this Analyze run.
-        # summarize_precomputed() performs no retrieval and no context
-        # construction, preserving the single-run RAG contract.
+        generation_kwargs = generation_kwargs_for_profile(
+            provider=str(metadata.get("ai_provider") or ""),
+            mode=profile.key,
+            model=(
+                str(metadata.get("ai_model") or "").strip()
+                or None
+            ),
+            reasoning_effort=(
+                str(metadata.get("reasoning_effort") or "").strip()
+                or None
+            ),
+        )
+
         rag_summary = (
             self.investigation_rag_summary_service
             .summarize_precomputed(
                 retrieval=retrieval,
                 context=rag_context,
-                question=question,
+                question=analysis_question,
+                generation_kwargs=generation_kwargs,
             )
         )
-
         run_artifacts["rag_summary"] = rag_summary
 
-        # Validate only whether model-generated [R#] references point
-        # to sources that were actually included in this bounded context.
-        # This is deterministic provenance validation, not truth checking.
         summary_citations = (
             self.investigation_rag_grounded_citation_service
             .validate_summary(rag_summary)
         )
-
         run_artifacts["summary_citations"] = summary_citations
 
-        # Generate all approved AI conclusion workflows from the exact
-        # same retrieval and bounded context created above.  The
-        # precomputed entry point performs no retrieval/context rebuild.
-        rag_conclusions = (
-            self.investigation_rag_conclusions_service
-            .analyze_precomputed(
-                retrieval=retrieval,
-                context=rag_context,
-                question=question,
+        # Quick mode stops after the grounded summary. Standard and Deep use
+        # the exact same bounded retrieval/context for their selected workflows.
+        if profile.conclusion_kinds:
+            rag_conclusions = (
+                self.investigation_rag_conclusions_service
+                .analyze_precomputed(
+                    retrieval=retrieval,
+                    context=rag_context,
+                    question=analysis_question,
+                    kinds=profile.conclusion_kinds,
+                    generation_kwargs=generation_kwargs,
+                )
             )
-        )
+            run_artifacts["rag_conclusions"] = rag_conclusions
 
-        run_artifacts["rag_conclusions"] = rag_conclusions
+            conclusions_citations = (
+                self.investigation_rag_grounded_citation_service
+                .validate_conclusions(rag_conclusions)
+            )
+            run_artifacts["conclusions_citations"] = conclusions_citations
 
-        # Validate each conclusion workflow independently against the
-        # exact bounded context supplied to the model. This performs
-        # deterministic reference/provenance validation only; it does
-        # not regenerate conclusions and does not treat valid refs as truth.
-        conclusions_citations = (
-            self.investigation_rag_grounded_citation_service
-            .validate_conclusions(rag_conclusions)
-        )
-
-        run_artifacts["conclusions_citations"] = conclusions_citations
+        run_artifacts["analysis_mode"] = profile.key
+        run_artifacts["analysis_scope"] = {
+            "type": scope_type,
+            "entity_id": focus_entity_id,
+            "label": focus_label,
+        }
 
         return retrieval
 
