@@ -1004,6 +1004,35 @@ class InvestigationRAGContextBuilder:
     # Source block formatting
     # ======================================================
 
+    @staticmethod
+    def _format_optional_score(
+        value: Any,
+    ) -> str | None:
+        if value is None or isinstance(
+            value,
+            bool,
+        ):
+            return None
+
+        try:
+            numeric = float(
+                value
+            )
+        except (
+            TypeError,
+            ValueError,
+        ):
+            return None
+
+        if not (
+            0.0
+            <= numeric
+            <= 1.0
+        ):
+            return None
+
+        return f"{numeric:.6f}"
+
     def _build_source_header(
         self,
         source: InvestigationRAGSource,
@@ -1064,6 +1093,143 @@ class InvestigationRAGContextBuilder:
             "retrieval_score: "
             f"{source.final_score:.6f}"
         )
+
+        confidence_metadata = (
+            source.metadata.get(
+                "canonical_evidence_confidence"
+            )
+            if isinstance(
+                source.metadata,
+                dict,
+            )
+            else None
+        )
+
+        if isinstance(
+            confidence_metadata,
+            dict,
+        ):
+
+            strongest_confidence = (
+                self._format_optional_score(
+                    confidence_metadata.get(
+                        "strongest_confidence"
+                    )
+                )
+            )
+            strongest_coverage = (
+                self._format_optional_score(
+                    confidence_metadata.get(
+                        "strongest_assessment_coverage"
+                    )
+                )
+            )
+
+            lines.append(
+                "evidence_confidence_scope: "
+                "proposition_support"
+            )
+
+            if strongest_confidence is not None:
+                lines.append(
+                    "evidence_confidence: "
+                    f"{strongest_confidence}"
+                )
+
+            if strongest_coverage is not None:
+                lines.append(
+                    "evidence_confidence_coverage: "
+                    f"{strongest_coverage}"
+                )
+
+            propositions = (
+                confidence_metadata.get(
+                    "propositions"
+                )
+                or ()
+            )
+
+            if isinstance(
+                propositions,
+                list,
+            ):
+
+                for proposition in propositions[:3]:
+
+                    if not isinstance(
+                        proposition,
+                        dict,
+                    ):
+                        continue
+
+                    proposition_key = (
+                        self._normalize_text(
+                            proposition.get(
+                                "proposition_key"
+                            )
+                        )
+                    )
+
+                    confidence_score = (
+                        self._format_optional_score(
+                            proposition.get(
+                                "confidence_score"
+                            )
+                        )
+                    )
+                    assessment_coverage = (
+                        self._format_optional_score(
+                            proposition.get(
+                                "assessment_coverage"
+                            )
+                        )
+                    )
+                    contradiction_strength = (
+                        self._format_optional_score(
+                            proposition.get(
+                                "contradiction_strength"
+                            )
+                        )
+                    )
+
+                    if not proposition_key:
+                        continue
+
+                    summary_parts = [
+                        proposition_key,
+                    ]
+
+                    if confidence_score is not None:
+                        summary_parts.append(
+                            "confidence="
+                            f"{confidence_score}"
+                        )
+
+                    if assessment_coverage is not None:
+                        summary_parts.append(
+                            "coverage="
+                            f"{assessment_coverage}"
+                        )
+
+                    if contradiction_strength is not None:
+                        summary_parts.append(
+                            "contradiction="
+                            f"{contradiction_strength}"
+                        )
+
+                    if proposition.get(
+                        "hard_conflict"
+                    ):
+                        summary_parts.append(
+                            "hard_conflict=true"
+                        )
+
+                    lines.append(
+                        "evidence_proposition: "
+                        + "; ".join(
+                            summary_parts
+                        )
+                    )
 
         if methods:
 
