@@ -398,6 +398,33 @@ class InvestigationAnalysisWorker(QObject):
                             getattr(source, "text", "")
                         ).split()
                     )
+                    confidence_metadata = (
+                        getattr(
+                            source,
+                            "metadata",
+                            {},
+                        )
+                        or {}
+                    )
+                    confidence_metadata = (
+                        confidence_metadata.get(
+                            "canonical_evidence_confidence"
+                        )
+                        if isinstance(
+                            confidence_metadata,
+                            dict,
+                        )
+                        else None
+                    )
+                    confidence_metadata = (
+                        confidence_metadata
+                        if isinstance(
+                            confidence_metadata,
+                            dict,
+                        )
+                        else {}
+                    )
+
                     source_row = {
                         "reference": str(
                             source.reference_id or ""
@@ -412,6 +439,22 @@ class InvestigationAnalysisWorker(QObject):
                         "score": round(
                             float(source.final_score or 0.0),
                             4,
+                        ),
+                        "evidenceConfidence": (
+                            confidence_metadata.get(
+                                "strongest_confidence"
+                            )
+                        ),
+                        "evidenceConfidenceCoverage": (
+                            confidence_metadata.get(
+                                "strongest_assessment_coverage"
+                            )
+                        ),
+                        "evidencePropositionCount": int(
+                            confidence_metadata.get(
+                                "proposition_count"
+                            )
+                            or 0
                         ),
                         "status": str(source.status or ""),
                         "matchedMethods": list(
@@ -429,6 +472,16 @@ class InvestigationAnalysisWorker(QObject):
                             "objectId": source_row["objectId"],
                             "status": "source_backed",
                             "verifiedFact": False,
+                            "evidenceConfidence": (
+                                source_row[
+                                    "evidenceConfidence"
+                                ]
+                            ),
+                            "evidenceConfidenceCoverage": (
+                                source_row[
+                                    "evidenceConfidenceCoverage"
+                                ]
+                            ),
                             "notice": (
                                 "Direct source material selected by RAG; "
                                 "not automatically independently verified."
