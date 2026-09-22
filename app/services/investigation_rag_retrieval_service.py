@@ -68,6 +68,10 @@ from app.investigation.search_result import (
 from app.services.unified_search_service import (
     UnifiedSearchService,
 )
+from app.services.investigation_evidence_confidence_search_enrichment_service import (
+    CANONICAL_EVIDENCE_CONFIDENCE_METADATA_KEY,
+    InvestigationEvidenceConfidenceSearchEnrichmentService,
+)
 
 
 # ==========================================================
@@ -311,6 +315,10 @@ class InvestigationRAGRetrievalService:
         self,
         *,
         unified_search_service: UnifiedSearchService,
+        evidence_confidence_enrichment_service: (
+            InvestigationEvidenceConfidenceSearchEnrichmentService
+            | None
+        ) = None,
     ) -> None:
 
         if unified_search_service is None:
@@ -321,6 +329,11 @@ class InvestigationRAGRetrievalService:
 
         self.unified_search_service = (
             unified_search_service
+        )
+
+        self.evidence_confidence_enrichment_service = (
+            evidence_confidence_enrichment_service
+            or InvestigationEvidenceConfidenceSearchEnrichmentService()
         )
 
     # ======================================================
@@ -354,6 +367,10 @@ class InvestigationRAGRetrievalService:
             Any,
         ]
         | None = None,
+        evidence_confidence_results: tuple[
+            object,
+            ...,
+        ] = (),
     ) -> InvestigationRAGRetrievalResult:
         """
         Retrieve ranked investigation sources for one question.
@@ -445,12 +462,20 @@ class InvestigationRAGRetrievalService:
         )
 
         return self.retrieve_query(
-            query
+            query,
+            evidence_confidence_results=(
+                evidence_confidence_results
+            ),
         )
 
     def retrieve_query(
         self,
         query: InvestigationSearchQuery,
+        *,
+        evidence_confidence_results: tuple[
+            object,
+            ...,
+        ] = (),
     ) -> InvestigationRAGRetrievalResult:
         """
         Execute an already-created investigation search query
@@ -488,6 +513,33 @@ class InvestigationRAGRetrievalService:
                 query
             )
         )
+
+        self.evidence_confidence_enrichment_service.annotate(
+            response.hits,
+            evidence_confidence_results,
+        )
+
+        enriched_hit_count = sum(
+            1
+            for hit in response.hits
+            if (
+                CANONICAL_EVIDENCE_CONFIDENCE_METADATA_KEY
+                in hit.metadata
+            )
+        )
+
+        response.metadata[
+            "canonical_evidence_confidence"
+        ] = {
+            "enabled": bool(
+                evidence_confidence_results
+            ),
+            "applied_hit_count": enriched_hit_count,
+            "proposition_count": len(
+                evidence_confidence_results
+            ),
+            "ranking_changed": False,
+        }
 
         sources = tuple(
             self._build_source(
