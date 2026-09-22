@@ -746,6 +746,10 @@ class AnalysisBridge(QObject):
             }
         )
         self._run = snapshot
+        run_config = dict(snapshot.get("runConfig") or {})
+        self._clear_provider_error(
+            str(run_config.get("provider") or "")
+        )
 
         status = str(snapshot.get("status") or "completed")
         source_count = len(
@@ -808,6 +812,9 @@ class AnalysisBridge(QObject):
             }
         )
         self._chat_messages.append(payload)
+        self._clear_provider_error(
+            str(payload.get("provider") or "")
+        )
         self._set_message("AI reply completed.")
         self.changed.emit()
 
@@ -864,6 +871,28 @@ class AnalysisBridge(QObject):
                     "permission",
                 }:
                     row["status"] = error_kind
+            updated.append(row)
+
+        self._provider_catalog = updated
+
+    def _clear_provider_error(self, provider_name: str) -> None:
+        normalized = str(provider_name or "").strip().casefold()
+        if not normalized:
+            return
+
+        updated: list[dict[str, Any]] = []
+        for item in self._provider_catalog:
+            row = dict(item)
+            if str(row.get("provider") or "").strip().casefold() == normalized:
+                row.pop("lastErrorKind", None)
+                row.pop("lastErrorCode", None)
+                row.pop("lastError", None)
+                if normalized == "openai":
+                    row["status"] = (
+                        "configured"
+                        if bool(row.get("configured"))
+                        else "not_configured"
+                    )
             updated.append(row)
 
         self._provider_catalog = updated
