@@ -1208,6 +1208,22 @@ class InvestigationAnalysisOrchestrator:
             or ""
         ).strip()
 
+        evidence_analysis = (
+            self._optional_successful_stage_value(
+                InvestigationAnalysisStage.EVIDENCE,
+                stage_result_map,
+            )
+        )
+
+        evidence_confidence_results = tuple(
+            getattr(
+                evidence_analysis,
+                "proposition_confidence_results",
+                (),
+            )
+            or ()
+        )
+
         analysis_question = user_question
         if scope_type == "person" and focus_label:
             analysis_question = (
@@ -1234,7 +1250,13 @@ class InvestigationAnalysisOrchestrator:
                     "scope_type": scope_type,
                     "focus_entity_id": focus_entity_id,
                     "focus_entity_label": focus_label,
+                    "evidence_confidence_proposition_count": len(
+                        evidence_confidence_results
+                    ),
                 },
+                evidence_confidence_results=(
+                    evidence_confidence_results
+                ),
             )
         )
 
