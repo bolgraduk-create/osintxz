@@ -155,6 +155,26 @@ from app.evidence.source_reliability import (
     SourceReliabilityScoringService,
 )
 
+from app.evidence.evidence_strength import (
+    EvidenceStrengthScoringService,
+)
+
+from app.evidence.corroboration import (
+    EvidenceCorroborationService,
+)
+
+from app.evidence.contradiction_detection import (
+    EvidenceContradictionDetectionService,
+)
+
+from app.evidence.source_independence import (
+    EvidenceSourceIndependenceService,
+)
+
+from app.evidence.evidence_confidence import (
+    EvidenceConfidenceAggregationService,
+)
+
 from app.services.entity_service import (
     EntityService,
 )
@@ -498,6 +518,10 @@ from app.application.investigation_entity_resolution_analysis_service import (
 
 from app.application.investigation_evidence_analysis_service import (
     InvestigationEvidenceAnalysisService,
+)
+
+from app.application.investigation_evidence_confidence_service import (
+    InvestigationEvidenceConfidenceService,
 )
 
 from app.application.investigation_multimodal_analysis_service import (
@@ -2012,6 +2036,46 @@ class ServiceContainer:
             SourceReliabilityScoringService()
         )
 
+        self.evidence_strength_scoring_service = (
+            EvidenceStrengthScoringService()
+        )
+
+        self.evidence_corroboration_service = (
+            EvidenceCorroborationService()
+        )
+
+        self.evidence_contradiction_detection_service = (
+            EvidenceContradictionDetectionService()
+        )
+
+        self.evidence_source_independence_service = (
+            EvidenceSourceIndependenceService()
+        )
+
+        self.evidence_confidence_aggregation_service = (
+            EvidenceConfidenceAggregationService()
+        )
+
+        self.investigation_evidence_confidence_service = (
+            InvestigationEvidenceConfidenceService(
+                strength_scoring_service=(
+                    self.evidence_strength_scoring_service
+                ),
+                corroboration_service=(
+                    self.evidence_corroboration_service
+                ),
+                contradiction_service=(
+                    self.evidence_contradiction_detection_service
+                ),
+                source_independence_service=(
+                    self.evidence_source_independence_service
+                ),
+                confidence_aggregation_service=(
+                    self.evidence_confidence_aggregation_service
+                ),
+            )
+        )
+
         self.investigation_evidence_analysis_service = (
             InvestigationEvidenceAnalysisService(
                 evidence_service=(
@@ -2019,6 +2083,9 @@ class ServiceContainer:
                 ),
                 source_reliability_scoring_service=(
                     self.evidence_source_reliability_scoring_service
+                ),
+                evidence_confidence_service=(
+                    self.investigation_evidence_confidence_service
                 ),
             )
         )
