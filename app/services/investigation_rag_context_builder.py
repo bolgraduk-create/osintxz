@@ -1184,6 +1184,48 @@ class InvestigationRAGContextBuilder:
                             )
                         )
                     )
+                    intrinsic_strength = (
+                        self._format_optional_score(
+                            proposition.get(
+                                "intrinsic_strength"
+                            )
+                        )
+                    )
+                    source_reliability = (
+                        self._format_optional_score(
+                            proposition.get(
+                                "source_reliability_score"
+                            )
+                        )
+                    )
+                    source_reliability_coverage = (
+                        self._format_optional_score(
+                            proposition.get(
+                                "source_reliability_coverage"
+                            )
+                        )
+                    )
+                    effective_corroboration = (
+                        self._format_optional_score(
+                            proposition.get(
+                                "effective_corroboration_score"
+                            )
+                        )
+                    )
+                    independence_score = (
+                        self._format_optional_score(
+                            proposition.get(
+                                "independence_score"
+                            )
+                        )
+                    )
+                    independence_coverage = (
+                        self._format_optional_score(
+                            proposition.get(
+                                "independence_coverage"
+                            )
+                        )
+                    )
                     contradiction_strength = (
                         self._format_optional_score(
                             proposition.get(
@@ -1209,6 +1251,42 @@ class InvestigationRAGContextBuilder:
                         summary_parts.append(
                             "coverage="
                             f"{assessment_coverage}"
+                        )
+
+                    if intrinsic_strength is not None:
+                        summary_parts.append(
+                            "intrinsic="
+                            f"{intrinsic_strength}"
+                        )
+
+                    if source_reliability is not None:
+                        summary_parts.append(
+                            "source_reliability="
+                            f"{source_reliability}"
+                        )
+
+                    if source_reliability_coverage is not None:
+                        summary_parts.append(
+                            "source_reliability_coverage="
+                            f"{source_reliability_coverage}"
+                        )
+
+                    if effective_corroboration is not None:
+                        summary_parts.append(
+                            "corroboration="
+                            f"{effective_corroboration}"
+                        )
+
+                    if independence_score is not None:
+                        summary_parts.append(
+                            "independence="
+                            f"{independence_score}"
+                        )
+
+                    if independence_coverage is not None:
+                        summary_parts.append(
+                            "independence_coverage="
+                            f"{independence_coverage}"
                         )
 
                     if contradiction_strength is not None:
