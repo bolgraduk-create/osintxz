@@ -67,6 +67,7 @@ class InvestigationEvidencePropositionConfidenceResult:
     primary_evidence_id: UUID
     evidence_ids: tuple[UUID, ...]
     source_ids: tuple[UUID, ...]
+    origin_objects: tuple[tuple[str, str], ...]
     signal_count: int
     confidence: EvidenceConfidenceBreakdown
     strength: EvidenceStrengthBreakdown
@@ -107,6 +108,8 @@ class _PersistedObservation:
     evidence: object
     source: object
     signal: EvidenceSignal
+    origin_object_type: str | None
+    origin_object_id: str | None
     origin_key: str | None
     lineage_keys: tuple[str, ...]
     content_fingerprint: str | None
@@ -351,6 +354,21 @@ class InvestigationEvidenceConfidenceService:
             ],
             "id",
         )
+        origin_objects = tuple(
+            sorted(
+                {
+                    (
+                        observation.origin_object_type,
+                        observation.origin_object_id,
+                    )
+                    for observation in observations
+                    if (
+                        observation.origin_object_type
+                        and observation.origin_object_id
+                    )
+                }
+            )
+        )
 
         return InvestigationEvidencePropositionConfidenceResult(
             proposition_key=proposition_key,
@@ -360,6 +378,7 @@ class InvestigationEvidenceConfidenceService:
             primary_evidence_id=primary_evidence_id,
             evidence_ids=evidence_ids,
             source_ids=source_ids,
+            origin_objects=origin_objects,
             signal_count=len(observations),
             confidence=confidence,
             strength=strength,
@@ -419,6 +438,13 @@ class InvestigationEvidenceConfidenceService:
             if isinstance(provenance.get("origin"), dict)
             else {}
         )
+        origin_object_type = self._text(
+            origin.get("object_type")
+        ).casefold() or None
+        origin_object_id = self._text(
+            origin.get("object_id")
+        ) or None
+
         origin_key = self._explicit_origin_key(
             provenance=provenance,
             origin=origin,
@@ -539,6 +565,8 @@ class InvestigationEvidenceConfidenceService:
                         evidence=evidence,
                         source=source,
                         signal=signal,
+                        origin_object_type=origin_object_type,
+                        origin_object_id=origin_object_id,
                         origin_key=origin_key,
                         lineage_keys=lineage_keys,
                         content_fingerprint=fingerprint,
