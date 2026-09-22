@@ -278,6 +278,13 @@ def test_rag_context_exposes_retrieval_and_evidence_confidence_as_separate_field
     assert "evidence_confidence_scope: proposition_support" in context.text
     assert "evidence_confidence: 0.840000" in context.text
     assert "evidence_confidence_coverage: 0.770000" in context.text
+    assert "intrinsic=0.880000" in context.text
+    assert "source_reliability=0.930000" in context.text
+    assert "source_reliability_coverage=0.800000" in context.text
+    assert "corroboration=0.310000" in context.text
+    assert "independence=1.000000" in context.text
+    assert "independence_coverage=0.740000" in context.text
+    assert "contradiction=0.100000" in context.text
     assert (
         f"evidence_proposition: entity_observed:{entity_id}"
         in context.text
@@ -348,3 +355,40 @@ def test_ai_grounding_rules_forbid_invented_confidence_numbers():
             "Never invent"
             in source
         )
+
+
+
+def test_conversational_analysis_chat_uses_current_m024_confidence():
+    service_source = Path(
+        "app/application/analysis_chat_service.py"
+    ).read_text(encoding="utf-8")
+    worker_source = Path(
+        "app/interface/desktop/workers/analysis_chat_worker.py"
+    ).read_text(encoding="utf-8")
+
+    assert "evidence_confidence_results=(" in service_source
+    assert "canonical M024 confidence" in service_source
+    assert '"evidenceConfidence"' in service_source
+    assert (
+        "investigation_evidence_analysis_service"
+        in worker_source
+    )
+    assert (
+        '"proposition_confidence_results"'
+        in worker_source
+    )
+    assert (
+        "evidence_confidence_results=("
+        in worker_source
+    )
+
+
+def test_analysis_workspace_payload_exposes_m024_source_confidence():
+    worker_source = Path(
+        "app/interface/desktop/workers/investigation_analysis_worker.py"
+    ).read_text(encoding="utf-8")
+
+    assert '"canonical_evidence_confidence"' in worker_source
+    assert '"evidenceConfidence"' in worker_source
+    assert '"evidenceConfidenceCoverage"' in worker_source
+    assert '"evidencePropositionCount"' in worker_source
