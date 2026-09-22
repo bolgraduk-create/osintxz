@@ -98,9 +98,12 @@ Item {
         for (let i = 0; i < values.length; ++i) {
             const item = values[i]
             let suffix = ""
-            if (String(item.provider || "") === "openai" && !Boolean(item.configured))
-                suffix = " · API key missing"
-            else if (String(item.provider || "") === "ollama") {
+            if (String(item.provider || "") === "openai") {
+                if (!Boolean(item.configured))
+                    suffix = " · API key missing"
+                else if (root.providerRuntimeStatusText(item))
+                    suffix = " · " + root.providerRuntimeStatusText(item)
+            } else if (String(item.provider || "") === "ollama") {
                 if (String(item.status || "") === "online_no_models")
                     suffix = " · no installed models"
                 else if (item.online === true)
