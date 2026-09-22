@@ -105,6 +105,37 @@ class AnalysisChatWorker(QObject):
                 reasoning_effort=selected_reasoning or None,
             )
 
+            evidence_confidence_results: tuple[
+                object,
+                ...,
+            ] = ()
+            evidence_confidence_warning = ""
+
+            try:
+                evidence_analysis = (
+                    container
+                    .investigation_evidence_analysis_service
+                    .analyze_case(
+                        case_uuid
+                    )
+                )
+                evidence_confidence_results = tuple(
+                    getattr(
+                        evidence_analysis,
+                        "proposition_confidence_results",
+                        (),
+                    )
+                    or ()
+                )
+            except Exception as confidence_exc:
+                evidence_confidence_warning = (
+                    "Evidence confidence enrichment was unavailable "
+                    "for this chat turn: "
+                    + sanitized_text(
+                        confidence_exc
+                    )
+                )
+
             result = container.analysis_chat_service.reply(
                 case_id=case_uuid,
                 message=self.message,
@@ -114,6 +145,9 @@ class AnalysisChatWorker(QObject):
                 focus_entity_id=self.focus_entity_id,
                 focus_entity_label=self.focus_entity_label,
                 generation_kwargs=generation_kwargs,
+                evidence_confidence_results=(
+                    evidence_confidence_results
+                ),
             )
 
             usage = dict(container.ai_manager.usage_snapshot() or {})
@@ -179,6 +213,11 @@ class AnalysisChatWorker(QObject):
                 "metadata": dict(result.metadata),
                 "durationSeconds": round(perf_counter() - started, 3),
             }
+
+            if evidence_confidence_warning:
+                payload["warnings"].append(
+                    evidence_confidence_warning
+                )
 
             # Keep the read-side Analysis turn transaction read-only.
             container.rollback()
