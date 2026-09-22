@@ -133,6 +133,38 @@ Item {
         return root.models().length > 0
     }
 
+    function ollamaReady() {
+        const info = root.providerInfoById("ollama")
+        return Boolean(info.configured)
+            && info.online === true
+            && (info.models || []).length > 0
+    }
+
+    function providerHasRuntimeError(info) {
+        const status = String((info || {}).status || "")
+        return status === "quota_exhausted"
+            || status === "authentication"
+            || status === "permission"
+    }
+
+    function providerRuntimeStatusText(info) {
+        const status = String((info || {}).status || "")
+        if (status === "quota_exhausted") return "credits exhausted"
+        if (status === "authentication") return "API key error"
+        if (status === "permission") return "access denied"
+        return ""
+    }
+
+    function recoverWithOllama(messageData) {
+        if (!root.ollamaReady()) {
+            analysisBridge.refreshProviders()
+            return
+        }
+        root.applyProvider("ollama")
+        questionInput.text = String((messageData || {}).userMessage || "")
+        questionInput.forceActiveFocus()
+    }
+
     function models() {
         const info = root.selectedProviderInfo()
         return info.models || []
@@ -456,7 +488,10 @@ Item {
                 radius: 19
                 color: "#0d1c28"
                 border.width: 1
-                border.color: Boolean(root.selectedProviderInfo().configured) ? Theme.border : Theme.danger
+                border.color: (
+                    Boolean(root.selectedProviderInfo().configured)
+                    && !root.providerHasRuntimeError(root.selectedProviderInfo())
+                ) ? Theme.border : Theme.danger
 
                 Rectangle {
                     x: 12
@@ -467,6 +502,7 @@ Item {
                     color: {
                         const info = root.selectedProviderInfo()
                         if (!Boolean(info.configured)) return Theme.danger
+                        if (root.providerHasRuntimeError(info)) return Theme.danger
                         if (String(info.provider || "") === "ollama" && info.online === false) return Theme.danger
                         if (String(info.provider || "") === "ollama" && info.online !== true) return Theme.warning
                         return Theme.success
@@ -480,7 +516,10 @@ Item {
                     text: {
                         const info = root.selectedProviderInfo()
                         let status = ""
-                        if (String(info.provider || "") === "openai" && info.storeResponses === false)
+                        const runtimeStatus = root.providerRuntimeStatusText(info)
+                        if (runtimeStatus)
+                            status = " · " + runtimeStatus
+                        else if (String(info.provider || "") === "openai" && info.storeResponses === false)
                             status = " · " + "storage off"
                         else if (String(info.provider || "") === "ollama")
                             status = String(info.status || "") === "online_no_models"
@@ -488,7 +527,10 @@ Item {
                                 : (info.online === true ? " · online" : (info.online === false ? " · offline" : " · checking"))
                         return String(info.label || "AI") + " · " + String(root.selectedModel || info.model || "No model") + status
                     }
-                    color: Boolean(root.selectedProviderInfo().configured) ? Theme.textSecondary : Theme.danger
+                    color: (
+                        Boolean(root.selectedProviderInfo().configured)
+                        && !root.providerHasRuntimeError(root.selectedProviderInfo())
+                    ) ? Theme.textSecondary : Theme.danger
                     font.pixelSize: 9
                     font.weight: Font.Medium
                     elide: Text.ElideRight
@@ -819,7 +861,7 @@ Item {
                                     border.width: 1
                                     border.color: chatMessageRow.isUser
                                         ? Theme.accent
-                                        : Theme.border
+                                        : (Boolean(chatMessageRow.modelData.error) ? Theme.danger : Theme.border)
 
                                     Column {
                                         id: messageColumn
@@ -833,16 +875,23 @@ Item {
                                             text: chatMessageRow.isUser
                                                 ? "YOU"
                                                 : (
-                                                    "OSINTXZ AI"
-                                                    + (
-                                                        String(chatMessageRow.modelData.model || "")
-                                                        ? " · " + String(chatMessageRow.modelData.model)
-                                                        : ""
+                                                    Boolean(chatMessageRow.modelData.error)
+                                                    ? (
+                                                        String(chatMessageRow.modelData.provider || "AI").toUpperCase()
+                                                        + " · ACTION REQUIRED"
+                                                    )
+                                                    : (
+                                                        "OSINTXZ AI"
+                                                        + (
+                                                            String(chatMessageRow.modelData.model || "")
+                                                            ? " · " + String(chatMessageRow.modelData.model)
+                                                            : ""
+                                                        )
                                                     )
                                                 )
                                             color: chatMessageRow.isUser
                                                 ? Theme.accent
-                                                : Theme.textMuted
+                                                : (Boolean(chatMessageRow.modelData.error) ? Theme.danger : Theme.textMuted)
                                             font.pixelSize: 7
                                             font.weight: Font.DemiBold
                                             font.letterSpacing: 0.8
@@ -861,6 +910,50 @@ Item {
                                                 : Text.MarkdownText
                                             onLinkActivated: function(link) {
                                                 Qt.openUrlExternally(link)
+                                            }
+                                        }
+
+                                        Row {
+                                            width: parent.width
+                                            height: visible ? 30 : 0
+                                            visible: Boolean(chatMessageRow.modelData.error)
+                                            spacing: 8
+
+                                            AppButton {
+                                                width: 126
+                                                height: 30
+                                                text: root.ollamaReady()
+                                                    ? "Use Ollama"
+                                                    : "Check Ollama"
+                                                primary: root.ollamaReady()
+                                                quiet: !root.ollamaReady()
+                                                visible: (
+                                                    String(chatMessageRow.modelData.suggestedAction || "") === "switch_to_ollama"
+                                                    || String(chatMessageRow.modelData.suggestedAction || "") === "retry_or_ollama"
+                                                )
+                                                onClicked: root.recoverWithOllama(
+                                                    chatMessageRow.modelData
+                                                )
+                                            }
+
+                                            AppButton {
+                                                width: 132
+                                                height: 30
+                                                text: "Open API billing"
+                                                quiet: true
+                                                visible: String(chatMessageRow.modelData.errorKind || "") === "quota_exhausted"
+                                                onClicked: Qt.openUrlExternally(
+                                                    "https://platform.openai.com/settings/organization/billing/"
+                                                )
+                                            }
+
+                                            Text {
+                                                height: 30
+                                                verticalAlignment: Text.AlignVCenter
+                                                text: String(chatMessageRow.modelData.errorCode || "")
+                                                color: Theme.textMuted
+                                                font.pixelSize: 7
+                                                visible: String(chatMessageRow.modelData.errorCode || "") !== ""
                                             }
                                         }
 
