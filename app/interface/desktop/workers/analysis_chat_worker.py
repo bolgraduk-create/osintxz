@@ -6,6 +6,8 @@ from uuid import UUID
 
 from PySide6.QtCore import QObject, Signal, Slot
 
+from app.ai.provider_errors import public_error_payload
+
 from app.application.analysis_chat_history_service import (
     AnalysisChatHistoryService,
 )
@@ -231,13 +233,21 @@ class AnalysisChatWorker(QObject):
             except Exception:
                 pass
 
-            self.failed.emit(
+            error_payload = public_error_payload(exc)
+            error_payload.update(
                 {
-                    "error": sanitized_text(exc),
+                    "error": sanitized_text(error_payload.get("error")),
                     "sessionId": self.session_id,
+                    "userMessage": self.message,
+                    "provider": (
+                        str(error_payload.get("provider") or "")
+                        or self.provider_name
+                    ),
+                    "model": self.model,
                     "durationSeconds": round(perf_counter() - started, 3),
                 }
             )
+            self.failed.emit(error_payload)
         finally:
             try:
                 if container is not None:
