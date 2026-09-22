@@ -129,7 +129,7 @@ def test_analysis_chat_has_visible_ollama_recovery_and_billing_action():
     assert '"Use Ollama"' in qml
     assert '"Open API billing"' in qml
     assert "https://platform.openai.com/settings/organization/billing/" in qml
-    assert '"ACTION REQUIRED"' in qml
+    assert "ACTION REQUIRED" in qml
     assert "Theme.danger" in qml
 
 
