@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.ai.provider_errors import classify_openai_error
 from app.ai.providers.base_provider import BaseProvider
 
 
@@ -134,7 +135,11 @@ class OpenAIProvider(BaseProvider):
 
         request.update(options)
 
-        response = self.client.responses.create(**request)
+        try:
+            response = self.client.responses.create(**request)
+        except Exception as exc:
+            raise classify_openai_error(exc) from exc
+
         self._record_usage(
             response=response,
             requested_model=str(request.get("model") or self.model_name),
