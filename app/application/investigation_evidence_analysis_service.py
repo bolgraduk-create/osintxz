@@ -155,7 +155,8 @@ class InvestigationEvidenceAnalysisService:
         ),
         evidence_confidence_service: (
             InvestigationEvidenceConfidenceService
-        ),
+            | None
+        ) = None,
     ) -> None:
 
         self.evidence_service = (
@@ -272,20 +273,38 @@ class InvestigationEvidenceAnalysisService:
                 )
             )
 
-        confidence_analysis = (
-            self.evidence_confidence_service
-            .analyze(
-                case_id=case_uuid,
-                evidence=evidence,
-                source_reliability_by_source_key=(
-                    source_reliability_cache
-                ),
-            )
-        )
+        proposition_confidence_results: tuple[
+            object,
+            ...,
+        ] = ()
 
-        warnings.extend(
-            confidence_analysis.warnings
-        )
+        if self.evidence_confidence_service is not None:
+
+            confidence_analysis = (
+                self.evidence_confidence_service
+                .analyze(
+                    case_id=case_uuid,
+                    evidence=evidence,
+                    source_reliability_by_source_key=(
+                        source_reliability_cache
+                    ),
+                )
+            )
+
+            proposition_confidence_results = (
+                confidence_analysis.propositions
+            )
+
+            warnings.extend(
+                confidence_analysis.warnings
+            )
+
+        elif evidence:
+
+            warnings.append(
+                "Proposition-level Evidence Confidence adapter is "
+                "not configured for this caller."
+            )
 
         return (
             InvestigationEvidenceAnalysisResult(
@@ -295,8 +314,7 @@ class InvestigationEvidenceAnalysisService:
                     item_results
                 ),
                 proposition_confidence_results=(
-                    confidence_analysis
-                    .propositions
+                    proposition_confidence_results
                 ),
                 warnings=tuple(
                     self._deduplicate_warnings(
