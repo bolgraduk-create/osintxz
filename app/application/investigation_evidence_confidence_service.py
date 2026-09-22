@@ -304,8 +304,15 @@ class InvestigationEvidenceConfidenceService:
                 EvidenceSourceIndependenceObservation(
                     evidence_id=evidence_id,
                     source_id=source_id,
-                    source_type=self._enum_text(
-                        getattr(observation.source, "source_type", None)
+                    source_type=(
+                        self._enum_text(
+                            getattr(
+                                observation.source,
+                                "source_type",
+                                None,
+                            )
+                        )
+                        or None
                     ),
                     origin_key=observation.origin_key,
                     lineage_keys=observation.lineage_keys,
