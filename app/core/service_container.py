@@ -303,6 +303,10 @@ from app.services.investigation_rag_retrieval_service import (
     InvestigationRAGRetrievalService,
 )
 
+from app.services.investigation_evidence_confidence_search_enrichment_service import (
+    InvestigationEvidenceConfidenceSearchEnrichmentService,
+)
+
 from app.services.investigation_rag_context_builder import (
     InvestigationRAGContextBuilder,
 )
@@ -1106,10 +1110,17 @@ class ServiceContainer:
         # AI / RAG Retrieval
         # ==================================================
 
+        self.investigation_evidence_confidence_search_enrichment_service = (
+            InvestigationEvidenceConfidenceSearchEnrichmentService()
+        )
+
         self.investigation_rag_retrieval_service = (
             InvestigationRAGRetrievalService(
                 unified_search_service=(
                     self.unified_search_service
+                ),
+                evidence_confidence_enrichment_service=(
+                    self.investigation_evidence_confidence_search_enrichment_service
                 ),
             )
         )
