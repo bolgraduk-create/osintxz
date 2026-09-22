@@ -45,6 +45,7 @@ Does NOT:
 Important boundaries:
 
 retrieval score != evidence confidence
+M024 evidence confidence != general source truth
 retrieved source != verified fact
 model statement != investigation fact
 source reference != validated grounded citation
@@ -436,6 +437,14 @@ class InvestigationRAGPromptService:
                     "state that clearly.\n"
                     "- retrieval_score represents search relevance, "
                     "not evidence confidence.\n"
+                    "- When evidence_confidence is present, it is the "
+                    "canonical M024 confidence for a specific proposition, "
+                    "not a general truth score for the whole source.\n"
+                    "- evidence_confidence_coverage describes how much of "
+                    "the reliability/independence assessment was observable; "
+                    "low coverage must be stated as uncertainty.\n"
+                    "- Never invent, estimate or extrapolate confidence "
+                    "numbers that are not supplied in the context.\n"
                     "- Do not treat two similar identities as the "
                     "same person or entity unless the supplied "
                     "context establishes that conclusion.\n"
