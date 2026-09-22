@@ -780,9 +780,14 @@ class AnalysisBridge(QObject):
                 "durationSeconds": round(duration, 3),
                 "durationText": self._duration_text(duration),
                 "error": error,
+                "errorKind": str(payload.get("errorKind") or "application_error"),
+                "errorCode": str(payload.get("errorCode") or ""),
+                "retryable": bool(payload.get("retryable")),
+                "suggestedAction": str(payload.get("suggestedAction") or ""),
             }
         )
         self._run = current
+        self._mark_provider_error(payload)
         self._set_message("Investigation analysis failed: " + error)
         self.changed.emit()
 
@@ -810,20 +815,27 @@ class AnalysisBridge(QObject):
     def _on_chat_failed(self, result: object) -> None:
         payload = dict(result) if isinstance(result, dict) else {}
         error = str(payload.get("error") or "AI chat failed.")
-        self._chat_messages.append(
-            {
-                "id": str(uuid4()),
-                "turnId": "",
-                "role": "assistant",
-                "text": "I couldn't complete that reply. " + error,
-                "createdAt": datetime.now().isoformat(),
-                "sourceReferences": [],
-                "sources": [],
-                "warnings": [error],
-                "error": True,
-            }
-        )
-        self._set_message("AI chat failed: " + error)
+        message = {
+            "id": str(uuid4()),
+            "turnId": "",
+            "role": "assistant",
+            "text": error,
+            "createdAt": datetime.now().isoformat(),
+            "provider": str(payload.get("provider") or ""),
+            "model": str(payload.get("model") or ""),
+            "sourceReferences": [],
+            "sources": [],
+            "warnings": [error],
+            "error": True,
+            "errorKind": str(payload.get("errorKind") or "application_error"),
+            "errorCode": str(payload.get("errorCode") or ""),
+            "retryable": bool(payload.get("retryable")),
+            "suggestedAction": str(payload.get("suggestedAction") or ""),
+            "userMessage": str(payload.get("userMessage") or ""),
+        }
+        self._chat_messages.append(message)
+        self._mark_provider_error(payload)
+        self._set_message(error)
         self.changed.emit()
 
     @Slot()
@@ -832,6 +844,29 @@ class AnalysisBridge(QObject):
         self._chat_worker = None
         self._chat_thread = None
         self.changed.emit()
+
+    def _mark_provider_error(self, payload: dict[str, Any]) -> None:
+        provider_name = str(payload.get("provider") or "").strip().casefold()
+        error_kind = str(payload.get("errorKind") or "").strip().casefold()
+        if not provider_name or not error_kind:
+            return
+
+        updated: list[dict[str, Any]] = []
+        for item in self._provider_catalog:
+            row = dict(item)
+            if str(row.get("provider") or "").strip().casefold() == provider_name:
+                row["lastErrorKind"] = error_kind
+                row["lastErrorCode"] = str(payload.get("errorCode") or "")
+                row["lastError"] = str(payload.get("error") or "")
+                if error_kind in {
+                    "quota_exhausted",
+                    "authentication",
+                    "permission",
+                }:
+                    row["status"] = error_kind
+            updated.append(row)
+
+        self._provider_catalog = updated
 
     @Slot(object)
     def _on_provider_discovered(self, result: object) -> None:
