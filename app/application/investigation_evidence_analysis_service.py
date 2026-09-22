@@ -9,13 +9,10 @@ The current ORM Evidence model reliably exposes the Evidence inventory
 and its Source relationship. Therefore this boundary can safely run the
 existing SourceReliabilityScoringService for those real Source objects.
 
-Proposition-level EvidenceSignal observations are not persisted by the
-current Evidence model. Corroboration, contradiction, source
-independence and final Evidence Confidence are therefore deliberately
-NOT fabricated from title/value/metadata fields.
-
-Those proposition-level results can be added here later when real
-EvidenceSignal / observation inputs are available.
+Generic proposition rows are not persisted directly by the Evidence ORM.
+M024 therefore reconstructs only the subset that is explicitly preserved
+by extraction provenance + EvidenceEntity links. Arbitrary title/value
+text is still never promoted into confidence inputs.
 """
 
 from __future__ import annotations
@@ -26,6 +23,9 @@ from uuid import UUID
 from app.evidence.source_reliability import (
     SourceReliabilityBreakdown,
     SourceReliabilityScoringService,
+)
+from app.application.investigation_evidence_confidence_service import (
+    InvestigationEvidenceConfidenceService,
 )
 from app.services.evidence_service import (
     EvidenceService,
@@ -79,8 +79,8 @@ class InvestigationEvidenceAnalysisResult:
     - evidence contains the original ORM Evidence objects;
     - item_results contains analytical results produced by existing
       Evidence Layer services;
-    - proposition_confidence_results remains empty until real
-      proposition observations exist;
+    - proposition_confidence_results contains only propositions reconstructed
+      from real persisted provenance observations;
     - no Evidence mutation or database write is performed here.
     """
 
@@ -153,6 +153,9 @@ class InvestigationEvidenceAnalysisService:
         source_reliability_scoring_service: (
             SourceReliabilityScoringService
         ),
+        evidence_confidence_service: (
+            InvestigationEvidenceConfidenceService
+        ),
     ) -> None:
 
         self.evidence_service = (
@@ -161,6 +164,10 @@ class InvestigationEvidenceAnalysisService:
 
         self.source_reliability_scoring_service = (
             source_reliability_scoring_service
+        )
+
+        self.evidence_confidence_service = (
+            evidence_confidence_service
         )
 
     def analyze_case(
@@ -265,14 +272,20 @@ class InvestigationEvidenceAnalysisService:
                 )
             )
 
-        if evidence:
-
-            warnings.append(
-                "Proposition-level Evidence Confidence was not "
-                "calculated because the current stored Evidence "
-                "model does not provide real proposition-level "
-                "EvidenceSignal observations."
+        confidence_analysis = (
+            self.evidence_confidence_service
+            .analyze(
+                case_id=case_uuid,
+                evidence=evidence,
+                source_reliability_by_source_key=(
+                    source_reliability_cache
+                ),
             )
+        )
+
+        warnings.extend(
+            confidence_analysis.warnings
+        )
 
         return (
             InvestigationEvidenceAnalysisResult(
@@ -281,7 +294,10 @@ class InvestigationEvidenceAnalysisService:
                 item_results=tuple(
                     item_results
                 ),
-                proposition_confidence_results=(),
+                proposition_confidence_results=(
+                    confidence_analysis
+                    .propositions
+                ),
                 warnings=tuple(
                     self._deduplicate_warnings(
                         warnings
