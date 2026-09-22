@@ -257,6 +257,25 @@ class AnalysisChatService:
             safe_snippet = sanitize_sensitive_text(
                 " ".join(str(source.text or "").split())[:700]
             ).text
+            confidence_metadata = (
+                source.metadata.get(
+                    "canonical_evidence_confidence"
+                )
+                if isinstance(
+                    source.metadata,
+                    dict,
+                )
+                else None
+            )
+            confidence_metadata = (
+                confidence_metadata
+                if isinstance(
+                    confidence_metadata,
+                    dict,
+                )
+                else {}
+            )
+
             sources.append(
                 {
                     "reference": reference,
@@ -264,6 +283,22 @@ class AnalysisChatService:
                     "objectType": str(source.object_type or ""),
                     "objectId": str(source.object_id or ""),
                     "score": round(float(source.final_score or 0.0), 4),
+                    "evidenceConfidence": (
+                        confidence_metadata.get(
+                            "strongest_confidence"
+                        )
+                    ),
+                    "evidenceConfidenceCoverage": (
+                        confidence_metadata.get(
+                            "strongest_assessment_coverage"
+                        )
+                    ),
+                    "evidencePropositionCount": int(
+                        confidence_metadata.get(
+                            "proposition_count"
+                        )
+                        or 0
+                    ),
                     "status": str(source.status or ""),
                     "snippet": safe_snippet,
                 }
