@@ -6,6 +6,8 @@ from uuid import UUID
 
 from PySide6.QtCore import QObject, Signal, Slot
 
+from app.ai.provider_errors import public_error_payload
+
 from app.application.analysis_history_service import AnalysisHistoryService
 from app.application.analysis_run_profile import (
     estimate_openai_cost,
@@ -234,13 +236,15 @@ class InvestigationAnalysisWorker(QObject):
             except Exception:
                 pass
 
-            self.failed.emit(
+            error_payload = public_error_payload(exc)
+            error_payload.update(
                 {
-                    "error": sanitized_text(exc),
+                    "error": sanitized_text(error_payload.get("error")),
                     "duration": perf_counter() - started,
                     "caseId": self.case_id,
                 }
             )
+            self.failed.emit(error_payload)
         finally:
             try:
                 if container is not None:
