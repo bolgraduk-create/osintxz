@@ -367,3 +367,18 @@ def test_service_container_reuses_canonical_evidence_math_instead_of_second_form
     assert "confidence_score =" not in adapter
     assert "confidence_aggregation_service.aggregate(" in adapter
     assert "Different Source IDs alone are never treated as proof" in adapter
+
+
+def test_legacy_evidence_analysis_caller_can_omit_m024_adapter():
+    case_id = uuid4()
+    source_reliability = _SourceReliabilityService()
+
+    service = InvestigationEvidenceAnalysisService(
+        evidence_service=_EvidenceService([]),
+        source_reliability_scoring_service=source_reliability,
+    )
+
+    result = service.analyze_case(case_id)
+
+    assert result.evidence == ()
+    assert result.proposition_confidence_results == ()
