@@ -330,39 +330,19 @@ class InvestigationEvidenceConfidenceService:
             independence=independence,
         )
 
-        evidence_ids = tuple(
-            sorted(
-                {
-                    evidence_id
-                    for observation in observations
-                    if (
-                        evidence_id
-                        := self._uuid_attr(
-                            observation.evidence,
-                            "id",
-                        )
-                    )
-                    is not None
-                },
-                key=str,
-            )
+        evidence_ids = self._unique_uuid_attrs(
+            [
+                observation.evidence
+                for observation in observations
+            ],
+            "id",
         )
-        source_ids = tuple(
-            sorted(
-                {
-                    source_id
-                    for observation in observations
-                    if (
-                        source_id
-                        := self._uuid_attr(
-                            observation.source,
-                            "id",
-                        )
-                    )
-                    is not None
-                },
-                key=str,
-            )
+        source_ids = self._unique_uuid_attrs(
+            [
+                observation.source
+                for observation in observations
+            ],
+            "id",
         )
 
         return InvestigationEvidencePropositionConfidenceResult(
@@ -693,6 +673,27 @@ class InvestigationEvidenceConfidenceService:
             return UUID(str(raw))
         except (TypeError, ValueError, AttributeError):
             return None
+
+    @classmethod
+    def _unique_uuid_attrs(
+        cls,
+        values: list[object],
+        name: str,
+    ) -> tuple[UUID, ...]:
+        found: set[UUID] = set()
+        for value in values:
+            parsed = cls._uuid_attr(
+                value,
+                name,
+            )
+            if parsed is not None:
+                found.add(parsed)
+        return tuple(
+            sorted(
+                found,
+                key=str,
+            )
+        )
 
     @staticmethod
     def _enum_text(value: Any) -> str:
