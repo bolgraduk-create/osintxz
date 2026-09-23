@@ -387,3 +387,35 @@ def test_m025_explanation_is_deterministic_not_llm_generated():
     assert "PromptManager" not in source
     assert "OpenAI" not in source
     assert "Ollama" not in source
+
+
+
+def test_ai_may_paraphrase_but_not_invent_m025_confidence_reasons():
+    prompt_source = Path(
+        "app/services/investigation_rag_prompt_service.py"
+    ).read_text(encoding="utf-8")
+    conclusion_source = Path(
+        "app/services/investigation_rag_conclusions_service.py"
+    ).read_text(encoding="utf-8")
+    chat_source = Path(
+        "app/application/analysis_chat_service.py"
+    ).read_text(encoding="utf-8")
+
+    for source in (
+        prompt_source,
+        conclusion_source,
+        chat_source,
+    ):
+        assert "evidence_reason" in source
+        assert "evidence_limitation" in source
+        assert "deterministic M025" in source
+        assert "paraphrase" in source
+
+
+def test_analysis_qml_uses_only_defined_theme_tokens_for_explanation_surface():
+    qml = Path(
+        "app/interface/desktop/qml/pages/Analysis.qml"
+    ).read_text(encoding="utf-8")
+
+    assert "Theme.surfaceRaised" in qml
+    assert "Theme.panel" not in qml
