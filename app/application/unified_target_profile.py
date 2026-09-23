@@ -54,6 +54,8 @@ _BASIS_LABELS = {
     "person_entity": "Person entity",
     "evidence": "Evidence linked",
     "analyst_selected": "Analyst selected",
+    "analyst_confirmed": "Analyst confirmed",
+    "search_attributed": "Search attributed",
     "manual": "Manual",
     "source_url": "Source URL",
     "managed_attachment": "Managed attachment",
@@ -390,10 +392,12 @@ def _basis_priority(value: Any) -> int:
     return {
         "person_entity": 0,
         "evidence": 1,
-        "analyst_selected": 2,
-        "manual": 3,
-        "source_url": 4,
-        "managed_attachment": 5,
+        "analyst_confirmed": 1,
+        "search_attributed": 2,
+        "analyst_selected": 3,
+        "manual": 4,
+        "source_url": 5,
+        "managed_attachment": 6,
     }.get(_basis(value), 9)
 
 
