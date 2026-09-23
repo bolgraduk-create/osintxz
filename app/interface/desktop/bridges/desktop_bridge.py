@@ -4067,6 +4067,7 @@ class DesktopBridge(QObject):
             is_manual = evidence_workflow == "manual_person_attachment"
             is_profile_selection = evidence_workflow == "person_profile_selection"
             is_identity_review = evidence_workflow == "person_identity_review"
+            is_search_attribution = evidence_workflow == "person_search_attribution"
             preview_url = ""
             if evidence_type == "image" and managed_path_obj is not None and managed_path_obj.is_file():
                 preview_url = QUrl.fromLocalFile(str(managed_path_obj)).toString()
@@ -4198,7 +4199,11 @@ class DesktopBridge(QObject):
                         else (
                             "analyst_selected"
                             if is_profile_selection
-                            else ("manual" if is_manual else "evidence")
+                            else (
+                                "search_attributed"
+                                if is_search_attribution
+                                else ("manual" if is_manual else "evidence")
+                            )
                         )
                     ),
                     "reviewStatus": (
