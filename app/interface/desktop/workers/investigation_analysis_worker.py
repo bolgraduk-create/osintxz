@@ -398,7 +398,7 @@ class InvestigationAnalysisWorker(QObject):
                             getattr(source, "text", "")
                         ).split()
                     )
-                    confidence_metadata = (
+                    source_metadata = (
                         getattr(
                             source,
                             "metadata",
@@ -406,15 +406,18 @@ class InvestigationAnalysisWorker(QObject):
                         )
                         or {}
                     )
-                    confidence_metadata = (
-                        confidence_metadata.get(
-                            "canonical_evidence_confidence"
-                        )
+                    source_metadata = (
+                        dict(source_metadata)
                         if isinstance(
-                            confidence_metadata,
+                            source_metadata,
                             dict,
                         )
-                        else None
+                        else {}
+                    )
+                    confidence_metadata = (
+                        source_metadata.get(
+                            "canonical_evidence_confidence"
+                        )
                     )
                     confidence_metadata = (
                         confidence_metadata
@@ -545,6 +548,19 @@ class InvestigationAnalysisWorker(QObject):
                                 explanation_payload
                             )
                         ),
+                        "investigationExplainability": [
+                            dict(item)
+                            for item in list(
+                                source_metadata.get(
+                                    "investigation_explainability"
+                                )
+                                or []
+                            )
+                            if isinstance(
+                                item,
+                                dict,
+                            )
+                        ],
                         "status": str(source.status or ""),
                         "matchedMethods": list(
                             source.matched_methods or ()
@@ -585,6 +601,15 @@ class InvestigationAnalysisWorker(QObject):
                                     ]
                                 )
                             ),
+                            "investigationExplainability": [
+                                dict(item)
+                                for item in list(
+                                    source_row[
+                                        "investigationExplainability"
+                                    ]
+                                    or []
+                                )
+                            ],
                             "notice": (
                                 "Direct source material selected by RAG; "
                                 "not automatically independently verified."
