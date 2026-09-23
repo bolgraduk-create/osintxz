@@ -1,0 +1,93 @@
+name: OSINTXZ Quality Gate
+
+on:
+  push:
+    branches:
+      - main
+      - "feature/**"
+      - "fix/**"
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: osintxz-quality-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  core-quality:
+    name: Core contracts and quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    env:
+      SECRET_KEY: ci-only-secret-key-not-for-production
+      POSTGRES_HOST: 127.0.0.1
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: intelligence
+      POSTGRES_USER: intelligence
+      POSTGRES_PASSWORD: intelligence
+      REDIS_HOST: 127.0.0.1
+      REDIS_PORT: "6379"
+      OLLAMA_HOST: http://127.0.0.1:11434
+      DEFAULT_MODEL: llama3.1:8b
+      PYTHONUNBUFFERED: "1"
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_DB: intelligence
+          POSTGRES_USER: intelligence
+          POSTGRES_PASSWORD: intelligence
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U intelligence -d intelligence"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install project and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Compile Python sources
+        run: python -m compileall -q app tests tools
+
+      - name: Validate Alembic topology
+        run: |
+          python -m alembic heads
+          python -m alembic upgrade head
+          python -m alembic current
+
+      - name: Run architecture and intelligence regression gate
+        run: |
+          python -m pytest -q             tests/test_bootstrap_architecture_contract.py             tests/test_final_stabilization_contract.py             tests/test_golden_investigation_fixture.py             tests/test_r13_26b_search_quality_benchmark.py             tests/test_m024a_evidence_confidence_integration.py             tests/test_m024b_evidence_confidence_propagation.py             tests/test_m024c_confidence_ui.py             tests/test_m025a_evidence_explainability.py             tests/test_m025b_unified_explainability.py             tests/test_m025c_unified_why_ui.py
+
+      - name: Run search quality benchmark gate
+        run: python tools/run_r13_26b_search_quality_benchmark.py
