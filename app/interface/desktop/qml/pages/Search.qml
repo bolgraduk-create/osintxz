@@ -22,9 +22,71 @@ Item {
     property string mentionLinkError: ""
     // R13.25b ACCOUNT DETAILS
     property var selectedAccount: ({})
+    property var targetPersonOptions: []
+    property string selectedTargetPersonId: ""
+    property string targetPersonCaseId: ""
+    property string targetPersonError: ""
     property var accountEnrichment: investigationSearchBridge.accountEnrichment || ({})
     property bool accountEnrichmentBusy: investigationSearchBridge.accountEnrichmentBusy
     property var accountEnrichmentCapability: ({ available: false, reason: "", site: "" })
+
+    function suggestedPersonName() {
+        var parts = [
+            String(firstName.text || "").trim(),
+            String(middleName.text || "").trim(),
+            String(lastName.text || "").trim()
+        ]
+        var clean = []
+        for (var i = 0; i < parts.length; ++i) {
+            if (parts[i].length > 0)
+                clean.push(parts[i])
+        }
+        return clean.join(" ")
+    }
+
+    function reloadTargetPeople(preferredId) {
+        var caseId = String(desktopBridge.currentCaseId || "")
+        var wanted = String(preferredId || root.selectedTargetPersonId || "")
+
+        if (caseId !== root.targetPersonCaseId) {
+            root.targetPersonCaseId = caseId
+            wanted = ""
+            root.selectedTargetPersonId = ""
+        }
+
+        var rows = caseId.length
+            ? investigationSearchBridge.personOptions(caseId)
+            : []
+        var model = [{ id: "", label: "Select person…" }]
+        for (var i = 0; i < rows.length; ++i)
+            model.push(rows[i])
+
+        root.targetPersonOptions = model
+
+        var selectedIndex = 0
+        if (wanted.length > 0) {
+            for (var j = 1; j < model.length; ++j) {
+                if (String(model[j].id || "") === wanted) {
+                    selectedIndex = j
+                    break
+                }
+            }
+        }
+
+        targetPersonBox.currentIndex = selectedIndex
+        root.selectedTargetPersonId = selectedIndex > 0
+            ? String(model[selectedIndex].id || "")
+            : ""
+    }
+
+    function selectedTargetPersonLabel() {
+        for (var i = 0; i < root.targetPersonOptions.length; ++i) {
+            var item = root.targetPersonOptions[i]
+            if (String(item.id || "") === root.selectedTargetPersonId)
+                return String(item.label || "Person")
+        }
+        return ""
+    }
 
     function retrievalScheduleRows() {
         const lanes = (((runData.retrievalSchedule || {}).lanes) || [])
@@ -284,7 +346,18 @@ Item {
     }
 
     opacity: 0
-    Component.onCompleted: appear.start()
+    Component.onCompleted: {
+        root.reloadTargetPeople("")
+        appear.start()
+    }
+
+    Connections {
+        target: desktopBridge
+        function onChanged() {
+            if (root.visible)
+                root.reloadTargetPeople("")
+        }
+    }
     NumberAnimation {
         id: appear
         target: root
@@ -336,13 +409,30 @@ Item {
                 width: 180
                 text: root.busy ? "Searching…" : "Run All Sources"
                 primary: true
-                enabled: root.workspaceMode === "investigation" && desktopBridge.hasCurrentCase && !root.busy
+                enabled: root.workspaceMode === "investigation"
+                    && desktopBridge.hasCurrentCase
+                    && root.selectedTargetPersonId.length > 0
+                    && !root.busy
                 ToolTip.visible: hovered && !enabled
                 ToolTip.delay: 400
-                ToolTip.text: root.busy ? "A search is already running." : "Select an investigation first."
+                ToolTip.text: root.busy
+                    ? "A search is already running."
+                    : (!desktopBridge.hasCurrentCase
+                        ? "Select an investigation first."
+                        : (root.selectedTargetPersonId.length === 0
+                            ? "Select or create the person these results belong to."
+                            : ""))
                 onClicked: {
                     root.activeTab = "results"
-                    investigationSearchBridge.search(root.profilePayload(), desktopBridge.currentCaseId, root.optionPayload())
+                    root.targetPersonError = ""
+                    var started = investigationSearchBridge.search(
+                        root.profilePayload(),
+                        desktopBridge.currentCaseId,
+                        root.optionPayload(),
+                        root.selectedTargetPersonId
+                    )
+                    if (!started)
+                        root.targetPersonError = investigationSearchBridge.message
                 }
             }
 
@@ -462,7 +552,9 @@ Item {
                 Layout.fillHeight: true
                 title: "Known Data"
                 subtitle: desktopBridge.hasCurrentCase
-                    ? ("Target context → " + desktopBridge.currentCaseTitle)
+                    ? (root.selectedTargetPersonId.length
+                        ? ("Search target → " + root.selectedTargetPersonLabel())
+                        : "Choose which person will receive persisted results")
                     : "Select an investigation before running"
                 iconSource: "../../assets/icons/users_cyan.svg"
 
@@ -478,6 +570,63 @@ Item {
                         x: 14
                         width: parent.width - 28
                         spacing: 8
+
+                        Text { text: "SEARCH TARGET"; color: Theme.textMuted; font.pixelSize: 9; font.weight: Font.DemiBold; font.letterSpacing: 1.2 }
+
+                        RowLayout {
+                            width: parent.width
+                            spacing: 8
+
+                            AppComboBox {
+                                id: targetPersonBox
+                                Layout.fillWidth: true
+                                model: root.targetPersonOptions
+                                textRole: "label"
+                                onCurrentIndexChanged: {
+                                    var item = currentIndex >= 0 && currentIndex < root.targetPersonOptions.length
+                                        ? root.targetPersonOptions[currentIndex]
+                                        : null
+                                    root.selectedTargetPersonId = item
+                                        ? String(item.id || "")
+                                        : ""
+                                    root.targetPersonError = ""
+                                }
+                            }
+
+                            AppButton {
+                                text: "+ New Person"
+                                Layout.preferredWidth: 124
+                                enabled: desktopBridge.hasCurrentCase && !root.busy
+                                onClicked: {
+                                    newSearchPersonName.text = root.suggestedPersonName()
+                                    newSearchPersonDescription.text = ""
+                                    newSearchPersonError.text = ""
+                                    newSearchPersonDialog.open()
+                                    newSearchPersonName.forceActiveFocus()
+                                }
+                            }
+                        }
+
+                        Text {
+                            width: parent.width
+                            text: root.selectedTargetPersonId.length
+                                ? "Persisted search results will be attributed to this PERSON. This is context, not automatic identity confirmation."
+                                : "Select an existing PERSON or create a new one before running the search."
+                            color: root.selectedTargetPersonId.length ? Theme.textSecondary : Theme.warning
+                            font.pixelSize: 8
+                            wrapMode: Text.Wrap
+                        }
+
+                        Text {
+                            width: parent.width
+                            visible: root.targetPersonError.length > 0
+                            text: root.targetPersonError
+                            color: Theme.danger
+                            font.pixelSize: 9
+                            wrapMode: Text.Wrap
+                        }
+
+                        Rectangle { width: parent.width; height: 1; color: Theme.divider }
 
                         Text { text: "IDENTITY"; color: Theme.textMuted; font.pixelSize: 9; font.weight: Font.DemiBold; font.letterSpacing: 1.2 }
                         GridLayout {
@@ -1484,6 +1633,124 @@ Item {
                         color: Theme.textMuted
                         font.pixelSize: 9
                         wrapMode: Text.Wrap
+                    }
+                }
+            }
+        }
+    }
+
+    Dialog {
+        id: newSearchPersonDialog
+        modal: true
+        anchors.centerIn: parent
+        width: Math.min(520, root.width - 80)
+        height: 320
+        padding: 0
+        closePolicy: Popup.CloseOnEscape
+
+        background: Rectangle {
+            radius: 12
+            color: Theme.surface
+            border.width: 1
+            border.color: Theme.border
+        }
+
+        contentItem: ColumnLayout {
+            spacing: 0
+
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 72
+                color: "transparent"
+                Rectangle {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.bottom: parent.bottom
+                    height: 1
+                    color: Theme.divider
+                }
+                Text {
+                    x: 20
+                    y: 13
+                    text: "Create search person"
+                    color: Theme.textPrimary
+                    font.pixelSize: 18
+                    font.weight: Font.DemiBold
+                }
+                Text {
+                    x: 20
+                    y: 41
+                    width: parent.width - 40
+                    text: "Creates a PERSON in this investigation and selects it as the target for the next search."
+                    color: Theme.textMuted
+                    font.pixelSize: 9
+                    elide: Text.ElideRight
+                }
+            }
+
+            ColumnLayout {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                Layout.margins: 20
+                spacing: 10
+
+                Text { text: "NAME"; color: Theme.textMuted; font.pixelSize: 8; font.letterSpacing: 1.0 }
+
+                AppTextField {
+                    id: newSearchPersonName
+                    Layout.fillWidth: true
+                    placeholderText: "Full name / investigation label"
+                }
+
+                Text { text: "DESCRIPTION"; color: Theme.textMuted; font.pixelSize: 8; font.letterSpacing: 1.0 }
+
+                AppTextField {
+                    id: newSearchPersonDescription
+                    Layout.fillWidth: true
+                    placeholderText: "Optional note"
+                }
+
+                Text {
+                    id: newSearchPersonError
+                    Layout.fillWidth: true
+                    color: Theme.danger
+                    font.pixelSize: 9
+                    wrapMode: Text.Wrap
+                }
+
+                Item { Layout.fillHeight: true }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 8
+                    Item { Layout.fillWidth: true }
+
+                    AppButton {
+                        text: "Cancel"
+                        Layout.preferredWidth: 96
+                        onClicked: newSearchPersonDialog.close()
+                    }
+
+                    AppButton {
+                        text: "Create & select"
+                        primary: true
+                        Layout.preferredWidth: 130
+                        enabled: newSearchPersonName.text.trim().length > 0
+                        onClicked: {
+                            newSearchPersonError.text = ""
+                            var result = desktopBridge.createPerson(
+                                newSearchPersonName.text,
+                                newSearchPersonDescription.text
+                            )
+                            if (result && result.ok) {
+                                root.reloadTargetPeople(String(result.id || ""))
+                                newSearchPersonDialog.close()
+                            } else {
+                                newSearchPersonError.text = result && result.error
+                                    ? String(result.error)
+                                    : "Unable to create person."
+                            }
+                        }
                     }
                 }
             }
