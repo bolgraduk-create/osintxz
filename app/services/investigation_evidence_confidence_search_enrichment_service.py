@@ -201,6 +201,22 @@ class InvestigationEvidenceConfidenceSearchEnrichmentService:
         ):
             return None
 
+        explanation = getattr(
+            proposition,
+            "explanation",
+            None,
+        )
+        explanation_payload: dict[str, Any] = {}
+        to_payload = getattr(
+            explanation,
+            "to_payload",
+            None,
+        )
+        if callable(to_payload):
+            candidate = to_payload()
+            if isinstance(candidate, dict):
+                explanation_payload = dict(candidate)
+
         return {
             "proposition_key": proposition_key,
             "entity_id": entity_id,
@@ -297,6 +313,7 @@ class InvestigationEvidenceConfidenceSearchEnrichmentService:
                     None,
                 )
             ),
+            "explanation": explanation_payload,
             "evidence_ids": [
                 str(value)
                 for value in (
