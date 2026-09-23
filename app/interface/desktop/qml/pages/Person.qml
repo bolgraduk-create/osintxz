@@ -1422,6 +1422,8 @@ Item {
                                         || Boolean(candidateRow.modelData.calibrationHardConflict)
                                     if (hasCalibration)
                                         return String(candidateRow.modelData.calibrationSummary || "Calibrated identity evidence")
+                                    if (Number(candidateRow.modelData.relationshipBoost || 0) > 0)
+                                        return String(candidateRow.modelData.relationshipSummary || "Known-associate corroboration")
                                     return candidateRow.modelData.origin
                                         ? "Origin: " + String(candidateRow.modelData.origin)
                                         : "Stored OSINT finding"
@@ -1449,8 +1451,8 @@ Item {
                                     + (candidateRow.modelData.calibrationLabel
                                         ? " · " + String(candidateRow.modelData.calibrationLabel)
                                         : "")
-                                    + (Number(candidateRow.modelData.calibrationRelationshipSupport || 0) > 0
-                                        ? " · social " + String(candidateRow.modelData.calibrationRelationshipSupport) + "%"
+                                    + (Number(candidateRow.modelData.relationshipBoost || 0) > 0
+                                        ? " · social +" + String(candidateRow.modelData.relationshipBoost) + "%"
                                         : "")
                                 color: {
                                     var status = String(candidateRow.modelData.reviewStatus || "unreviewed")
