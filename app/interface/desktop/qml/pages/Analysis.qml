@@ -408,6 +408,40 @@ Item {
         return parts.join(" · ")
     }
 
+    function evidenceExplanation(item) {
+        if (!item || !item.evidenceConfidenceExplanation)
+            return ({})
+        return item.evidenceConfidenceExplanation
+    }
+
+    function hasEvidenceExplanation(item) {
+        const explanation = root.evidenceExplanation(item)
+        return String(explanation.summary || "") !== ""
+            || (explanation.reasons || []).length > 0
+            || (explanation.limitations || []).length > 0
+    }
+
+    function evidenceExplanationText(item) {
+        const explanation = root.evidenceExplanation(item)
+        const rows = []
+
+        const reasons = explanation.reasons || []
+        for (let i = 0; i < Math.min(reasons.length, 4); ++i) {
+            const message = String(reasons[i].message || "")
+            if (message)
+                rows.push("• " + message)
+        }
+
+        const limitations = explanation.limitations || []
+        for (let i = 0; i < Math.min(limitations.length, 4); ++i) {
+            const message = String(limitations[i].message || "")
+            if (message)
+                rows.push("! " + message)
+        }
+
+        return rows.join("\n")
+    }
+
     function runAnalysisNow() {
         const focus = root.selectedFocus()
         const started = analysisBridge.runAnalysis(
@@ -1474,11 +1508,17 @@ Item {
                             delegate: Rectangle {
                                 id: factCard
                                 required property var modelData
+                                property bool explanationOpen: false
                                 width: parent.width
                                 height: Math.max(
                                     92,
                                     factText.implicitHeight
-                                        + (root.hasEvidenceConfidence(factCard.modelData) ? 88 : 48)
+                                        + (root.hasEvidenceConfidence(factCard.modelData) ? 112 : 48)
+                                        + (
+                                            factCard.explanationOpen
+                                            ? factExplanationText.implicitHeight + 38
+                                            : 0
+                                        )
                                 )
                                 radius: 10
                                 color: Theme.surface
@@ -1557,14 +1597,83 @@ Item {
                                 }
 
                                 Text {
+                                    id: factFactors
                                     visible: root.hasEvidenceConfidence(factCard.modelData)
                                     x: 14
                                     y: factText.y + factText.implicitHeight + 10
-                                    width: parent.width - 28
+                                    width: parent.width - 100
                                     text: root.evidenceConfidenceFactors(factCard.modelData)
                                     color: Theme.textMuted
                                     font.pixelSize: 8
                                     wrapMode: Text.Wrap
+                                }
+
+                                Rectangle {
+                                    id: factWhyButton
+                                    visible: root.hasEvidenceExplanation(factCard.modelData)
+                                    anchors.right: parent.right
+                                    anchors.rightMargin: 14
+                                    y: factText.y + factText.implicitHeight + 5
+                                    width: 68
+                                    height: 23
+                                    radius: 11
+                                    color: factWhyMouse.containsMouse
+                                        ? Theme.surfaceHover
+                                        : Theme.panel
+                                    border.width: 1
+                                    border.color: Theme.border
+
+                                    Text {
+                                        anchors.centerIn: parent
+                                        text: factCard.explanationOpen ? "WHY ▲" : "WHY ▼"
+                                        color: Theme.accent
+                                        font.pixelSize: 7
+                                        font.weight: Font.DemiBold
+                                    }
+
+                                    MouseArea {
+                                        id: factWhyMouse
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: factCard.explanationOpen = !factCard.explanationOpen
+                                    }
+                                }
+
+                                Rectangle {
+                                    id: factExplanation
+                                    visible: factCard.explanationOpen
+                                        && root.hasEvidenceExplanation(factCard.modelData)
+                                    x: 14
+                                    y: Math.max(
+                                        factFactors.y + factFactors.implicitHeight,
+                                        factWhyButton.y + factWhyButton.height
+                                    ) + 10
+                                    width: parent.width - 28
+                                    height: factExplanationText.implicitHeight + 22
+                                    radius: 8
+                                    color: Theme.panel
+                                    border.width: 1
+                                    border.color: Theme.border
+
+                                    Text {
+                                        id: factExplanationText
+                                        x: 10
+                                        y: 10
+                                        width: parent.width - 20
+                                        text: {
+                                            const explanation = root.evidenceExplanation(factCard.modelData)
+                                            const summary = String(explanation.summary || "")
+                                            const details = root.evidenceExplanationText(factCard.modelData)
+                                            if (summary && details)
+                                                return summary + "\n\n" + details
+                                            return summary || details
+                                        }
+                                        color: Theme.textSecondary
+                                        font.pixelSize: 8
+                                        lineHeight: 1.35
+                                        wrapMode: Text.Wrap
+                                    }
                                 }
                             }
                         }
