@@ -63,6 +63,10 @@ from typing import Any
 from typing import Mapping
 from uuid import UUID
 
+from app.investigation.explainability import (
+    InvestigationExplainabilityBundle,
+)
+
 
 if TYPE_CHECKING:
 
@@ -308,6 +312,10 @@ class InvestigationUnifiedAnalyticalContext:
         ...,
     ] = ()
 
+    explainability: InvestigationExplainabilityBundle = field(
+        default_factory=InvestigationExplainabilityBundle
+    )
+
     # ------------------------------------------------------
     # Stable case-level typed mathematical results.
     # ------------------------------------------------------
@@ -415,6 +423,12 @@ class InvestigationUnifiedAnalyticalContext:
 
             sections.append(
                 "multimodal"
+            )
+
+        if self.explainability.explanations:
+
+            sections.append(
+                "explainability"
             )
 
         if self.rag.has_any:
@@ -565,6 +579,8 @@ class InvestigationUnifiedAnalyticalContextService:
             ...,
         ] = (),
 
+        explainability: InvestigationExplainabilityBundle | None = None,
+
         rag_retrieval: (
             InvestigationRAGRetrievalResult
             | None
@@ -644,6 +660,20 @@ class InvestigationUnifiedAnalyticalContextService:
                 ),
             )
         )
+
+        normalized_explainability = (
+            explainability
+            if explainability is not None
+            else InvestigationExplainabilityBundle()
+        )
+        if not isinstance(
+            normalized_explainability,
+            InvestigationExplainabilityBundle,
+        ):
+            raise TypeError(
+                "explainability must be "
+                "InvestigationExplainabilityBundle or None."
+            )
 
         normalized_warnings = (
             self._normalize_warnings(
@@ -743,6 +773,10 @@ class InvestigationUnifiedAnalyticalContextService:
 
                 multimodal_results=(
                     normalized_multimodal
+                ),
+
+                explainability=(
+                    normalized_explainability
                 ),
 
                 rag=rag,
