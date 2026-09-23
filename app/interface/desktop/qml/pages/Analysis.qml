@@ -1600,7 +1600,12 @@ Item {
                                 height: Math.max(
                                     92,
                                     factText.implicitHeight
-                                        + (root.hasEvidenceConfidence(factCard.modelData) ? 112 : 48)
+                                        + (
+                                            root.hasEvidenceConfidence(factCard.modelData)
+                                            || root.hasUnifiedWhy(factCard.modelData)
+                                            ? 112
+                                            : 48
+                                        )
                                         + (
                                             factCard.explanationOpen
                                             ? factExplanationText.implicitHeight + 38
@@ -2865,10 +2870,13 @@ Item {
         anchors.right: parent.right
         anchors.bottom: parent.bottom
         width: Math.min(
-            620,
-            Math.max(
-                420,
-                root.width * 0.54
+            root.width,
+            Math.min(
+                620,
+                Math.max(
+                    380,
+                    root.width * 0.54
+                )
             )
         )
         color: Theme.surface
