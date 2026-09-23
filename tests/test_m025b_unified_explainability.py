@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
@@ -34,6 +35,9 @@ from app.services.investigation_explainability_service import (
 )
 from app.services.investigation_rag_retrieval_service import (
     InvestigationRAGRetrievalService,
+)
+from app.services.investigation_unified_analytical_context_service import (
+    InvestigationUnifiedAnalyticalContext,
 )
 
 
@@ -514,3 +518,19 @@ def test_service_container_reuses_same_explainability_instance_for_rag_and_orche
     ) >= 3
     assert "explainability_service=(" in source
     assert "investigation_explainability_service=(" in source
+
+
+
+def test_unified_context_keeps_pre_m025_positional_prefix_compatible():
+    context = InvestigationUnifiedAnalyticalContext(
+        uuid4(),
+        datetime.now(timezone.utc),
+        (),
+        (),
+        (),
+    )
+
+    assert context.entity_resolution_results == ()
+    assert context.evidence_results == ()
+    assert context.multimodal_results == ()
+    assert context.explainability.explanations == ()
