@@ -349,7 +349,6 @@ class InvestigationEvidenceConfidenceService:
             corroboration=corroboration,
             contradiction=contradiction,
             independence=independence,
-            explanation=explanation,
         )
 
         explanation = self.explanation_service.build(
@@ -407,6 +406,7 @@ class InvestigationEvidenceConfidenceService:
             corroboration=corroboration,
             contradiction=contradiction,
             independence=independence,
+            explanation=explanation,
         )
 
     def _observations_for_evidence(
