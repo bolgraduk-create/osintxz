@@ -2297,6 +2297,9 @@ class ServiceContainer:
                 investigation_unified_analytical_context_service=(
                     self.investigation_unified_analytical_context_service
                 ),
+                investigation_explainability_service=(
+                    self.investigation_explainability_service
+                ),
             )
         )
 
