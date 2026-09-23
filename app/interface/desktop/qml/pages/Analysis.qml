@@ -345,6 +345,69 @@ Item {
         return Theme.textMuted
     }
 
+    function hasUnitScore(value) {
+        if (value === null || value === undefined || value === "")
+            return false
+        const numeric = Number(value)
+        return isFinite(numeric) && numeric >= 0 && numeric <= 1
+    }
+
+    function hasEvidenceConfidence(item) {
+        return item
+            && root.hasUnitScore(item.evidenceConfidence)
+    }
+
+    function scorePercent(value) {
+        if (!root.hasUnitScore(value))
+            return "—"
+        return String(Math.round(Number(value) * 100)) + "%"
+    }
+
+    function evidenceConfidenceColor(item) {
+        if (!root.hasEvidenceConfidence(item))
+            return Theme.textMuted
+
+        const details = item.evidenceConfidenceDetails || ({})
+        if (Boolean(details.hardConflict))
+            return Theme.danger
+
+        const coverage = root.hasUnitScore(item.evidenceConfidenceCoverage)
+            ? Number(item.evidenceConfidenceCoverage)
+            : 0
+        const confidence = Number(item.evidenceConfidence)
+
+        if (coverage < 0.5)
+            return Theme.warning
+        if (confidence >= 0.8)
+            return Theme.success
+        if (confidence >= 0.55)
+            return Theme.warning
+        return Theme.danger
+    }
+
+    function evidenceConfidenceFactors(item) {
+        if (!root.hasEvidenceConfidence(item))
+            return ""
+
+        const details = item.evidenceConfidenceDetails || ({})
+        const parts = []
+
+        if (root.hasUnitScore(details.intrinsicStrength))
+            parts.push("intrinsic " + root.scorePercent(details.intrinsicStrength))
+        if (root.hasUnitScore(details.sourceReliability))
+            parts.push("source " + root.scorePercent(details.sourceReliability))
+        if (root.hasUnitScore(details.corroboration))
+            parts.push("corroboration " + root.scorePercent(details.corroboration))
+        if (root.hasUnitScore(details.independence))
+            parts.push("independence " + root.scorePercent(details.independence))
+        if (root.hasUnitScore(details.contradiction))
+            parts.push("contradiction " + root.scorePercent(details.contradiction))
+        if (Boolean(details.hardConflict))
+            parts.push("hard conflict")
+
+        return parts.join(" · ")
+    }
+
     function runAnalysisNow() {
         const focus = root.selectedFocus()
         const started = analysisBridge.runAnalysis(
@@ -1398,7 +1461,7 @@ Item {
     
                         Text {
                             width: parent.width
-                            text: "Source-backed observations selected into the bounded RAG context. They are separated from AI inference and are not automatically independently verified."
+                            text: "Source-backed observations selected into the bounded RAG context. Evidence confidence is shown only when M024 can reconstruct a persisted proposition; coverage shows how much of that assessment was observable."
                             color: Theme.textMuted
                             font.pixelSize: 9
                             lineHeight: 1.35
@@ -1412,7 +1475,11 @@ Item {
                                 id: factCard
                                 required property var modelData
                                 width: parent.width
-                                height: Math.max(92, factText.implicitHeight + 48)
+                                height: Math.max(
+                                    92,
+                                    factText.implicitHeight
+                                        + (root.hasEvidenceConfidence(factCard.modelData) ? 88 : 48)
+                                )
                                 radius: 10
                                 color: Theme.surface
                                 border.width: 1
@@ -1444,7 +1511,8 @@ Item {
                                 Text {
                                     x: 62
                                     y: 14
-                                    width: parent.width - 76
+                                    width: parent.width
+                                        - (root.hasEvidenceConfidence(factCard.modelData) ? 220 : 76)
                                     text: String(factCard.modelData.title || "Source observation")
                                     color: Theme.textPrimary
                                     font.pixelSize: 10
@@ -1461,6 +1529,41 @@ Item {
                                     color: Theme.textSecondary
                                     font.pixelSize: 10
                                     lineHeight: 1.35
+                                    wrapMode: Text.Wrap
+                                }
+
+                                Rectangle {
+                                    visible: root.hasEvidenceConfidence(factCard.modelData)
+                                    anchors.right: parent.right
+                                    anchors.rightMargin: 14
+                                    y: 10
+                                    width: 136
+                                    height: 27
+                                    radius: 13
+                                    color: Theme.panel
+                                    border.width: 1
+                                    border.color: root.evidenceConfidenceColor(factCard.modelData)
+
+                                    Text {
+                                        anchors.centerIn: parent
+                                        text: "EVIDENCE "
+                                            + root.scorePercent(factCard.modelData.evidenceConfidence)
+                                            + " · COV "
+                                            + root.scorePercent(factCard.modelData.evidenceConfidenceCoverage)
+                                        color: root.evidenceConfidenceColor(factCard.modelData)
+                                        font.pixelSize: 7
+                                        font.weight: Font.DemiBold
+                                    }
+                                }
+
+                                Text {
+                                    visible: root.hasEvidenceConfidence(factCard.modelData)
+                                    x: 14
+                                    y: factText.y + factText.implicitHeight + 10
+                                    width: parent.width - 28
+                                    text: root.evidenceConfidenceFactors(factCard.modelData)
+                                    color: Theme.textMuted
+                                    font.pixelSize: 8
                                     wrapMode: Text.Wrap
                                 }
                             }
@@ -1831,7 +1934,7 @@ Item {
                 // SOURCES
                 Panel {
                     title: "RAG Sources"
-                    subtitle: String(root.sources.length) + " bounded source(s) · click R# to open the underlying workspace"
+                    subtitle: String(root.sources.length) + " bounded source(s) · Search relevance and Evidence confidence are separate signals · click R# to open source"
                     iconSource: "../../assets/icons/document_blue.svg"
     
                     ListView {
@@ -1844,7 +1947,7 @@ Item {
                             id: sourceRow
                             required property var modelData
                             width: ListView.view.width
-                            height: 72
+                            height: root.hasEvidenceConfidence(sourceRow.modelData) ? 98 : 72
                             color: sourceMouse.containsMouse ? Theme.surfaceHover : "transparent"
     
                             Rectangle {
@@ -1874,7 +1977,7 @@ Item {
                             Text {
                                 x: 68
                                 y: 12
-                                width: parent.width - 205
+                                width: parent.width - 245
                                 text: String(sourceRow.modelData.title || "Investigation source")
                                 color: Theme.textPrimary
                                 font.pixelSize: 10
@@ -1885,7 +1988,7 @@ Item {
                             Text {
                                 x: 68
                                 y: 35
-                                width: parent.width - 205
+                                width: parent.width - 245
                                 text: String(sourceRow.modelData.snippet || "")
                                 color: Theme.textMuted
                                 font.pixelSize: 8
@@ -1895,13 +1998,34 @@ Item {
                             Text {
                                 anchors.right: parent.right
                                 anchors.rightMargin: 14
-                                anchors.verticalCenter: parent.verticalCenter
-                                width: 112
+                                y: 10
+                                width: 154
                                 horizontalAlignment: Text.AlignRight
                                 text: String(sourceRow.modelData.objectType || "object").toUpperCase()
-                                    + "\n" + Number(sourceRow.modelData.score || 0).toFixed(3)
-                                color: Theme.textMuted
+                                    + "\nSEARCH " + Number(sourceRow.modelData.score || 0).toFixed(3)
+                                    + (
+                                        root.hasEvidenceConfidence(sourceRow.modelData)
+                                        ? "\nEVIDENCE "
+                                            + root.scorePercent(sourceRow.modelData.evidenceConfidence)
+                                            + " · COV "
+                                            + root.scorePercent(sourceRow.modelData.evidenceConfidenceCoverage)
+                                        : "\nEVIDENCE —"
+                                    )
+                                color: root.hasEvidenceConfidence(sourceRow.modelData)
+                                    ? root.evidenceConfidenceColor(sourceRow.modelData)
+                                    : Theme.textMuted
                                 font.pixelSize: 8
+                            }
+
+                            Text {
+                                visible: root.hasEvidenceConfidence(sourceRow.modelData)
+                                x: 68
+                                y: 57
+                                width: parent.width - 245
+                                text: root.evidenceConfidenceFactors(sourceRow.modelData)
+                                color: Theme.textMuted
+                                font.pixelSize: 7
+                                elide: Text.ElideRight
                             }
     
                             MouseArea {
