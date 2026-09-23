@@ -52,7 +52,9 @@ class DesktopBridge(QObject):
     messageChanged = Signal()
     PAGE_SIZE = 100
     ENTITY_CATEGORY_TYPES: dict[str, tuple[EntityType, ...]] = {
-        "all": (),
+        # The user-facing Entity Directory is a PERSON directory. Technical
+        # entities remain persisted for evidence, graph, pivots and analysis.
+        "all": (EntityType.PERSON,),
         "people": (EntityType.PERSON,),
         "organizations": (EntityType.ORGANIZATION,),
         "profiles": (EntityType.USERNAME, EntityType.ACCOUNT),
@@ -308,13 +310,27 @@ class DesktopBridge(QObject):
                     for key in ("title", "detail", "status", "meta")
                 ).casefold()
             ]
+        action_enabled = (
+            page_key in {"cases", "osint"}
+            or (
+                page_key == "entities"
+                and bool(self._current_case_id)
+            )
+        )
+        action_reason = ""
+        if not action_enabled:
+            if page_key == "entities" and not self._current_case_id:
+                action_reason = "Select an investigation before adding a person."
+            else:
+                action_reason = self._disabled_reason(page_key)
+
         result = {
             "metrics": self._metrics_for_page(page_key),
             "records": records,
             "contextItems": self._context_for_page(page_key),
             "emptyText": self._page_errors.get(page_key) or self._empty_text(page_key, bool(normalized_query)),
-            "actionEnabled": page_key in {"cases", "osint"},
-            "actionReason": "" if page_key in {"cases", "osint"} else self._disabled_reason(page_key),
+            "actionEnabled": action_enabled,
+            "actionReason": action_reason,
             "loading": page_key in self._page_loading,
             "total": self._page_totals.get(page_key, len(records)),
             "hasMore": len(self._page_records.get(page_key, records)) < self._page_totals.get(page_key, len(records)),
@@ -483,6 +499,121 @@ class DesktopBridge(QObject):
             self.selectCase(case_id)
         self._set_message("Investigation created.")
         return True
+
+    @Slot(str, str, result="QVariantMap")
+    def createPerson(
+        self,
+        name: str,
+        description: str = "",
+    ) -> dict[str, Any]:
+        """Create a distinct PERSON in the currently selected investigation."""
+
+        if not self._current_case_id:
+            return {
+                "ok": False,
+                "error": "Select an investigation before adding a person.",
+            }
+
+        normalized_name = " ".join(
+            str(name or "")
+            .strip()
+            .split()
+        )
+
+        if not normalized_name:
+            return {
+                "ok": False,
+                "error": "Person name cannot be empty.",
+            }
+
+        if len(normalized_name) > 255:
+            return {
+                "ok": False,
+                "error": "Person name is too long.",
+            }
+
+        entity_service = getattr(
+            self._container,
+            "entity_service",
+            None,
+        )
+        if entity_service is None:
+            return {
+                "ok": False,
+                "error": "Entity service is unavailable.",
+            }
+
+        try:
+            person = entity_service.create_entity(
+                case_id=UUID(self._current_case_id),
+                entity_type=EntityType.PERSON,
+                value=normalized_name,
+                confidence=1.0,
+                metadata_json=json.dumps(
+                    {
+                        "workflow": "manual_person_creation",
+                        "analyst_created": True,
+                        "identity_verified": False,
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                ),
+                description=str(
+                    description
+                    or ""
+                ).strip(),
+            )
+            self._container.commit()
+        except Exception as exc:
+            try:
+                self._container.rollback()
+            except Exception:
+                LOGGER.debug(
+                    "Rollback after PERSON creation failed",
+                    exc_info=True,
+                )
+            LOGGER.exception(
+                "Unable to create PERSON"
+            )
+            return {
+                "ok": False,
+                "error": str(exc),
+            }
+
+        self._page_records.pop(
+            "entities",
+            None,
+        )
+        self._page_offsets.pop(
+            "entities",
+            None,
+        )
+        self._page_totals.pop(
+            "entities",
+            None,
+        )
+        self._page_errors.pop(
+            "entities",
+            None,
+        )
+        self._refresh_entity_type_counts()
+        self._load_page(
+            "entities",
+            0,
+            notify=False,
+        )
+        self._set_message(
+            "Person created."
+        )
+        self._generation += 1
+        self.changed.emit()
+
+        return {
+            "ok": True,
+            "id": str(person.id),
+            "label": str(person.value),
+            "message": "Person created.",
+        }
 
     @Slot(str, str, result=bool)
     def renameCase(self, case_id: str, title: str) -> bool:
@@ -2147,19 +2278,16 @@ class DesktopBridge(QObject):
         if page == "cases":
             return self._metric_set(len(self._cases), "Active cases", "Stored investigations", 0, "Selected", self.currentCaseTitle or "None", 0, "Archived", "Not exposed by current service")
         if page == "entities":
-            category_label = self._entity_category.replace("_", " ").title()
-            category_types = self._entity_types_for_category(self._entity_category)
-            type_count = len(category_types) if category_types else sum(1 for value in self._entity_type_counts.values() if value)
             return self._metric_set(
                 self._page_totals.get("entities", len(records)),
-                "Entities",
+                "People",
                 scope,
-                category_label,
-                "Category",
-                "Entity Directory filter",
-                type_count,
-                "Types",
-                "Represented in this scope",
+                "PERSON",
+                "Directory type",
+                "Only people are shown here",
+                len(records),
+                "Loaded",
+                "Technical entities remain in Evidence and Graph",
             )
         if page == "evidence":
             hashed = sum(1 for item in records if item.get("meta"))
@@ -2204,8 +2332,12 @@ class DesktopBridge(QObject):
             items.append({"title": "Case-scoped data" if self.currentCaseTitle else "All stored data", "detail": "Loaded through the existing workspace service", "color": "#36cfa1"})
         if page == "entities":
             items.append({
-                "title": self._entity_category.replace("_", " ").title(),
-                "detail": "Active Entity Directory category",
+                "title": "People only",
+                "detail": (
+                    "Email, phone, username, URL, domain and other technical "
+                    "entities stay internal and appear through Person cards, "
+                    "Evidence and Graph."
+                ),
                 "color": "#a98be9",
             })
         if page == "osint":
