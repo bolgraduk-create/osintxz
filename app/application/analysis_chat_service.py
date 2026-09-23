@@ -260,15 +260,18 @@ class AnalysisChatService:
             safe_snippet = sanitize_sensitive_text(
                 " ".join(str(source.text or "").split())[:700]
             ).text
-            confidence_metadata = (
-                source.metadata.get(
-                    "canonical_evidence_confidence"
-                )
+            source_metadata = (
+                dict(source.metadata)
                 if isinstance(
                     source.metadata,
                     dict,
                 )
-                else None
+                else {}
+            )
+            confidence_metadata = (
+                source_metadata.get(
+                    "canonical_evidence_confidence"
+                )
             )
             confidence_metadata = (
                 confidence_metadata
@@ -338,6 +341,19 @@ class AnalysisChatService:
                             explanation_payload
                         )
                     ),
+                    "investigationExplainability": [
+                        dict(item)
+                        for item in list(
+                            source_metadata.get(
+                                "investigation_explainability"
+                            )
+                            or []
+                        )
+                        if isinstance(
+                            item,
+                            dict,
+                        )
+                    ],
                     "status": str(source.status or ""),
                     "snippet": safe_snippet,
                 }
