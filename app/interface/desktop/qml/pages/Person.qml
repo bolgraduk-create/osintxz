@@ -1415,8 +1415,16 @@ Item {
                             }
                             Text {
                                 x: 66; y: 47; width: parent.width - 300
-                                text: candidateRow.modelData.origin ? "Origin: " + String(candidateRow.modelData.origin) : "Stored OSINT finding"
-                                color: "#6f879a"; font.pixelSize: 8; elide: Text.ElideRight
+                                text: Number(candidateRow.modelData.relationshipBoost || 0) > 0
+                                    ? String(candidateRow.modelData.relationshipSummary || "Known-associate corroboration")
+                                    : (candidateRow.modelData.origin
+                                        ? "Origin: " + String(candidateRow.modelData.origin)
+                                        : "Stored OSINT finding")
+                                color: Number(candidateRow.modelData.relationshipBoost || 0) > 0
+                                    ? "#36cfa1"
+                                    : "#6f879a"
+                                font.pixelSize: 8
+                                elide: Text.ElideRight
                             }
 
                             Text {
@@ -1428,6 +1436,9 @@ Item {
                                     + String(candidateRow.modelData.reviewLabel || "Unreviewed")
                                     + (candidateRow.modelData.reviewHistoryCount
                                         ? " · history " + String(candidateRow.modelData.reviewHistoryCount)
+                                        : "")
+                                    + (Number(candidateRow.modelData.relationshipBoost || 0) > 0
+                                        ? " · social +" + String(candidateRow.modelData.relationshipBoost) + "%"
                                         : "")
                                 color: {
                                     var status = String(candidateRow.modelData.reviewStatus || "unreviewed")
@@ -1446,8 +1457,17 @@ Item {
                                 anchors.rightMargin: 10
                                 anchors.top: parent.top
                                 anchors.topMargin: 12
-                                text: String(candidateRow.modelData.confidence || "")
-                                color: Theme.textSecondary
+                                text: {
+                                    var baseValue = String(candidateRow.modelData.baseConfidence || candidateRow.modelData.confidence || "")
+                                    var effectiveValue = String(candidateRow.modelData.effectiveConfidence || baseValue)
+                                    return effectiveValue.length
+                                            && effectiveValue !== baseValue
+                                        ? baseValue + " → " + effectiveValue
+                                        : baseValue
+                                }
+                                color: Number(candidateRow.modelData.relationshipBoost || 0) > 0
+                                    ? "#36cfa1"
+                                    : Theme.textSecondary
                                 font.pixelSize: 9
                             }
 
