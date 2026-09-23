@@ -75,17 +75,20 @@ class InvestigationExplainabilityService:
             if str(value).strip()
         ]
 
-        found_summary = str(
+        raw_search_summary = str(
             search_payload.get("summary")
-            or (
-                "The object was returned by Investigation Search"
-                + (
-                    " using " + ", ".join(methods) + "."
-                    if methods
-                    else "."
-                )
-            )
+            or ""
         ).strip()
+        found_summary = (
+            "The object was returned by Investigation Search"
+            + (
+                " using " + ", ".join(methods)
+                if methods
+                else ""
+            )
+            + ". This explains retrieval, not whether the underlying "
+            "content is true."
+        )
 
         explanations.append(
             InvestigationExplanation(
@@ -96,7 +99,16 @@ class InvestigationExplainabilityService:
                 reasons=tuple(search_reasons),
                 metadata={
                     "matchedMethods": methods,
+                    "sourceSearchSummary": raw_search_summary,
                     "retrievalRelevanceIsEvidenceConfidence": False,
+                    "canonicalEvidenceConfidenceSupplied": bool(
+                        isinstance(
+                            hit.metadata.get(
+                                "canonical_evidence_confidence"
+                            ),
+                            dict,
+                        )
+                    ),
                 },
             )
         )
