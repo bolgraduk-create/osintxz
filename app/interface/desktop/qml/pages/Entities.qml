@@ -1,47 +1,172 @@
 import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
+import "../components"
+import "../theme"
 
 DataWorkspace {
     id: root
 
-    property var categoryCounts: desktopBridge.entityCategoryCounts || ({})
-
     pageKey: "entities"
-    eyebrow: "ENTITY INTELLIGENCE"
-    title: "Entity Directory"
+    eyebrow: "PERSON INTELLIGENCE"
+    title: "People"
     subtitle: desktopBridge.currentCaseTitle
-        ? "People, organizations and identifiers in " + desktopBridge.currentCaseTitle + "."
-        : "Browse people, organizations, profiles, links and identifiers across investigations."
+        ? "People being investigated in " + desktopBridge.currentCaseTitle + "."
+        : "Select an investigation to view or add people."
     iconSource: "../../assets/icons/users_cyan.svg"
-    primaryAction: "Add Entity"
-    searchPlaceholder: "Filter the loaded category by value or type..."
-    sectionTitle: desktopBridge.entityCategory === "all"
-        ? "All Entities"
-        : (String(desktopBridge.entityCategory || "all").charAt(0).toUpperCase()
-            + String(desktopBridge.entityCategory || "all").slice(1).replace(/_/g, " "))
-    contextTitle: "Entity Scope"
-    selectedCategory: desktopBridge.entityCategory
-    categoryItems: [
-        { key: "all", label: "All", count: Number(root.categoryCounts.all || 0) },
-        { key: "people", label: "People", count: Number(root.categoryCounts.people || 0) },
-        { key: "organizations", label: "Organizations", count: Number(root.categoryCounts.organizations || 0) },
-        { key: "profiles", label: "Profiles", count: Number(root.categoryCounts.profiles || 0) },
-        { key: "links", label: "Links", count: Number(root.categoryCounts.links || 0) },
-        { key: "contacts", label: "Contacts", count: Number(root.categoryCounts.contacts || 0) },
-        { key: "network", label: "Network", count: Number(root.categoryCounts.network || 0) },
-        { key: "locations", label: "Locations", count: Number(root.categoryCounts.locations || 0) },
-        { key: "documents", label: "Documents", count: Number(root.categoryCounts.documents || 0) },
-        { key: "other", label: "Other", count: Number(root.categoryCounts.other || 0) }
-    ]
-    emptyTitle: desktopBridge.hasCurrentCase ? "No entities in this category" : "No entities in this category yet"
+    primaryAction: "Add Person"
+    searchPlaceholder: "Filter people by name..."
+    sectionTitle: "People"
+    contextTitle: "Person Scope"
+    selectedCategory: "all"
+    categoryItems: []
+    emptyTitle: desktopBridge.hasCurrentCase
+        ? "No people in this investigation"
+        : "No investigation selected"
     emptyDescription: desktopBridge.hasCurrentCase
-        ? "Run OSINT or add intelligence to this investigation to populate the selected entity category."
-        : "Entities from stored investigations will appear here."
+        ? "Create a person here or from Investigation Search, then assign searches to that person."
+        : "Open an investigation before creating a person."
 
-    onCategoryRequested: function(categoryKey) {
-        desktopBridge.setEntityCategory(categoryKey)
+    onPrimaryActionRequested: {
+        personName.text = ""
+        personDescription.text = ""
+        personCreateError.text = ""
+        createPersonDialog.open()
+        personName.forceActiveFocus()
     }
 
     onRecordActivated: function(recordId) {
         desktopBridge.activateRecord("entities", recordId)
+    }
+
+    Dialog {
+        id: createPersonDialog
+        modal: true
+        anchors.centerIn: parent
+        width: Math.min(520, root.width - 80)
+        height: 320
+        padding: 0
+        closePolicy: Popup.CloseOnEscape
+
+        background: Rectangle {
+            radius: 12
+            color: Theme.surface
+            border.width: 1
+            border.color: Theme.border
+        }
+
+        contentItem: ColumnLayout {
+            spacing: 0
+
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 72
+                color: "transparent"
+
+                Rectangle {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.bottom: parent.bottom
+                    height: 1
+                    color: Theme.divider
+                }
+
+                Text {
+                    x: 20
+                    y: 13
+                    text: "Add person"
+                    color: Theme.textPrimary
+                    font.pixelSize: 18
+                    font.weight: Font.DemiBold
+                }
+
+                Text {
+                    x: 20
+                    y: 41
+                    width: parent.width - 40
+                    text: "Creates a PERSON investigation subject. Technical identifiers will be attached through searches and evidence."
+                    color: Theme.textMuted
+                    font.pixelSize: 9
+                    elide: Text.ElideRight
+                }
+            }
+
+            ColumnLayout {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                Layout.margins: 20
+                spacing: 10
+
+                Text {
+                    text: "NAME"
+                    color: Theme.textMuted
+                    font.pixelSize: 8
+                    font.letterSpacing: 1.0
+                }
+
+                AppTextField {
+                    id: personName
+                    Layout.fillWidth: true
+                    placeholderText: "Full name / investigation label"
+                }
+
+                Text {
+                    text: "DESCRIPTION"
+                    color: Theme.textMuted
+                    font.pixelSize: 8
+                    font.letterSpacing: 1.0
+                }
+
+                AppTextField {
+                    id: personDescription
+                    Layout.fillWidth: true
+                    placeholderText: "Optional note"
+                }
+
+                Text {
+                    id: personCreateError
+                    Layout.fillWidth: true
+                    color: Theme.danger
+                    font.pixelSize: 9
+                    wrapMode: Text.Wrap
+                }
+
+                Item { Layout.fillHeight: true }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 8
+
+                    Item { Layout.fillWidth: true }
+
+                    AppButton {
+                        text: "Cancel"
+                        Layout.preferredWidth: 96
+                        onClicked: createPersonDialog.close()
+                    }
+
+                    AppButton {
+                        text: "Create"
+                        primary: true
+                        Layout.preferredWidth: 110
+                        enabled: personName.text.trim().length > 0
+                        onClicked: {
+                            personCreateError.text = ""
+                            var result = desktopBridge.createPerson(
+                                personName.text,
+                                personDescription.text
+                            )
+                            if (result && result.ok) {
+                                createPersonDialog.close()
+                            } else {
+                                personCreateError.text = result && result.error
+                                    ? String(result.error)
+                                    : "Unable to create person."
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
