@@ -21,7 +21,11 @@ Item {
     property var conclusions: run.conclusions || []
     property var facts: run.facts || []
     property var sources: run.sources || []
+    property var explainability: run.explainability || []
     property var warnings: run.warnings || []
+    property bool whyDrawerOpen: false
+    property var whyExplanations: []
+    property string whyTitle: "Explainability"
     property var citationSummary: run.citationSummary || ({})
     property string selectedMode: "standard"
     property string selectedProvider: ""
@@ -39,6 +43,7 @@ Item {
         {key:"contradictions", label:"Contradictions", icon:"chart.svg"},
         {key:"next_steps", label:"Next Steps", icon:"search.svg"},
         {key:"sources", label:"Sources", icon:"document_blue.svg"},
+        {key:"explainability", label:"Why", icon:"search.svg"},
         {key:"pipeline", label:"Pipeline", icon:"graph_blue.svg"},
         {key:"history", label:"History", icon:"clock.svg"}
     ]
@@ -55,6 +60,7 @@ Item {
         root.conclusions = root.run.conclusions || []
         root.facts = root.run.facts || []
         root.sources = root.run.sources || []
+        root.explainability = root.run.explainability || []
         root.warnings = root.run.warnings || []
         root.citationSummary = root.run.citationSummary || ({})
     }
@@ -323,6 +329,7 @@ Item {
         if (key === "contradictions") return root.conclusionsFor("contradictions").length
         if (key === "next_steps") return root.conclusionsFor("next_steps").length
         if (key === "sources") return root.sources.length
+        if (key === "explainability") return root.explainability.length
         if (key === "pipeline") return root.stages.length
         if (key === "history") return root.historyRows.length
         return 0
@@ -440,6 +447,86 @@ Item {
         }
 
         return rows.join("\n")
+    }
+
+    function unifiedExplanations(item) {
+        if (!item)
+            return []
+        const rows = item.investigationExplainability || []
+        return Array.isArray(rows) ? rows : []
+    }
+
+    function hasUnifiedWhy(item) {
+        return root.unifiedExplanations(item).length > 0
+    }
+
+    function whyQuestionLabel(value) {
+        const key = String(value || "").toLowerCase()
+        if (key === "why_found") return "WHY FOUND"
+        if (key === "why_ranked") return "WHY RANKED"
+        if (key === "why_confident") return "WHY CONFIDENT"
+        if (key === "why_linked") return "WHY LINKED"
+        if (key === "why_resolved") return "WHY RESOLVED"
+        if (key === "why_merged") return "WHY MERGED"
+        if (key === "why_contradicted") return "WHY CONTRADICTED"
+        return "WHY"
+    }
+
+    function whyDomainLabel(value) {
+        const key = String(value || "").toLowerCase()
+        if (key === "entity_resolution") return "ENTITY RESOLUTION"
+        if (key === "entity_merge") return "ENTITY MERGE"
+        return key ? key.replace("_", " ").toUpperCase() : "INVESTIGATION"
+    }
+
+    function whyEffectColor(value) {
+        const key = String(value || "").toLowerCase()
+        if (key === "support") return Theme.success
+        if (key === "contradict") return Theme.danger
+        if (key === "limitation") return Theme.warning
+        if (key === "context") return Theme.accent
+        return Theme.textMuted
+    }
+
+    function shortObjectId(value) {
+        const text = String(value || "")
+        if (text.length <= 18)
+            return text
+        return text.slice(0, 8) + "…" + text.slice(-6)
+    }
+
+    function explanationSubjectText(explanation) {
+        const subject = (explanation || {}).subject || ({})
+        const leftType = String(subject.objectType || "object").toUpperCase()
+        const leftId = root.shortObjectId(subject.objectId)
+        const rightId = String(subject.relatedObjectId || "")
+        if (!rightId)
+            return leftType + " · " + leftId
+        const rightType = String(subject.relatedObjectType || "object").toUpperCase()
+        return leftType + " · " + leftId + "  ↔  "
+            + rightType + " · " + root.shortObjectId(rightId)
+    }
+
+    function openWhyPayload(rows, title) {
+        const values = Array.isArray(rows) ? rows : []
+        if (values.length === 0)
+            return
+        root.whyExplanations = values
+        root.whyTitle = String(title || "Explainability")
+        root.whyDrawerOpen = true
+    }
+
+    function openWhyForItem(item, title) {
+        root.openWhyPayload(
+            root.unifiedExplanations(item),
+            title
+        )
+    }
+
+    function closeWhy() {
+        root.whyDrawerOpen = false
+        root.whyExplanations = []
+        root.whyTitle = "Explainability"
     }
 
     function runAnalysisNow() {
