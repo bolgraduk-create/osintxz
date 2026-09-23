@@ -70,6 +70,10 @@ from app.services.search_indexing_service import (
     SearchIndexingService,
 )
 
+from app.security.untrusted_file_policy import (
+    UntrustedFilePolicy,
+)
+
 
 class FileImportService:
     """
@@ -161,6 +165,7 @@ class FileImportService:
         media_directory: Path = MEDIA_DIR,
         documents_directory: Path = DOCUMENTS_DIR,
         maximum_file_size_bytes: int | None = None,
+        file_security_policy: UntrustedFilePolicy | None = None,
     ) -> None:
 
         if not isinstance(
@@ -205,6 +210,11 @@ class FileImportService:
         self.documents_directory = Path(
             documents_directory
         ).resolve()
+
+        self.file_security_policy = (
+            file_security_policy
+            or UntrustedFilePolicy()
+        )
 
         if maximum_file_size_bytes is None:
 
@@ -327,6 +337,24 @@ class FileImportService:
             )
         )
 
+        destination_path = (
+            self.file_security_policy
+            .validate_managed_destination(
+                storage_root=storage_root,
+                destination_path=destination_path,
+            )
+        )
+
+        archive_security = None
+
+        if evidence_type == EvidenceType.ARCHIVE:
+            archive_security = (
+                self.file_security_policy
+                .inspect_archive(
+                    source_path
+                )
+            )
+
         copied = False
 
         try:
@@ -348,6 +376,21 @@ class FileImportService:
                     destination_path
                 )
             )
+
+            if archive_security is not None:
+                processing_result = {
+                    **processing_result,
+                    "metadata": {
+                        **dict(
+                            processing_result.get(
+                                "metadata",
+                                {},
+                            )
+                            or {}
+                        ),
+                        "security": archive_security,
+                    },
+                }
 
             source_metadata = {
                 "import_kind": "file",
@@ -1042,37 +1085,20 @@ class FileImportService:
     # Validation
     # ==========================================================
 
-    @staticmethod
     def _validate_source_path(
+        self,
         file_path: str | Path,
     ) -> Path:
         """
-        Validate an external source file path.
+        Validate an external source file through the shared security policy.
         """
 
-        source_path = Path(
-            file_path
-        ).expanduser()
-
-        try:
-
-            source_path = source_path.resolve(
-                strict=True
+        return (
+            self.file_security_policy
+            .validate_source_path(
+                file_path
             )
-
-        except FileNotFoundError as error:
-
-            raise FileNotFoundError(
-                f"File does not exist: {source_path}"
-            ) from error
-
-        if not source_path.is_file():
-
-            raise ValueError(
-                f"Path is not a file: {source_path}"
-            )
-
-        return source_path
+        )
 
     def _validate_file_size(
         self,
@@ -1082,11 +1108,9 @@ class FileImportService:
         Validate configured file-size limit.
         """
 
-        if size_bytes < 0:
-
-            raise ValueError(
-                "Invalid file size."
-            )
+        self.file_security_policy.validate_file_size(
+            size_bytes
+        )
 
         if (
             self.maximum_file_size_bytes
