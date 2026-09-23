@@ -93,7 +93,7 @@ jobs:
 
       - name: Run architecture and intelligence regression gate
         run: |
-          python -m pytest -q             tests/test_bootstrap_architecture_contract.py             tests/test_final_stabilization_contract.py             tests/test_golden_investigation_fixture.py             tests/test_r13_26b_search_quality_benchmark.py             tests/test_m024a_evidence_confidence_integration.py             tests/test_m024b_evidence_confidence_propagation.py             tests/test_m024c_confidence_ui.py             tests/test_m025a_evidence_explainability.py             tests/test_m025b_unified_explainability.py             tests/test_m025c_unified_why_ui.py
+          python -m pytest -q             tests/test_bootstrap_architecture_contract.py             tests/test_final_stabilization_contract.py             tests/test_golden_investigation_fixture.py             tests/test_r13_26b_search_quality_benchmark.py             tests/test_m024a_evidence_confidence_integration.py             tests/test_m024b_evidence_confidence_propagation.py             tests/test_m024c_confidence_ui.py             tests/test_m025a_evidence_explainability.py             tests/test_m025b_unified_explainability.py             tests/test_m025c_unified_why_ui.py             tests/test_r14_2a_tool_runner_security.py
 
       - name: Run search quality benchmark gate
         run: python tools/run_r13_26b_search_quality_benchmark.py
