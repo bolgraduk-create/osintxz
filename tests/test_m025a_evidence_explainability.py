@@ -360,8 +360,16 @@ def test_analysis_workspace_exposes_expandable_why_explanation():
     assert "function evidenceExplanation(item)" in qml
     assert "function evidenceExplanationText(item)" in qml
     assert "property bool explanationOpen: false" in qml
-    assert 'text: factCard.explanationOpen ? "WHY ▲" : "WHY ▼"' in qml
+
+    # M025c prefers the unified WHY drawer for current snapshots, while the
+    # original M025a expandable Evidence explanation remains the fallback for
+    # older history rows that do not carry investigationExplainability.
+    assert "root.hasUnifiedWhy(factCard.modelData)" in qml
+    assert '? "WHY"' in qml
+    assert '(factCard.explanationOpen ? "WHY ▲" : "WHY ▼")' in qml
+    assert "root.openWhyForItem(" in qml
     assert "factCard.explanationOpen = !factCard.explanationOpen" in qml
+    assert "!root.hasUnifiedWhy(factCard.modelData)" in qml
 
 
 def test_service_container_wires_explainability_without_a_second_score_formula():
