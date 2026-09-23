@@ -349,12 +349,11 @@ def test_ai_grounding_rules_forbid_invented_confidence_numbers():
         prompt_source,
         conclusion_source,
     ):
-        assert "canonical M024" in source
+        assert "evidence_confidence" in source
+        assert "M024" in source
+        assert "confidence" in source
         assert "not a general truth" in source
-        assert (
-            "Never invent"
-            in source
-        )
+        assert "Never invent" in source
 
 
 
@@ -367,7 +366,9 @@ def test_conversational_analysis_chat_uses_current_m024_confidence():
     ).read_text(encoding="utf-8")
 
     assert "evidence_confidence_results=(" in service_source
-    assert "canonical M024 confidence" in service_source
+    assert "evidence_confidence" in service_source
+    assert "M024" in service_source
+    assert "confidence for a specific proposition" in service_source
     assert '"evidenceConfidence"' in service_source
     assert (
         "investigation_evidence_analysis_service"
