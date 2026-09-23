@@ -17,6 +17,9 @@ from app.application.identity_resolution import (
     is_account_candidate_record,
 )
 from app.application.person_name_relevance import match_person_name_record
+from app.application.person_search_attribution_service import (
+    PersonSearchAttributionService,
+)
 from app.application.contextual_relevance import assess_record_against_seed
 from app.application.unified_persistence_relevance import build_unified_finding_gate
 from app.application.search_quality_engine import (
@@ -93,9 +96,11 @@ class UnifiedInvestigationSearchWorker(QObject):
         case_id: str,
         profile: dict[str, Any],
         options: dict[str, Any] | None = None,
+        person_entity_id: str = "",
     ) -> None:
         super().__init__()
         self.case_id = str(case_id or "").strip()
+        self.person_entity_id = str(person_entity_id or "").strip()
         self.profile = dict(profile or {})
         self.options = dict(options or {})
         self._identity_profile = build_known_identity_profile(self.profile)
@@ -112,6 +117,11 @@ class UnifiedInvestigationSearchWorker(QObject):
             if not self.case_id:
                 raise ValueError("Select an investigation before running unified search.")
             case_uuid = UUID(self.case_id)
+            if not self.person_entity_id:
+                raise ValueError(
+                    "Select the PERSON this search belongs to before running unified search."
+                )
+            person_uuid = UUID(self.person_entity_id)
             seeds = build_initial_seeds(self.profile)
             if not seeds:
                 raise ValueError("Enter at least one known data point before searching.")
@@ -127,6 +137,31 @@ class UnifiedInvestigationSearchWorker(QObject):
 
             session = create_session()
             container = ServiceContainer(session)
+
+            person = container.entity_service.get_entity(
+                person_uuid
+            )
+            if person is None:
+                raise ValueError(
+                    "The selected PERSON no longer exists."
+                )
+            person_type = str(
+                getattr(
+                    getattr(person, "entity_type", None),
+                    "value",
+                    getattr(person, "entity_type", ""),
+                )
+                or ""
+            ).strip().lower()
+            if person_type != "person":
+                raise ValueError(
+                    "The selected search target must be a PERSON entity."
+                )
+            if getattr(person, "case_id", None) != case_uuid:
+                raise ValueError(
+                    "The selected PERSON belongs to a different investigation."
+                )
+
             persistence_service = getattr(container, "osint_finding_persistence_service", None)
             if persistence_service is not None:
                 persistence_service.finding_gate = build_unified_finding_gate(self.profile)
@@ -144,6 +179,8 @@ class UnifiedInvestigationSearchWorker(QObject):
             all_registry_records: list[Any] = []
             osint_snapshots: list[dict[str, Any]] = []
             open_web_snapshots: list[dict[str, Any]] = []
+            attributed_entity_ids: set[UUID] = set()
+            attribution_result = None
             state = PivotTraversalState()
             retrieval_schedule = RetrievalScheduleBook()
             retrieval_feedback = AdaptiveRetrievalFeedback()
@@ -189,6 +226,7 @@ class UnifiedInvestigationSearchWorker(QObject):
                             RecursiveEnrichmentSeed(
                                 target_type=osint_target_for_seed(seed),
                                 value=seed.value,
+                                parent_entity_id=person_uuid,
                             )
                             for seed in classic_roots
                             if osint_target_for_seed(seed) is not None
@@ -210,6 +248,11 @@ class UnifiedInvestigationSearchWorker(QObject):
                         per_target_new_entity_limit=8,
                     )
                     state = recursion.state
+                    attributed_entity_ids.update(
+                        self._persistence_entity_ids(
+                            recursion
+                        )
+                    )
                     snap = OsintCollectionWorker._snapshot_recursive_enrichment(recursion)
                     osint_snapshots.append(snap)
                     self._append_osint_snapshot(snap, results, providers, errors)
@@ -243,6 +286,12 @@ class UnifiedInvestigationSearchWorker(QObject):
                     enrichment = container.open_web_enrichment_service.enrich(
                         query,
                         case_id=case_uuid,
+                        parent_entity_id=person_uuid,
+                    )
+                    attributed_entity_ids.update(
+                        self._persistence_entity_ids(
+                            enrichment
+                        )
                     )
                     snap = self._snapshot_open_web(enrichment, seed)
                     open_web_snapshots.append(snap)
@@ -264,6 +313,11 @@ class UnifiedInvestigationSearchWorker(QObject):
                         )
                         if expanded.recursion is not None:
                             state = expanded.recursion.state
+                            attributed_entity_ids.update(
+                                self._persistence_entity_ids(
+                                    expanded.recursion
+                                )
+                            )
                             recursion_snap = OsintCollectionWorker._snapshot_recursive_enrichment(
                                 expanded.recursion
                             )
@@ -378,6 +432,7 @@ class UnifiedInvestigationSearchWorker(QObject):
                                     RecursiveEnrichmentSeed(
                                         target_type=osint_target_for_seed(seed),
                                         value=seed.value,
+                                        parent_entity_id=person_uuid,
                                     )
                                     for seed in classic_pivots
                                     if osint_target_for_seed(seed) is not None
@@ -395,6 +450,11 @@ class UnifiedInvestigationSearchWorker(QObject):
                                 per_target_new_entity_limit=6,
                             )
                             state = recursion.state
+                            attributed_entity_ids.update(
+                                self._persistence_entity_ids(
+                                    recursion
+                                )
+                            )
                             snap = OsintCollectionWorker._snapshot_recursive_enrichment(recursion)
                             osint_snapshots.append(snap)
                             self._append_osint_snapshot(snap, results, providers, errors)
@@ -473,6 +533,12 @@ class UnifiedInvestigationSearchWorker(QObject):
                             enrichment = container.open_web_enrichment_service.enrich(
                                 query,
                                 case_id=case_uuid,
+                                parent_entity_id=person_uuid,
+                            )
+                            attributed_entity_ids.update(
+                                self._persistence_entity_ids(
+                                    enrichment
+                                )
                             )
                             snap = self._snapshot_open_web(enrichment, seed)
                             open_web_snapshots.append(snap)
@@ -482,6 +548,37 @@ class UnifiedInvestigationSearchWorker(QObject):
 
             # Existing OSINT/Open-Web enrichment persists safe findings into the
             # current case. Federation/Registry remain review-first/read-only here.
+            attributed_entities = []
+            for entity_id in sorted(
+                attributed_entity_ids,
+                key=str,
+            ):
+                try:
+                    entity = container.entity_service.get_entity(
+                        entity_id
+                    )
+                except Exception:
+                    entity = None
+                if entity is not None:
+                    attributed_entities.append(entity)
+
+            attribution_result = (
+                PersonSearchAttributionService(
+                    source_service=container.source_service,
+                    evidence_service=container.evidence_service,
+                    evidence_link_service=container.evidence_link_service,
+                )
+                .attribute(
+                    person=person,
+                    entities=attributed_entities,
+                    search_summary={
+                        "seed_count": len(seeds),
+                        "classic_runs": len(osint_snapshots),
+                        "open_web_runs": len(open_web_snapshots),
+                    },
+                )
+            )
+
             container.commit()
 
             # Attach safe, bounded identity signals to rows from Classic/Open-Web
@@ -721,6 +818,23 @@ class UnifiedInvestigationSearchWorker(QObject):
                     "registry": use_registry,
                     "followPivots": follow_pivots,
                     "includeSensitiveNameRoutes": include_sensitive_names,
+                },
+                "personTarget": {
+                    "id": str(person_uuid),
+                    "label": str(
+                        getattr(person, "value", "")
+                        or "Person"
+                    ),
+                    "attributedEntityCount": (
+                        len(attribution_result.attributed_entity_ids)
+                        if attribution_result is not None
+                        else 0
+                    ),
+                    "attributionEvidenceId": (
+                        attribution_result.evidence_id
+                        if attribution_result is not None
+                        else ""
+                    ),
                 },
                 "rawSecretValuesStored": False,
             }
@@ -1521,6 +1635,71 @@ class UnifiedInvestigationSearchWorker(QObject):
         elif kind in {"email", "phone", "domain", "url", "ip", "hash"} and value:
             identifiers[kind] = value
         return identifiers
+
+    @staticmethod
+    def _persistence_entity_ids(
+        value: Any,
+    ) -> set[UUID]:
+        """Collect persisted technical Entity ids from enrichment results."""
+
+        output: set[UUID] = set()
+
+        def collect_persistence(rows: Any) -> None:
+            for persistence in list(rows or []):
+                for item in list(
+                    getattr(
+                        persistence,
+                        "persisted",
+                        [],
+                    )
+                    or []
+                ):
+                    for entity in list(
+                        getattr(
+                            item,
+                            "entities",
+                            (),
+                        )
+                        or ()
+                    ):
+                        entity_id = getattr(
+                            entity,
+                            "id",
+                            None,
+                        )
+                        if isinstance(
+                            entity_id,
+                            UUID,
+                        ):
+                            output.add(
+                                entity_id
+                            )
+
+        collect_persistence(
+            getattr(
+                value,
+                "persistence",
+                None,
+            )
+        )
+
+        for run in list(
+            getattr(
+                value,
+                "runs",
+                [],
+            )
+            or []
+        ):
+            collect_persistence(
+                getattr(
+                    run,
+                    "persistence",
+                    None,
+                )
+            )
+
+        return output
 
     @classmethod
     def _persistence_counts(cls, osint_snapshots, open_web_snapshots) -> tuple[int, int]:
