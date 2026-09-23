@@ -71,6 +71,7 @@ Item {
             return
         root.preparedCaseId = caseId
         root.selectedFocusIndex = 0
+        root.closeWhy()
         analysisBridge.prepareCase(caseId)
     }
 
@@ -453,7 +454,7 @@ Item {
         if (!item)
             return []
         const rows = item.investigationExplainability || []
-        return Array.isArray(rows) ? rows : []
+        return rows && rows.length !== undefined ? rows : []
     }
 
     function hasUnifiedWhy(item) {
@@ -508,7 +509,7 @@ Item {
     }
 
     function openWhyPayload(rows, title) {
-        const values = Array.isArray(rows) ? rows : []
+        const values = rows && rows.length !== undefined ? rows : []
         if (values.length === 0)
             return
         root.whyExplanations = values
@@ -530,6 +531,7 @@ Item {
     }
 
     function runAnalysisNow() {
+        root.closeWhy()
         const focus = root.selectedFocus()
         const started = analysisBridge.runAnalysis(
             String(desktopBridge.currentCaseId || ""),
@@ -588,6 +590,7 @@ Item {
 
     function openHistory(id) {
         if (analysisBridge.openHistory(String(id || ""))) {
+            root.closeWhy()
             root.activeView = "overview"
             root.reload()
         }
