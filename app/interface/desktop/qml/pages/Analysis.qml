@@ -2843,4 +2843,310 @@ Item {
             }
         }
     }
+
+    Rectangle {
+        id: whyScrim
+        anchors.fill: parent
+        visible: root.whyDrawerOpen
+        z: 100
+        color: "#88030a10"
+
+        MouseArea {
+            anchors.fill: parent
+            onClicked: root.closeWhy()
+        }
+    }
+
+    Rectangle {
+        id: whyDrawer
+        visible: root.whyDrawerOpen
+        z: 101
+        anchors.top: parent.top
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        width: Math.min(
+            620,
+            Math.max(
+                420,
+                root.width * 0.54
+            )
+        )
+        color: Theme.surface
+        border.width: 1
+        border.color: Theme.border
+
+        Rectangle {
+            id: whyDrawerHeader
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            height: 82
+            color: Theme.surfaceRaised
+
+            Text {
+                x: 18
+                y: 14
+                text: "UNIFIED WHY"
+                color: Theme.accent
+                font.pixelSize: 8
+                font.weight: Font.Bold
+                font.letterSpacing: 1.0
+            }
+
+            Text {
+                x: 18
+                y: 34
+                width: parent.width - 118
+                text: root.whyTitle
+                color: Theme.textPrimary
+                font.pixelSize: 15
+                font.weight: Font.DemiBold
+                elide: Text.ElideRight
+            }
+
+            Text {
+                x: 18
+                y: 58
+                width: parent.width - 118
+                text: String(root.whyExplanations.length)
+                    + " deterministic explanation(s) · no score is recalculated here"
+                color: Theme.textMuted
+                font.pixelSize: 7
+                elide: Text.ElideRight
+            }
+
+            AppButton {
+                anchors.right: parent.right
+                anchors.rightMargin: 14
+                anchors.verticalCenter: parent.verticalCenter
+                width: 76
+                height: 30
+                text: "Close"
+                quiet: true
+                onClicked: root.closeWhy()
+            }
+
+            Rectangle {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                height: 1
+                color: Theme.divider
+            }
+        }
+
+        Flickable {
+            id: whyDrawerFlick
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: whyDrawerHeader.bottom
+            anchors.bottom: parent.bottom
+            anchors.margins: 14
+            clip: true
+            contentWidth: width
+            contentHeight: whyDrawerContent.height
+            boundsBehavior: Flickable.StopAtBounds
+
+            Column {
+                id: whyDrawerContent
+                width: whyDrawerFlick.width
+                spacing: 12
+
+                Repeater {
+                    model: root.whyExplanations
+
+                    delegate: Rectangle {
+                        id: whyExplanationCard
+                        required property var modelData
+                        width: whyDrawerContent.width
+                        height: whyExplanationBody.implicitHeight + 24
+                        radius: 10
+                        color: Theme.surfaceRaised
+                        border.width: 1
+                        border.color: Theme.border
+
+                        Column {
+                            id: whyExplanationBody
+                            x: 12
+                            y: 12
+                            width: parent.width - 24
+                            spacing: 8
+
+                            Row {
+                                width: parent.width
+                                spacing: 8
+
+                                Rectangle {
+                                    width: Math.max(
+                                        94,
+                                        whyDrawerQuestion.implicitWidth + 18
+                                    )
+                                    height: 24
+                                    radius: 12
+                                    color: Theme.accentSoft
+                                    border.width: 1
+                                    border.color: Theme.accent
+
+                                    Text {
+                                        id: whyDrawerQuestion
+                                        anchors.centerIn: parent
+                                        text: root.whyQuestionLabel(
+                                            whyExplanationCard.modelData.question
+                                        )
+                                        color: Theme.accent
+                                        font.pixelSize: 7
+                                        font.weight: Font.DemiBold
+                                    }
+                                }
+
+                                Text {
+                                    width: parent.width - 110
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    horizontalAlignment: Text.AlignRight
+                                    text: root.whyDomainLabel(
+                                        whyExplanationCard.modelData.domain
+                                    )
+                                    color: Theme.textMuted
+                                    font.pixelSize: 7
+                                    elide: Text.ElideLeft
+                                }
+                            }
+
+                            Text {
+                                width: parent.width
+                                text: root.explanationSubjectText(
+                                    whyExplanationCard.modelData
+                                )
+                                color: Theme.textPrimary
+                                font.pixelSize: 9
+                                font.weight: Font.DemiBold
+                                wrapMode: Text.Wrap
+                            }
+
+                            Text {
+                                width: parent.width
+                                text: String(
+                                    whyExplanationCard.modelData.summary || ""
+                                )
+                                color: Theme.textSecondary
+                                font.pixelSize: 9
+                                lineHeight: 1.35
+                                wrapMode: Text.Wrap
+                            }
+
+                            Text {
+                                visible: (
+                                    whyExplanationCard.modelData.reasons || []
+                                ).length > 0
+                                width: parent.width
+                                text: "REASONS"
+                                color: Theme.textMuted
+                                font.pixelSize: 7
+                                font.weight: Font.DemiBold
+                                font.letterSpacing: 0.8
+                            }
+
+                            Repeater {
+                                model: whyExplanationCard.modelData.reasons || []
+
+                                delegate: Rectangle {
+                                    id: whyReasonRow
+                                    required property var modelData
+                                    width: whyExplanationBody.width
+                                    height: whyReasonText.implicitHeight + 12
+                                    radius: 7
+                                    color: Theme.background
+
+                                    Rectangle {
+                                        x: 8
+                                        y: 8
+                                        width: 6
+                                        height: 6
+                                        radius: 3
+                                        color: root.whyEffectColor(
+                                            whyReasonRow.modelData.effect
+                                        )
+                                    }
+
+                                    Text {
+                                        id: whyReasonText
+                                        x: 22
+                                        y: 6
+                                        width: parent.width - 30
+                                        text: String(
+                                            whyReasonRow.modelData.message || ""
+                                        )
+                                        color: Theme.textSecondary
+                                        font.pixelSize: 8
+                                        lineHeight: 1.3
+                                        wrapMode: Text.Wrap
+                                    }
+                                }
+                            }
+
+                            Text {
+                                visible: (
+                                    whyExplanationCard.modelData.limitations || []
+                                ).length > 0
+                                width: parent.width
+                                text: "LIMITATIONS / UNCERTAINTY"
+                                color: Theme.warning
+                                font.pixelSize: 7
+                                font.weight: Font.DemiBold
+                                font.letterSpacing: 0.8
+                            }
+
+                            Repeater {
+                                model: whyExplanationCard.modelData.limitations || []
+
+                                delegate: Rectangle {
+                                    id: whyLimitationRow
+                                    required property var modelData
+                                    width: whyExplanationBody.width
+                                    height: whyLimitationText.implicitHeight + 12
+                                    radius: 7
+                                    color: Theme.background
+
+                                    Rectangle {
+                                        x: 8
+                                        y: 8
+                                        width: 6
+                                        height: 6
+                                        radius: 3
+                                        color: root.whyEffectColor(
+                                            whyLimitationRow.modelData.effect
+                                        )
+                                    }
+
+                                    Text {
+                                        id: whyLimitationText
+                                        x: 22
+                                        y: 6
+                                        width: parent.width - 30
+                                        text: String(
+                                            whyLimitationRow.modelData.message || ""
+                                        )
+                                        color: Theme.textSecondary
+                                        font.pixelSize: 8
+                                        lineHeight: 1.3
+                                        wrapMode: Text.Wrap
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Item {
+                    width: parent.width
+                    height: 2
+                }
+            }
+
+            ScrollBar.vertical: ScrollBar {
+                policy: ScrollBar.AsNeeded
+            }
+        }
+    }
+
 }
