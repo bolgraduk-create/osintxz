@@ -38,7 +38,11 @@ Item {
     property var reviewRows: []
     property string addError: ""
     property string candidateQuery: ""
+    property string candidateReviewFilter: "all"
     property string candidateError: ""
+    property var identityHistoryRows: []
+    property string identityHistoryTitle: ""
+    property string identityHistoryError: ""
 
 
     function buildProfileRows() {
@@ -110,14 +114,14 @@ Item {
             var status = String(candidate.reviewStatus || "unreviewed").toLowerCase()
             var reviewable = root.isIdentityReviewable(candidate)
 
-            if (!reviewable || status !== "confirmed")
-                review.push(candidate)
+            review.push(candidate)
         }
 
         var order = {
             "unreviewed": 0,
             "review": 1,
-            "rejected": 2
+            "confirmed": 2,
+            "rejected": 3
         }
 
         review.sort(function(a, b) {
@@ -241,17 +245,31 @@ Item {
 
     function filteredProfileCandidates() {
         var query = String(root.candidateQuery || "").trim().toLowerCase()
-        if (!query.length) return root.reviewRows
+        var filter = String(root.candidateReviewFilter || "all").toLowerCase()
         var result = []
+
         for (var i = 0; i < root.reviewRows.length; ++i) {
             var item = root.reviewRows[i]
+            var reviewable = root.isIdentityReviewable(item)
+            var status = String(item.reviewStatus || "unreviewed").toLowerCase()
+
+            if (filter !== "all") {
+                if (!reviewable || status !== filter)
+                    continue
+            }
+
             var haystack = (String(item.value || "") + " "
                 + String(item.typeLabel || item.type || "") + " "
                 + String(item.connector || "") + " "
                 + String(item.source || "") + " "
-                + String(item.origin || "")).toLowerCase()
-            if (haystack.indexOf(query) >= 0) result.push(item)
+                + String(item.origin || "") + " "
+                + String(item.reviewLabel || "") + " "
+                + String(item.reviewNote || "")).toLowerCase()
+
+            if (!query.length || haystack.indexOf(query) >= 0)
+                result.push(item)
         }
+
         return result
     }
 
@@ -261,7 +279,7 @@ Item {
         var result = desktopBridge.reviewIdentityCandidate(
             String(candidateId || ""),
             String(decision || ""),
-            ""
+            String(candidateDecisionNote.text || "")
         )
 
         if (!(result && result.ok)) {
@@ -270,6 +288,28 @@ Item {
                 : "Unable to save identity review decision."
             return
         }
+
+        candidateDecisionNote.text = ""
+    }
+
+    function openIdentityHistory(item) {
+        root.identityHistoryRows = []
+        root.identityHistoryError = ""
+        root.identityHistoryTitle = String((item || {}).value || "Identity candidate")
+
+        var result = desktopBridge.identityReviewHistory(
+            String((item || {}).id || "")
+        )
+
+        if (!(result && result.ok)) {
+            root.identityHistoryError = result && result.error
+                ? String(result.error)
+                : "Unable to load identity review history."
+        } else {
+            root.identityHistoryRows = result.items || []
+        }
+
+        identityHistoryDialog.open()
     }
 
     function reload() {
@@ -423,7 +463,7 @@ Item {
                                 x: 18
                                 y: 18
                                 width: 72
-                                height: 96
+                                height: 72
                                 source: String(root.person.avatarUrl || "")
                                 fallbackSource: "../../assets/icons/users_purple.svg"
                                 backgroundColor: "#2a2140"
@@ -1235,7 +1275,10 @@ Item {
 
         onOpened: {
             root.candidateQuery = ""
+            root.candidateReviewFilter = "all"
             root.candidateError = ""
+            candidateDecisionNote.text = ""
+            reviewFilter.currentIndex = 0
         }
 
         background: Rectangle {
@@ -1270,10 +1313,43 @@ Item {
                 Layout.bottomMargin: 14
                 spacing: 10
 
-                AppTextField {
+                RowLayout {
                     Layout.fillWidth: true
-                    placeholderText: "Filter by value, type, connector, source..."
-                    onTextChanged: root.candidateQuery = text
+                    spacing: 8
+
+                    AppTextField {
+                        Layout.fillWidth: true
+                        placeholderText: "Filter by value, type, connector, source..."
+                        onTextChanged: root.candidateQuery = text
+                    }
+
+                    ComboBox {
+                        id: reviewFilter
+                        Layout.preferredWidth: 150
+                        model: [
+                            "All statuses",
+                            "Unreviewed",
+                            "Needs review",
+                            "Confirmed",
+                            "Rejected"
+                        ]
+                        onCurrentIndexChanged: {
+                            var values = [
+                                "all",
+                                "unreviewed",
+                                "review",
+                                "confirmed",
+                                "rejected"
+                            ]
+                            root.candidateReviewFilter = values[Math.max(0, currentIndex)]
+                        }
+                    }
+                }
+
+                AppTextField {
+                    id: candidateDecisionNote
+                    Layout.fillWidth: true
+                    placeholderText: "Decision note (optional): why you confirmed, rejected, or kept this account for review..."
                 }
 
                 Rectangle {
@@ -1412,6 +1488,14 @@ Item {
                                         "rejected"
                                     )
                                 }
+
+                                AppButton {
+                                    width: 62
+                                    height: 30
+                                    text: "History"
+                                    enabled: Number(candidateRow.modelData.reviewHistoryCount || 0) > 0
+                                    onClicked: root.openIdentityHistory(candidateRow.modelData)
+                                }
                             }
 
                             AppButton {
@@ -1482,6 +1566,172 @@ Item {
                         font.pixelSize: 9
                     }
                     AppButton { Layout.preferredWidth: 90; text: "Close"; onClicked: profileCandidateDialog.close() }
+                }
+            }
+        }
+    }
+
+    Dialog {
+        id: identityHistoryDialog
+        modal: true
+        anchors.centerIn: parent
+        width: Math.min(620, root.width - 100)
+        height: Math.min(520, root.height - 100)
+        padding: 0
+        closePolicy: Popup.CloseOnEscape
+
+        background: Rectangle {
+            radius: 12
+            color: Theme.surface
+            border.width: 1
+            border.color: Theme.border
+        }
+
+        contentItem: ColumnLayout {
+            spacing: 0
+
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 70
+                color: "transparent"
+
+                Rectangle {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.bottom: parent.bottom
+                    height: 1
+                    color: Theme.divider
+                }
+
+                Text {
+                    x: 20
+                    y: 12
+                    text: "Identity decision history"
+                    color: Theme.textPrimary
+                    font.pixelSize: 18
+                    font.weight: Font.DemiBold
+                }
+
+                Text {
+                    x: 20
+                    y: 40
+                    width: parent.width - 40
+                    text: root.identityHistoryTitle
+                    color: Theme.textMuted
+                    font.pixelSize: 9
+                    elide: Text.ElideRight
+                }
+            }
+
+            ListView {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                Layout.leftMargin: 16
+                Layout.rightMargin: 16
+                Layout.topMargin: 12
+                Layout.bottomMargin: 8
+                clip: true
+                model: root.identityHistoryRows
+                boundsBehavior: Flickable.StopAtBounds
+
+                delegate: Rectangle {
+                    required property var modelData
+                    width: ListView.view.width
+                    height: 84
+                    color: "transparent"
+
+                    Rectangle {
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.bottom: parent.bottom
+                        height: 1
+                        color: Theme.divider
+                    }
+
+                    Text {
+                        x: 4
+                        y: 10
+                        text: String(modelData.label || modelData.decision || "Decision")
+                        color: {
+                            var status = String(modelData.decision || "")
+                            if (status === "confirmed") return "#36cfa1"
+                            if (status === "rejected") return Theme.danger
+                            return "#e5a84b"
+                        }
+                        font.pixelSize: 11
+                        font.weight: Font.DemiBold
+                    }
+
+                    Text {
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        anchors.topMargin: 10
+                        text: String(modelData.reviewedAt || "")
+                        color: Theme.textMuted
+                        font.pixelSize: 8
+                    }
+
+                    Text {
+                        x: 4
+                        y: 32
+                        width: parent.width - 8
+                        text: String(modelData.note || "No analyst note")
+                        color: Theme.textSecondary
+                        font.pixelSize: 9
+                        elide: Text.ElideRight
+                    }
+
+                    Text {
+                        x: 4
+                        y: 54
+                        width: parent.width - 8
+                        text: "Previous: "
+                            + String(modelData.previousDecision || "unreviewed")
+                            + (modelData.machineConfidence !== null
+                                && modelData.machineConfidence !== undefined
+                                ? " · machine "
+                                    + Math.round(Number(modelData.machineConfidence) * 100)
+                                    + "%"
+                                : "")
+                        color: Theme.textMuted
+                        font.pixelSize: 8
+                        elide: Text.ElideRight
+                    }
+                }
+
+                ScrollBar.vertical: ScrollBar {
+                    policy: ScrollBar.AsNeeded
+                }
+            }
+
+            Text {
+                Layout.fillWidth: true
+                Layout.leftMargin: 20
+                Layout.rightMargin: 20
+                visible: root.identityHistoryRows.length === 0
+                text: root.identityHistoryError.length
+                    ? root.identityHistoryError
+                    : "No analyst decisions have been recorded for this candidate."
+                color: root.identityHistoryError.length ? Theme.danger : Theme.textMuted
+                font.pixelSize: 10
+                wrapMode: Text.Wrap
+                horizontalAlignment: Text.AlignHCenter
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.leftMargin: 16
+                Layout.rightMargin: 16
+                Layout.bottomMargin: 14
+
+                Item {
+                    Layout.fillWidth: true
+                }
+
+                AppButton {
+                    Layout.preferredWidth: 90
+                    text: "Close"
+                    onClicked: identityHistoryDialog.close()
                 }
             }
         }
