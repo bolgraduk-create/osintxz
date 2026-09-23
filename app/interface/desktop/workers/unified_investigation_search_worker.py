@@ -180,6 +180,7 @@ class UnifiedInvestigationSearchWorker(QObject):
             osint_snapshots: list[dict[str, Any]] = []
             open_web_snapshots: list[dict[str, Any]] = []
             attributed_entity_ids: set[UUID] = set()
+            attributed_evidence_ids: set[UUID] = set()
             attribution_result = None
             state = PivotTraversalState()
             retrieval_schedule = RetrievalScheduleBook()
@@ -253,6 +254,11 @@ class UnifiedInvestigationSearchWorker(QObject):
                             recursion
                         )
                     )
+                    attributed_evidence_ids.update(
+                        self._persistence_evidence_ids(
+                            recursion
+                        )
+                    )
                     snap = OsintCollectionWorker._snapshot_recursive_enrichment(recursion)
                     osint_snapshots.append(snap)
                     self._append_osint_snapshot(snap, results, providers, errors)
@@ -293,6 +299,11 @@ class UnifiedInvestigationSearchWorker(QObject):
                             enrichment
                         )
                     )
+                    attributed_evidence_ids.update(
+                        self._persistence_evidence_ids(
+                            enrichment
+                        )
+                    )
                     snap = self._snapshot_open_web(enrichment, seed)
                     open_web_snapshots.append(snap)
                     self._append_open_web_snapshot(snap, results, providers, errors)
@@ -315,6 +326,11 @@ class UnifiedInvestigationSearchWorker(QObject):
                             state = expanded.recursion.state
                             attributed_entity_ids.update(
                                 self._persistence_entity_ids(
+                                    expanded.recursion
+                                )
+                            )
+                            attributed_evidence_ids.update(
+                                self._persistence_evidence_ids(
                                     expanded.recursion
                                 )
                             )
@@ -455,6 +471,11 @@ class UnifiedInvestigationSearchWorker(QObject):
                                     recursion
                                 )
                             )
+                            attributed_evidence_ids.update(
+                                self._persistence_evidence_ids(
+                                    recursion
+                                )
+                            )
                             snap = OsintCollectionWorker._snapshot_recursive_enrichment(recursion)
                             osint_snapshots.append(snap)
                             self._append_osint_snapshot(snap, results, providers, errors)
@@ -540,6 +561,11 @@ class UnifiedInvestigationSearchWorker(QObject):
                                     enrichment
                                 )
                             )
+                            attributed_evidence_ids.update(
+                                self._persistence_evidence_ids(
+                                    enrichment
+                                )
+                            )
                             snap = self._snapshot_open_web(enrichment, seed)
                             open_web_snapshots.append(snap)
                             self._append_open_web_snapshot(
@@ -548,6 +574,15 @@ class UnifiedInvestigationSearchWorker(QObject):
 
             # Existing OSINT/Open-Web enrichment persists safe findings into the
             # current case. Federation/Registry remain review-first/read-only here.
+            for evidence_id in sorted(
+                attributed_evidence_ids,
+                key=str,
+            ):
+                container.evidence_link_service.ensure_link(
+                    evidence_id=evidence_id,
+                    entity_id=person_uuid,
+                )
+
             attributed_entities = []
             for entity_id in sorted(
                 attributed_entity_ids,
@@ -829,6 +864,9 @@ class UnifiedInvestigationSearchWorker(QObject):
                         len(attribution_result.attributed_entity_ids)
                         if attribution_result is not None
                         else 0
+                    ),
+                    "attributedEvidenceCount": len(
+                        attributed_evidence_ids
                     ),
                     "attributionEvidenceId": (
                         attribution_result.evidence_id
@@ -1635,6 +1673,68 @@ class UnifiedInvestigationSearchWorker(QObject):
         elif kind in {"email", "phone", "domain", "url", "ip", "hash"} and value:
             identifiers[kind] = value
         return identifiers
+
+    @staticmethod
+    def _persistence_evidence_ids(
+        value: Any,
+    ) -> set[UUID]:
+        """Collect every persisted Evidence id from enrichment results."""
+
+        output: set[UUID] = set()
+
+        def collect_persistence(rows: Any) -> None:
+            for persistence in list(rows or []):
+                for item in list(
+                    getattr(
+                        persistence,
+                        "persisted",
+                        [],
+                    )
+                    or []
+                ):
+                    evidence = getattr(
+                        item,
+                        "evidence",
+                        None,
+                    )
+                    evidence_id = getattr(
+                        evidence,
+                        "id",
+                        None,
+                    )
+                    if isinstance(
+                        evidence_id,
+                        UUID,
+                    ):
+                        output.add(
+                            evidence_id
+                        )
+
+        collect_persistence(
+            getattr(
+                value,
+                "persistence",
+                None,
+            )
+        )
+
+        for run in list(
+            getattr(
+                value,
+                "runs",
+                [],
+            )
+            or []
+        ):
+            collect_persistence(
+                getattr(
+                    run,
+                    "persistence",
+                    None,
+                )
+            )
+
+        return output
 
     @staticmethod
     def _persistence_entity_ids(
