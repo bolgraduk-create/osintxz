@@ -175,6 +175,10 @@ from app.evidence.evidence_confidence import (
     EvidenceConfidenceAggregationService,
 )
 
+from app.evidence.evidence_confidence_explanation import (
+    EvidenceConfidenceExplanationService,
+)
+
 from app.services.entity_service import (
     EntityService,
 )
@@ -2067,6 +2071,10 @@ class ServiceContainer:
             EvidenceConfidenceAggregationService()
         )
 
+        self.evidence_confidence_explanation_service = (
+            EvidenceConfidenceExplanationService()
+        )
+
         self.investigation_evidence_confidence_service = (
             InvestigationEvidenceConfidenceService(
                 strength_scoring_service=(
@@ -2083,6 +2091,9 @@ class ServiceContainer:
                 ),
                 confidence_aggregation_service=(
                     self.evidence_confidence_aggregation_service
+                ),
+                explanation_service=(
+                    self.evidence_confidence_explanation_service
                 ),
             )
         )
