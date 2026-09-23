@@ -159,7 +159,7 @@ def test_identity_decision_note_is_sent_to_backend():
         "app/interface/desktop/qml/pages/Person.qml"
     ).read_text(encoding="utf-8")
 
-    assert "String(candidateDecisionNote.text || "")" in qml
+    assert \'String(candidateDecisionNote.text || "")\' in qml
 
 
 def test_person_avatar_size_regression_is_restored():
