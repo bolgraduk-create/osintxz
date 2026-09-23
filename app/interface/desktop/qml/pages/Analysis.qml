@@ -1580,7 +1580,7 @@ Item {
                                     width: 136
                                     height: 27
                                     radius: 13
-                                    color: Theme.panel
+                                    color: Theme.surfaceRaised
                                     border.width: 1
                                     border.color: root.evidenceConfidenceColor(factCard.modelData)
 
@@ -1619,7 +1619,7 @@ Item {
                                     radius: 11
                                     color: factWhyMouse.containsMouse
                                         ? Theme.surfaceHover
-                                        : Theme.panel
+                                        : Theme.surfaceRaised
                                     border.width: 1
                                     border.color: Theme.border
 
@@ -1652,7 +1652,7 @@ Item {
                                     width: parent.width - 28
                                     height: factExplanationText.implicitHeight + 22
                                     radius: 8
-                                    color: Theme.panel
+                                    color: Theme.surfaceRaised
                                     border.width: 1
                                     border.color: Theme.border
 
