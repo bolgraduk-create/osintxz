@@ -444,6 +444,19 @@ class InvestigationAnalysisWorker(QObject):
                         else {}
                     )
 
+                    explanation_payload = (
+                        strongest_proposition.get(
+                            "explanation"
+                        )
+                        if isinstance(
+                            strongest_proposition.get(
+                                "explanation"
+                            ),
+                            dict,
+                        )
+                        else {}
+                    )
+
                     confidence_details = {
                         "propositionKey": str(
                             strongest_proposition.get(
@@ -527,6 +540,11 @@ class InvestigationAnalysisWorker(QObject):
                         "evidenceConfidenceDetails": (
                             confidence_details
                         ),
+                        "evidenceConfidenceExplanation": (
+                            dict(
+                                explanation_payload
+                            )
+                        ),
                         "status": str(source.status or ""),
                         "matchedMethods": list(
                             source.matched_methods or ()
@@ -557,6 +575,13 @@ class InvestigationAnalysisWorker(QObject):
                                 dict(
                                     source_row[
                                         "evidenceConfidenceDetails"
+                                    ]
+                                )
+                            ),
+                            "evidenceConfidenceExplanation": (
+                                dict(
+                                    source_row[
+                                        "evidenceConfidenceExplanation"
                                     ]
                                 )
                             ),
