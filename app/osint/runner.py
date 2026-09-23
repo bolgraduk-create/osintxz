@@ -1,36 +1,33 @@
-"""
-OSINT tool runner.
+"""OSINT external-tool runner.
 
-Executes external OSINT tools
-through a unified interface.
+All third-party CLI execution flows through this module.
 
 Responsibilities:
+- apply ToolExecutionPolicy before process creation;
+- execute without a shell;
+- resolve executables to approved absolute paths;
+- bound in-memory stdout/stderr capture;
+- preserve partial output on timeout;
+- support bounded streaming by stdout line count;
+- terminate the process tree on timeout or controlled early stop.
 
-- execute CLI applications
-- collect stdout/stderr
-- handle timeouts
-- normalize execution results
-- optionally stop streaming tools after a bounded number of stdout lines
-
-Does NOT:
-
-- parse tool output
-- access database
-- create entities
-- call AI
+Does not parse tool-specific output or access the database.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 import os
+from pathlib import Path
 import queue
+import signal
 import subprocess
 import threading
 import time
+from typing import TextIO
 
 from app.security.tool_execution_policy import (
+    PreparedToolExecution,
     ToolExecutionPolicy,
     ToolExecutionPolicyError,
 )
@@ -38,88 +35,118 @@ from app.security.tool_execution_policy import (
 
 @dataclass(slots=True)
 class ToolExecutionResult:
-    """
-    Result of external tool execution.
-    """
+    """Normalized result of one external-tool execution."""
 
     success: bool
-
     return_code: int
-
     stdout: str
-
     stderr: str
-
     execution_time: float
-
     stopped_early: bool = False
-
     blocked_by_policy: bool = False
+    stdout_truncated: bool = False
+    stderr_truncated: bool = False
+    resolved_executable: str | None = None
 
 
-def _coerce_process_output(
-    value: str | bytes | None,
-) -> str:
-    """
-    Normalize output carried by subprocess exceptions.
+class _BoundedTextCapture:
+    """Keep at most the configured number of characters."""
 
-    ``TimeoutExpired`` may expose bytes even when the original
-    process was started in text mode, depending on Python/platform
-    details. Keeping the partial output is important for OSINT tools
-    that stream findings before the overall command finishes.
-    """
+    __slots__ = ("limit", "_parts", "_size", "truncated")
 
-    if value is None:
-        return ""
+    def __init__(self, limit: int) -> None:
+        self.limit = int(limit)
+        self._parts: list[str] = []
+        self._size = 0
+        self.truncated = False
 
-    if isinstance(value, bytes):
-        return value.decode(
-            "utf-8",
-            errors="replace",
-        )
+    @property
+    def size(self) -> int:
+        return self._size
 
-    return str(value)
+    def reset(self) -> None:
+        self._parts.clear()
+        self._size = 0
+        self.truncated = False
+
+    def append(self, value: str) -> None:
+        if not value:
+            return
+
+        remaining = self.limit - self._size
+
+        if remaining <= 0:
+            self.truncated = True
+            return
+
+        if len(value) > remaining:
+            self._parts.append(value[:remaining])
+            self._size += remaining
+            self.truncated = True
+            return
+
+        self._parts.append(value)
+        self._size += len(value)
+
+    def getvalue(self) -> str:
+        return "".join(self._parts)
 
 
-def _read_stream_lines(
-    stream,
+_StreamQueue = queue.Queue[tuple[str, str | None]]
+
+
+def _read_stream_fragments(
+    stream: TextIO | None,
     label: str,
-    output_queue: queue.Queue[
-        tuple[str, str]
-    ],
+    output_queue: _StreamQueue,
+    chunk_size: int,
 ) -> None:
-    """
-    Forward one subprocess text stream into a thread-safe queue.
-    """
+    """Read bounded fragments so one huge line cannot allocate unbounded RAM."""
+
+    if stream is None:
+        output_queue.put((label, None))
+        return
 
     try:
+        while True:
+            fragment = stream.readline(chunk_size)
 
-        for line in iter(
-            stream.readline,
-            "",
-        ):
+            if fragment == "":
+                break
 
-            output_queue.put(
-                (
-                    label,
-                    line.rstrip(
-                        "\r\n"
-                    ),
-                )
-            )
-
+            output_queue.put((label, fragment))
     finally:
-
         try:
             stream.close()
         except Exception:
             pass
 
+        output_queue.put((label, None))
+
+
+def _append_notice(
+    value: str,
+    notice: str,
+    limit: int,
+) -> str:
+    """Append a diagnostic notice while respecting the configured budget."""
+
+    if not notice:
+        return value[:limit]
+
+    separator = "\n" if value else ""
+    suffix = f"{separator}{notice}"
+
+    if len(suffix) >= limit:
+        return suffix[-limit:]
+
+    allowed_prefix = limit - len(suffix)
+
+    return value[:allowed_prefix] + suffix
+
 
 class ToolRunner:
-    """
-    Executes external OSINT tools through one security policy boundary.
-    """
+    """Execute approved external OSINT tools through one security boundary."""
 
     def __init__(
         self,
@@ -130,30 +157,13 @@ class ToolRunner:
     def run(
         self,
         command: list[str],
-        timeout: int = 300,
+        timeout: int | float = 300,
         working_directory: Path | None = None,
         stdin: str | None = None,
         env: dict[str, str] | None = None,
         stdout_line_limit: int | None = None,
     ) -> ToolExecutionResult:
-        """
-        Execute external command.
-
-        Optional ``env`` values are merged with the current
-        process environment instead of replacing it.
-
-        If a process times out, any stdout/stderr already emitted by
-        the tool is preserved. Connectors can therefore return a
-        PARTIAL result instead of losing useful discoveries.
-
-        ``stdout_line_limit`` enables controlled streaming execution.
-        When the requested number of non-empty stdout lines has been
-        collected, the child process is terminated deliberately and
-        the result is returned as successful with ``stopped_early=True``.
-
-        Existing callers that do not set ``stdout_line_limit`` retain
-        the original buffered subprocess.run behaviour.
-        """
+        """Execute one command after policy validation."""
 
         try:
             prepared = self.policy.prepare(
@@ -177,263 +187,160 @@ class ToolRunner:
             )
 
         process_env = os.environ.copy()
-        process_env.update(
-            prepared.environment_overrides
-        )
-
-        normalized_command = list(
-            prepared.command
-        )
+        process_env.update(prepared.environment_overrides)
 
         if stdout_line_limit is None:
-
             return self._run_buffered(
-                command=normalized_command,
-                timeout=prepared.timeout,
-                working_directory=prepared.working_directory,
-                stdin=prepared.stdin,
+                prepared=prepared,
                 process_env=process_env,
             )
 
-        line_limit = max(
-            1,
-            int(stdout_line_limit),
-        )
+        line_limit = max(1, int(stdout_line_limit))
 
         return self._run_streaming(
-            command=normalized_command,
-            timeout=prepared.timeout,
-            working_directory=prepared.working_directory,
-            stdin=prepared.stdin,
+            prepared=prepared,
             process_env=process_env,
             stdout_line_limit=line_limit,
         )
 
-    @staticmethod
-    def _run_buffered(
+    def _spawn(
+        self,
         *,
-        command: list[str],
-        timeout: int | float,
-        working_directory: Path | None,
-        stdin: str | None,
+        prepared: PreparedToolExecution,
         process_env: dict[str, str],
-    ) -> ToolExecutionResult:
+    ) -> subprocess.Popen[str]:
+        kwargs: dict[str, object] = {
+            "args": list(prepared.command),
+            "stdin": (
+                subprocess.PIPE
+                if prepared.stdin is not None
+                else subprocess.DEVNULL
+            ),
+            "stdout": subprocess.PIPE,
+            "stderr": subprocess.PIPE,
+            "text": True,
+            "cwd": prepared.working_directory,
+            "encoding": "utf-8",
+            "errors": "replace",
+            "env": process_env,
+            "bufsize": 1,
+            "shell": False,
+        }
 
-        start = time.perf_counter()
+        if os.name == "nt":
+            kwargs["creationflags"] = getattr(
+                subprocess,
+                "CREATE_NEW_PROCESS_GROUP",
+                0,
+            )
+        else:
+            kwargs["start_new_session"] = True
+
+        return subprocess.Popen(**kwargs)  # type: ignore[arg-type]
+
+    @staticmethod
+    def _write_stdin(
+        process: subprocess.Popen[str],
+        value: str | None,
+    ) -> None:
+        if value is None or process.stdin is None:
+            return
 
         try:
-
-            process = subprocess.run(
-                command,
-                input=stdin,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-                cwd=working_directory,
-                encoding="utf-8",
-                errors="replace",
-                env=process_env,
-            )
-
-            elapsed = (
-                time.perf_counter()
-                - start
-            )
-
-            return ToolExecutionResult(
-                success=process.returncode == 0,
-                return_code=process.returncode,
-                stdout=process.stdout,
-                stderr=process.stderr,
-                execution_time=elapsed,
-            )
-
-        except subprocess.TimeoutExpired as exc:
-
-            elapsed = (
-                time.perf_counter()
-                - start
-            )
-
-            stdout = _coerce_process_output(
-                exc.stdout,
-            )
-
-            stderr = _coerce_process_output(
-                exc.stderr,
-            ).strip()
-
-            if stderr:
-                stderr = (
-                    f"{stderr}\n"
-                    "Process timeout."
-                )
-            else:
-                stderr = "Process timeout."
-
-            return ToolExecutionResult(
-                success=False,
-                return_code=-1,
-                stdout=stdout,
-                stderr=stderr,
-                execution_time=elapsed,
-            )
-
-        except FileNotFoundError:
-
-            elapsed = (
-                time.perf_counter()
-                - start
-            )
-
-            return ToolExecutionResult(
-                success=False,
-                return_code=-2,
-                stdout="",
-                stderr="Executable not found.",
-                execution_time=elapsed,
-            )
-
-        except Exception as exc:
-
-            elapsed = (
-                time.perf_counter()
-                - start
-            )
-
-            return ToolExecutionResult(
-                success=False,
-                return_code=-999,
-                stdout="",
-                stderr=str(exc),
-                execution_time=elapsed,
-            )
+            process.stdin.write(value)
+            process.stdin.flush()
+        except (BrokenPipeError, OSError, ValueError):
+            pass
+        finally:
+            try:
+                process.stdin.close()
+            except Exception:
+                pass
 
     @staticmethod
-    def _terminate_process(
-        process: subprocess.Popen,
+    def _terminate_process_tree(
+        process: subprocess.Popen[str],
     ) -> None:
+        """Best-effort termination of the process and its descendants."""
 
         if process.poll() is not None:
             return
 
-        try:
-
-            process.terminate()
-
-            process.wait(
-                timeout=2,
-            )
-
-        except Exception:
-
+        if os.name == "nt":
             try:
-                process.kill()
-            except Exception:
-                pass
-
-    def _run_streaming(
-        self,
-        *,
-        command: list[str],
-        timeout: int | float,
-        working_directory: Path | None,
-        stdin: str | None,
-        process_env: dict[str, str],
-        stdout_line_limit: int,
-    ) -> ToolExecutionResult:
-
-        start = time.perf_counter()
-
-        try:
-
-            process = subprocess.Popen(
-                command,
-                stdin=(
-                    subprocess.PIPE
-                    if stdin is not None
-                    else subprocess.DEVNULL
-                ),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                cwd=working_directory,
-                encoding="utf-8",
-                errors="replace",
-                env=process_env,
-                bufsize=1,
-            )
-
-        except FileNotFoundError:
-
-            return ToolExecutionResult(
-                success=False,
-                return_code=-2,
-                stdout="",
-                stderr="Executable not found.",
-                execution_time=(
-                    time.perf_counter()
-                    - start
-                ),
-            )
-
-        except Exception as exc:
-
-            return ToolExecutionResult(
-                success=False,
-                return_code=-999,
-                stdout="",
-                stderr=str(exc),
-                execution_time=(
-                    time.perf_counter()
-                    - start
-                ),
-            )
-
-        if (
-            stdin is not None
-            and process.stdin is not None
-        ):
-
-            try:
-
-                process.stdin.write(
-                    stdin
+                subprocess.run(
+                    [
+                        "taskkill",
+                        "/PID",
+                        str(process.pid),
+                        "/T",
+                        "/F",
+                    ],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=3,
+                    check=False,
+                    shell=False,
                 )
-
-                if not stdin.endswith(
-                    "\n"
-                ):
-                    process.stdin.write(
-                        "\n"
-                    )
-
-                process.stdin.flush()
-                process.stdin.close()
-
             except Exception:
                 pass
+        else:
+            try:
+                os.killpg(process.pid, signal.SIGTERM)
+            except (ProcessLookupError, PermissionError, OSError):
+                pass
 
-        output_queue: queue.Queue[
-            tuple[str, str]
-        ] = queue.Queue()
+        try:
+            process.wait(timeout=2)
+            return
+        except Exception:
+            pass
+
+        if os.name != "nt":
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError, OSError):
+                pass
+
+        try:
+            process.kill()
+        except Exception:
+            pass
+
+        try:
+            process.wait(timeout=1)
+        except Exception:
+            pass
+
+    def _start_readers(
+        self,
+        process: subprocess.Popen[str],
+    ) -> tuple[
+        _StreamQueue,
+        threading.Thread,
+        threading.Thread,
+    ]:
+        output_queue: _StreamQueue = queue.Queue(maxsize=128)
+        chunk_size = self.policy.output_read_chunk_characters
 
         stdout_thread = threading.Thread(
-            target=_read_stream_lines,
+            target=_read_stream_fragments,
             args=(
                 process.stdout,
                 "stdout",
                 output_queue,
+                chunk_size,
             ),
             daemon=True,
         )
 
         stderr_thread = threading.Thread(
-            target=_read_stream_lines,
+            target=_read_stream_fragments,
             args=(
                 process.stderr,
                 "stderr",
                 output_queue,
+                chunk_size,
             ),
             daemon=True,
         )
@@ -441,178 +348,144 @@ class ToolRunner:
         stdout_thread.start()
         stderr_thread.start()
 
-        stdout_lines: list[str] = []
-        stderr_lines: list[str] = []
+        return output_queue, stdout_thread, stderr_thread
 
-        deadline = (
-            start
-            + max(
-                1,
-                float(timeout),
+    @staticmethod
+    def _drain_until_readers_finish(
+        *,
+        output_queue: _StreamQueue,
+        stdout_thread: threading.Thread,
+        stderr_thread: threading.Thread,
+        handler,
+        maximum_seconds: float = 1.5,
+    ) -> None:
+        deadline = time.perf_counter() + maximum_seconds
+
+        while time.perf_counter() < deadline:
+            drained = False
+
+            while True:
+                try:
+                    item = output_queue.get_nowait()
+                except queue.Empty:
+                    break
+
+                handler(*item)
+                drained = True
+
+            if (
+                not stdout_thread.is_alive()
+                and not stderr_thread.is_alive()
+                and output_queue.empty()
+            ):
+                return
+
+            if not drained:
+                time.sleep(0.01)
+
+    def _run_buffered(
+        self,
+        *,
+        prepared: PreparedToolExecution,
+        process_env: dict[str, str],
+    ) -> ToolExecutionResult:
+        start = time.perf_counter()
+
+        try:
+            process = self._spawn(
+                prepared=prepared,
+                process_env=process_env,
             )
-        )
+        except FileNotFoundError:
+            return ToolExecutionResult(
+                success=False,
+                return_code=-2,
+                stdout="",
+                stderr="Executable not found.",
+                execution_time=time.perf_counter() - start,
+                resolved_executable=str(prepared.resolved_executable),
+            )
+        except Exception as exc:
+            return ToolExecutionResult(
+                success=False,
+                return_code=-999,
+                stdout="",
+                stderr=str(exc),
+                execution_time=time.perf_counter() - start,
+                resolved_executable=str(prepared.resolved_executable),
+            )
 
-        stopped_early = False
+        self._write_stdin(process, prepared.stdin)
+        output_queue, stdout_thread, stderr_thread = self._start_readers(process)
+
+        stdout_capture = _BoundedTextCapture(self.policy.max_stdout_characters)
+        stderr_capture = _BoundedTextCapture(self.policy.max_stderr_characters)
+        stdout_done = False
+        stderr_done = False
         timed_out = False
+        deadline = start + prepared.timeout
+
+        def handle(label: str, fragment: str | None) -> None:
+            nonlocal stdout_done, stderr_done
+
+            if fragment is None:
+                if label == "stdout":
+                    stdout_done = True
+                else:
+                    stderr_done = True
+                return
+
+            if label == "stdout":
+                stdout_capture.append(fragment)
+            else:
+                stderr_capture.append(fragment)
 
         while True:
-
             now = time.perf_counter()
 
             try:
-
-                label, line = output_queue.get(
-                    timeout=0.03,
-                )
-
-                if label == "stdout":
-
-                    if line.strip():
-
-                        stdout_lines.append(
-                            line
-                        )
-
-                        if (
-                            len(stdout_lines)
-                            >= stdout_line_limit
-                        ):
-
-                            stopped_early = True
-                            break
-
-                else:
-
-                    stderr_lines.append(
-                        line
-                    )
-
+                label, fragment = output_queue.get(timeout=0.03)
+                handle(label, fragment)
             except queue.Empty:
                 pass
 
-            if process.poll() is not None:
-
+            if process.poll() is not None and stdout_done and stderr_done:
                 break
 
-            if now >= deadline:
-
+            if process.poll() is None and now >= deadline:
                 timed_out = True
+                self._terminate_process_tree(process)
                 break
 
-        if stopped_early or timed_out:
-
-            self._terminate_process(
-                process
-            )
-
-        else:
-
-            try:
-                process.wait(
-                    timeout=1,
-                )
-            except Exception:
-                self._terminate_process(
-                    process
-                )
-
-        # Drain buffered data. For a controlled early stop, extra stdout
-        # generated after the requested line budget is intentionally ignored.
-        drain_deadline = (
-            time.perf_counter()
-            + 0.25
+        self._drain_until_readers_finish(
+            output_queue=output_queue,
+            stdout_thread=stdout_thread,
+            stderr_thread=stderr_thread,
+            handler=handle,
         )
 
-        while (
-            time.perf_counter()
-            < drain_deadline
-        ):
-
-            try:
-
-                label, line = (
-                    output_queue.get_nowait()
-                )
-
-            except queue.Empty:
-
-                if (
-                    not stdout_thread.is_alive()
-                    and not stderr_thread.is_alive()
-                ):
-                    break
-
-                time.sleep(
-                    0.01
-                )
-                continue
-
-            if label == "stderr":
-
-                stderr_lines.append(
-                    line
-                )
-
-            elif (
-                not stopped_early
-                and line.strip()
-            ):
-
-                stdout_lines.append(
-                    line
-                )
-
-        elapsed = (
-            time.perf_counter()
-            - start
-        )
-
-        stdout = "\n".join(
-            stdout_lines[
-                :stdout_line_limit
-            ]
-            if stopped_early
-            else stdout_lines
-        )
-
-        stderr = "\n".join(
-            stderr_lines
-        ).strip()
+        elapsed = time.perf_counter() - start
+        stdout = stdout_capture.getvalue()
+        stderr = stderr_capture.getvalue()
 
         if timed_out:
-
-            if stderr:
-                stderr = (
-                    f"{stderr}\n"
-                    "Process timeout."
-                )
-            else:
-                stderr = "Process timeout."
-
+            stderr = _append_notice(
+                stderr,
+                "Process timeout.",
+                self.policy.max_stderr_characters,
+            )
             return ToolExecutionResult(
                 success=False,
                 return_code=-1,
                 stdout=stdout,
                 stderr=stderr,
                 execution_time=elapsed,
+                stdout_truncated=stdout_capture.truncated,
+                stderr_truncated=stderr_capture.truncated,
+                resolved_executable=str(prepared.resolved_executable),
             )
 
-        if stopped_early:
-
-            return ToolExecutionResult(
-                success=True,
-                return_code=-3,
-                stdout=stdout,
-                stderr=stderr,
-                execution_time=elapsed,
-                stopped_early=True,
-            )
-
-        return_code = (
-            process.returncode
-            if process.returncode is not None
-            else -999
-        )
+        return_code = process.returncode if process.returncode is not None else -999
 
         return ToolExecutionResult(
             success=return_code == 0,
@@ -620,4 +493,187 @@ class ToolRunner:
             stdout=stdout,
             stderr=stderr,
             execution_time=elapsed,
+            stdout_truncated=stdout_capture.truncated,
+            stderr_truncated=stderr_capture.truncated,
+            resolved_executable=str(prepared.resolved_executable),
+        )
+
+    def _run_streaming(
+        self,
+        *,
+        prepared: PreparedToolExecution,
+        process_env: dict[str, str],
+        stdout_line_limit: int,
+    ) -> ToolExecutionResult:
+        start = time.perf_counter()
+
+        try:
+            process = self._spawn(
+                prepared=prepared,
+                process_env=process_env,
+            )
+        except FileNotFoundError:
+            return ToolExecutionResult(
+                success=False,
+                return_code=-2,
+                stdout="",
+                stderr="Executable not found.",
+                execution_time=time.perf_counter() - start,
+                resolved_executable=str(prepared.resolved_executable),
+            )
+        except Exception as exc:
+            return ToolExecutionResult(
+                success=False,
+                return_code=-999,
+                stdout="",
+                stderr=str(exc),
+                execution_time=time.perf_counter() - start,
+                resolved_executable=str(prepared.resolved_executable),
+            )
+
+        self._write_stdin(process, prepared.stdin)
+        output_queue, stdout_thread, stderr_thread = self._start_readers(process)
+
+        stdout_capture = _BoundedTextCapture(self.policy.max_stdout_characters)
+        stderr_capture = _BoundedTextCapture(self.policy.max_stderr_characters)
+        current_line = _BoundedTextCapture(self.policy.max_stdout_characters)
+        current_line_was_truncated = False
+
+        stdout_done = False
+        stderr_done = False
+        stopped_early = False
+        timed_out = False
+        accepted_lines = 0
+        deadline = start + prepared.timeout
+
+        def finalize_line() -> None:
+            nonlocal accepted_lines, stopped_early, current_line_was_truncated
+
+            line = current_line.getvalue().rstrip("\r\n")
+            current_line_was_truncated = (
+                current_line_was_truncated or current_line.truncated
+            )
+
+            if line.strip():
+                if accepted_lines:
+                    stdout_capture.append("\n")
+                stdout_capture.append(line)
+                accepted_lines += 1
+
+                if accepted_lines >= stdout_line_limit:
+                    stopped_early = True
+
+            current_line.reset()
+
+        def handle(label: str, fragment: str | None) -> None:
+            nonlocal stdout_done, stderr_done
+
+            if fragment is None:
+                if label == "stdout":
+                    if not stopped_early and current_line.size:
+                        finalize_line()
+                    stdout_done = True
+                else:
+                    stderr_done = True
+                return
+
+            if label == "stderr":
+                stderr_capture.append(fragment)
+                return
+
+            if stopped_early:
+                return
+
+            remaining = fragment
+
+            while remaining and not stopped_early:
+                newline_index = remaining.find("\n")
+
+                if newline_index < 0:
+                    current_line.append(remaining)
+                    return
+
+                piece = remaining[: newline_index + 1]
+                current_line.append(piece)
+                finalize_line()
+                remaining = remaining[newline_index + 1 :]
+
+        while True:
+            now = time.perf_counter()
+
+            try:
+                label, fragment = output_queue.get(timeout=0.03)
+                handle(label, fragment)
+            except queue.Empty:
+                pass
+
+            if stopped_early:
+                self._terminate_process_tree(process)
+                break
+
+            if process.poll() is not None and stdout_done and stderr_done:
+                break
+
+            if process.poll() is None and now >= deadline:
+                timed_out = True
+                self._terminate_process_tree(process)
+                break
+
+        self._drain_until_readers_finish(
+            output_queue=output_queue,
+            stdout_thread=stdout_thread,
+            stderr_thread=stderr_thread,
+            handler=handle,
+        )
+
+        elapsed = time.perf_counter() - start
+        stdout = stdout_capture.getvalue()
+        stderr = stderr_capture.getvalue()
+        stdout_was_truncated = (
+            stdout_capture.truncated
+            or current_line_was_truncated
+            or current_line.truncated
+        )
+
+        if timed_out:
+            stderr = _append_notice(
+                stderr,
+                "Process timeout.",
+                self.policy.max_stderr_characters,
+            )
+            return ToolExecutionResult(
+                success=False,
+                return_code=-1,
+                stdout=stdout,
+                stderr=stderr,
+                execution_time=elapsed,
+                stdout_truncated=stdout_was_truncated,
+                stderr_truncated=stderr_capture.truncated,
+                resolved_executable=str(prepared.resolved_executable),
+            )
+
+        if stopped_early:
+            return ToolExecutionResult(
+                success=True,
+                return_code=-3,
+                stdout=stdout,
+                stderr=stderr,
+                execution_time=elapsed,
+                stopped_early=True,
+                stdout_truncated=stdout_was_truncated,
+                stderr_truncated=stderr_capture.truncated,
+                resolved_executable=str(prepared.resolved_executable),
+            )
+
+        return_code = process.returncode if process.returncode is not None else -999
+
+        return ToolExecutionResult(
+            success=return_code == 0,
+            return_code=return_code,
+            stdout=stdout,
+            stderr=stderr,
+            execution_time=elapsed,
+            stdout_truncated=stdout_was_truncated,
+            stderr_truncated=stderr_capture.truncated,
+            resolved_executable=str(prepared.resolved_executable),
         )
