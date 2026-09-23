@@ -72,6 +72,9 @@ from app.services.investigation_evidence_confidence_search_enrichment_service im
     CANONICAL_EVIDENCE_CONFIDENCE_METADATA_KEY,
     InvestigationEvidenceConfidenceSearchEnrichmentService,
 )
+from app.services.investigation_explainability_service import (
+    InvestigationExplainabilityService,
+)
 
 
 # ==========================================================
@@ -319,6 +322,10 @@ class InvestigationRAGRetrievalService:
             InvestigationEvidenceConfidenceSearchEnrichmentService
             | None
         ) = None,
+        explainability_service: (
+            InvestigationExplainabilityService
+            | None
+        ) = None,
     ) -> None:
 
         if unified_search_service is None:
@@ -334,6 +341,11 @@ class InvestigationRAGRetrievalService:
         self.evidence_confidence_enrichment_service = (
             evidence_confidence_enrichment_service
             or InvestigationEvidenceConfidenceSearchEnrichmentService()
+        )
+
+        self.explainability_service = (
+            explainability_service
+            or InvestigationExplainabilityService()
         )
 
     # ======================================================
@@ -519,6 +531,10 @@ class InvestigationRAGRetrievalService:
             evidence_confidence_results,
         )
 
+        self.explainability_service.annotate_search_hits(
+            response.hits
+        )
+
         enriched_hit_count = sum(
             1
             for hit in response.hits
@@ -527,6 +543,22 @@ class InvestigationRAGRetrievalService:
                 in hit.metadata
             )
         )
+
+        response.metadata[
+            "investigation_explainability"
+        ] = {
+            "version": "m025b",
+            "applied_hit_count": sum(
+                1
+                for hit in response.hits
+                if (
+                    self.explainability_service.METADATA_KEY
+                    in hit.metadata
+                )
+            ),
+            "search_ranking_changed": False,
+            "score_recalculated": False,
+        }
 
         response.metadata[
             "canonical_evidence_confidence"
