@@ -1697,7 +1697,8 @@ Item {
 
                                 Rectangle {
                                     id: factWhyButton
-                                    visible: root.hasEvidenceExplanation(factCard.modelData)
+                                    visible: root.hasUnifiedWhy(factCard.modelData)
+                                        || root.hasEvidenceExplanation(factCard.modelData)
                                     anchors.right: parent.right
                                     anchors.rightMargin: 14
                                     y: factText.y + factText.implicitHeight + 5
@@ -1712,7 +1713,9 @@ Item {
 
                                     Text {
                                         anchors.centerIn: parent
-                                        text: factCard.explanationOpen ? "WHY ▲" : "WHY ▼"
+                                        text: root.hasUnifiedWhy(factCard.modelData)
+                                            ? "WHY"
+                                            : (factCard.explanationOpen ? "WHY ▲" : "WHY ▼")
                                         color: Theme.accent
                                         font.pixelSize: 7
                                         font.weight: Font.DemiBold
@@ -1723,13 +1726,25 @@ Item {
                                         anchors.fill: parent
                                         hoverEnabled: true
                                         cursorShape: Qt.PointingHandCursor
-                                        onClicked: factCard.explanationOpen = !factCard.explanationOpen
+                                        onClicked: {
+                                            if (root.hasUnifiedWhy(factCard.modelData)) {
+                                                root.openWhyForItem(
+                                                    factCard.modelData,
+                                                    String(factCard.modelData.reference || "Fact")
+                                                        + " · "
+                                                        + String(factCard.modelData.title || "Source observation")
+                                                )
+                                            } else {
+                                                factCard.explanationOpen = !factCard.explanationOpen
+                                            }
+                                        }
                                     }
                                 }
 
                                 Rectangle {
                                     id: factExplanation
                                     visible: factCard.explanationOpen
+                                        && !root.hasUnifiedWhy(factCard.modelData)
                                         && root.hasEvidenceExplanation(factCard.modelData)
                                     x: 14
                                     y: Math.max(
@@ -2143,7 +2158,10 @@ Item {
                             id: sourceRow
                             required property var modelData
                             width: ListView.view.width
-                            height: root.hasEvidenceConfidence(sourceRow.modelData) ? 98 : 72
+                            height: (
+                                root.hasEvidenceConfidence(sourceRow.modelData)
+                                || root.hasUnifiedWhy(sourceRow.modelData)
+                            ) ? 104 : 72
                             color: sourceMouse.containsMouse ? Theme.surfaceHover : "transparent"
     
                             Rectangle {
@@ -2231,12 +2249,177 @@ Item {
                                 cursorShape: Qt.PointingHandCursor
                                 onClicked: analysisBridge.openSource(String(sourceRow.modelData.reference || ""))
                             }
+
+                            Rectangle {
+                                id: sourceWhyButton
+                                visible: root.hasUnifiedWhy(sourceRow.modelData)
+                                z: 2
+                                anchors.right: parent.right
+                                anchors.rightMargin: 14
+                                anchors.bottom: parent.bottom
+                                anchors.bottomMargin: 9
+                                width: 58
+                                height: 22
+                                radius: 11
+                                color: sourceWhyMouse.containsMouse
+                                    ? Theme.surfaceHover
+                                    : Theme.surfaceRaised
+                                border.width: 1
+                                border.color: Theme.border
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "WHY"
+                                    color: Theme.accent
+                                    font.pixelSize: 7
+                                    font.weight: Font.DemiBold
+                                }
+
+                                MouseArea {
+                                    id: sourceWhyMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: root.openWhyForItem(
+                                        sourceRow.modelData,
+                                        String(sourceRow.modelData.reference || "Source")
+                                            + " · "
+                                            + String(sourceRow.modelData.title || "Investigation source")
+                                    )
+                                }
+                            }
                         }
     
                         ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
                     }
                 }
     
+                // UNIFIED EXPLAINABILITY
+                Panel {
+                    title: "Explainability"
+                    subtitle: String(root.explainability.length)
+                        + " deterministic WHY answer(s) · Search, Evidence, Entity Resolution and Graph remain separate domains"
+                    iconSource: "../../assets/icons/search.svg"
+
+                    ListView {
+                        anchors.fill: parent
+                        clip: true
+                        model: root.explainability
+                        boundsBehavior: Flickable.StopAtBounds
+
+                        delegate: Rectangle {
+                            id: whyRow
+                            required property var modelData
+                            width: ListView.view.width
+                            height: 92
+                            color: whyRowMouse.containsMouse
+                                ? Theme.surfaceHover
+                                : "transparent"
+
+                            Rectangle {
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.bottom: parent.bottom
+                                height: 1
+                                color: Theme.divider
+                            }
+
+                            Rectangle {
+                                x: 14
+                                y: 12
+                                width: Math.max(92, whyQuestionText.implicitWidth + 18)
+                                height: 24
+                                radius: 12
+                                color: Theme.accentSoft
+                                border.width: 1
+                                border.color: Theme.accent
+
+                                Text {
+                                    id: whyQuestionText
+                                    anchors.centerIn: parent
+                                    text: root.whyQuestionLabel(whyRow.modelData.question)
+                                    color: Theme.accent
+                                    font.pixelSize: 7
+                                    font.weight: Font.DemiBold
+                                }
+                            }
+
+                            Text {
+                                x: 124
+                                y: 14
+                                width: parent.width - 280
+                                text: root.explanationSubjectText(whyRow.modelData)
+                                color: Theme.textPrimary
+                                font.pixelSize: 9
+                                font.weight: Font.DemiBold
+                                elide: Text.ElideRight
+                            }
+
+                            Text {
+                                anchors.right: parent.right
+                                anchors.rightMargin: 14
+                                y: 14
+                                width: 130
+                                horizontalAlignment: Text.AlignRight
+                                text: root.whyDomainLabel(whyRow.modelData.domain)
+                                color: Theme.textMuted
+                                font.pixelSize: 7
+                                elide: Text.ElideLeft
+                            }
+
+                            Text {
+                                x: 14
+                                y: 46
+                                width: parent.width - 28
+                                text: String(whyRow.modelData.summary || "")
+                                color: Theme.textSecondary
+                                font.pixelSize: 8
+                                elide: Text.ElideRight
+                            }
+
+                            Text {
+                                x: 14
+                                y: 68
+                                width: parent.width - 28
+                                text: String((whyRow.modelData.reasons || []).length)
+                                    + " reason(s) · "
+                                    + String((whyRow.modelData.limitations || []).length)
+                                    + " limitation(s) · click to inspect"
+                                color: Theme.textMuted
+                                font.pixelSize: 7
+                                elide: Text.ElideRight
+                            }
+
+                            MouseArea {
+                                id: whyRowMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.openWhyPayload(
+                                    [whyRow.modelData],
+                                    root.whyQuestionLabel(whyRow.modelData.question)
+                                        + " · "
+                                        + root.explanationSubjectText(whyRow.modelData)
+                                )
+                            }
+                        }
+
+                        ScrollBar.vertical: ScrollBar {
+                            policy: ScrollBar.AsNeeded
+                        }
+                    }
+
+                    Text {
+                        anchors.centerIn: parent
+                        visible: root.explainability.length === 0
+                        text: Boolean(root.run.hasRun)
+                            ? "No deterministic WHY explanations are available for this run."
+                            : "Run an investigation analysis to build deterministic WHY explanations."
+                        color: Theme.textMuted
+                        font.pixelSize: 10
+                    }
+                }
+
                 // PIPELINE
                 Panel {
                     title: "Analysis Pipeline"
