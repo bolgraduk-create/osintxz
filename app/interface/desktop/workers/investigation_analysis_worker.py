@@ -336,6 +336,7 @@ class InvestigationAnalysisWorker(QObject):
         }
         sections: list[str] = []
         generated_at = ""
+        explainability: list[dict[str, Any]] = []
 
         unified = result.unified_context
         if unified is not None:
@@ -346,6 +347,26 @@ class InvestigationAnalysisWorker(QObject):
                 if hasattr(generated, "isoformat")
                 else str(generated or "")
             )
+
+            unified_explainability = getattr(
+                unified,
+                "explainability",
+                None,
+            )
+            to_payload = getattr(
+                unified_explainability,
+                "to_payload",
+                None,
+            )
+            if callable(to_payload):
+                explainability = [
+                    dict(item)
+                    for item in to_payload()
+                    if isinstance(
+                        item,
+                        dict,
+                    )
+                ]
 
             rag = unified.rag
             rag_summary = rag.summary
@@ -697,6 +718,7 @@ class InvestigationAnalysisWorker(QObject):
             "cancelledStages": result.cancelled_stage_count(),
             "sections": sections,
             "generatedAt": generated_at,
+            "explainability": explainability,
             "summary": summary_text,
             "summarySourceReferences": summary_refs,
             "conclusions": conclusions,
