@@ -1297,7 +1297,7 @@ class DesktopBridge(QObject):
         """Switch the virtualized Entity Directory to a bounded type group."""
 
         normalized = str(category or "all").strip().lower()
-        if normalized not in self.ENTITY_CATEGORY_TYPES:
+        if normalized not in {"all", "people"}:
             return False
         if normalized == self._entity_category and "entities" in self._page_records:
             return True
