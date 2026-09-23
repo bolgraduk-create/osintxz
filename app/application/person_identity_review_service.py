@@ -229,6 +229,157 @@ class PersonIdentityReviewService:
             evidence_rows
         )
 
+    def decision_history(
+        self,
+        person_id: Any,
+        candidate_id: Any,
+    ) -> list[dict[str, Any]]:
+        """Return newest-first analyst decisions for one candidate."""
+
+        try:
+            evidence_rows = list(
+                self.evidence_link_service
+                .get_evidence_objects_for_entity(
+                    person_id
+                )
+                or []
+            )
+        except Exception:
+            return []
+
+        return self.decision_history_from_evidence(
+            evidence_rows,
+            candidate_id=candidate_id,
+        )
+
+    @classmethod
+    def decision_history_from_evidence(
+        cls,
+        evidence_rows: list[Any],
+        *,
+        candidate_id: Any,
+    ) -> list[dict[str, Any]]:
+        """Build a bounded audit history for one PERSON/candidate pair."""
+
+        wanted = str(
+            candidate_id
+            or ""
+        ).strip()
+
+        if not wanted:
+            return []
+
+        rows: list[dict[str, Any]] = []
+
+        for evidence in evidence_rows:
+            metadata = cls._metadata_dict(
+                getattr(
+                    evidence,
+                    "metadata_json",
+                    None,
+                )
+            )
+
+            if metadata.get("workflow") != cls.WORKFLOW:
+                continue
+
+            if str(
+                metadata.get("candidate_entity_id")
+                or ""
+            ).strip() != wanted:
+                continue
+
+            decision = str(
+                metadata.get("decision")
+                or ""
+            ).strip().lower()
+
+            if decision not in {
+                IdentityReviewDecision.CONFIRMED.value,
+                IdentityReviewDecision.REVIEW.value,
+                IdentityReviewDecision.REJECTED.value,
+            }:
+                continue
+
+            created_at = getattr(
+                evidence,
+                "created_at",
+                None,
+            )
+            reviewed_at = (
+                created_at.isoformat()
+                if hasattr(
+                    created_at,
+                    "isoformat",
+                )
+                else str(
+                    created_at
+                    or ""
+                )
+            )
+
+            rows.append(
+                {
+                    "decision": decision,
+                    "label": cls._decision_label(
+                        decision
+                    ),
+                    "previousDecision": str(
+                        metadata.get(
+                            "previous_decision"
+                        )
+                        or IdentityReviewDecision
+                        .UNREVIEWED
+                        .value
+                    ),
+                    "note": str(
+                        metadata.get(
+                            "analyst_note"
+                        )
+                        or ""
+                    ),
+                    "machineConfidence": (
+                        metadata.get(
+                            "machine_confidence"
+                        )
+                    ),
+                    "identityVerified": bool(
+                        metadata.get(
+                            "identity_verified"
+                        )
+                    ),
+                    "reviewedAt": reviewed_at,
+                    "evidenceId": str(
+                        getattr(
+                            evidence,
+                            "id",
+                            "",
+                        )
+                        or ""
+                    ),
+                    "sourceId": str(
+                        getattr(
+                            evidence,
+                            "source_id",
+                            "",
+                        )
+                        or ""
+                    ),
+                }
+            )
+
+        rows.sort(
+            key=lambda item: str(
+                item.get(
+                    "reviewedAt"
+                )
+                or ""
+            ),
+            reverse=True,
+        )
+
+        return rows[:100]
+
     @classmethod
     def latest_decisions_from_evidence(
         cls,
