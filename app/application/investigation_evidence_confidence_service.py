@@ -42,6 +42,10 @@ from app.evidence.evidence_confidence import (
     EvidenceConfidenceAggregationService,
     EvidenceConfidenceBreakdown,
 )
+from app.evidence.evidence_confidence_explanation import (
+    EvidenceConfidenceExplanation,
+    EvidenceConfidenceExplanationService,
+)
 from app.evidence.evidence_strength import (
     EvidenceStrengthBreakdown,
     EvidenceStrengthScoringService,
@@ -71,9 +75,11 @@ class InvestigationEvidencePropositionConfidenceResult:
     signal_count: int
     confidence: EvidenceConfidenceBreakdown
     strength: EvidenceStrengthBreakdown
+    source_reliability: SourceReliabilityBreakdown
     corroboration: EvidenceCorroborationBreakdown
     contradiction: EvidenceContradictionBreakdown
     independence: EvidenceSourceIndependenceBreakdown
+    explanation: EvidenceConfidenceExplanation
 
     @property
     def confidence_score(self) -> float:
@@ -126,12 +132,17 @@ class InvestigationEvidenceConfidenceService:
         contradiction_service: EvidenceContradictionDetectionService,
         source_independence_service: EvidenceSourceIndependenceService,
         confidence_aggregation_service: EvidenceConfidenceAggregationService,
+        explanation_service: EvidenceConfidenceExplanationService | None = None,
     ) -> None:
         self.strength_scoring_service = strength_scoring_service
         self.corroboration_service = corroboration_service
         self.contradiction_service = contradiction_service
         self.source_independence_service = source_independence_service
         self.confidence_aggregation_service = confidence_aggregation_service
+        self.explanation_service = (
+            explanation_service
+            or EvidenceConfidenceExplanationService()
+        )
 
     def analyze(
         self,
@@ -338,6 +349,16 @@ class InvestigationEvidenceConfidenceService:
             corroboration=corroboration,
             contradiction=contradiction,
             independence=independence,
+            explanation=explanation,
+        )
+
+        explanation = self.explanation_service.build(
+            confidence=confidence,
+            strength=strength,
+            source_reliability=reliability,
+            corroboration=corroboration,
+            contradiction=contradiction,
+            independence=independence,
         )
 
         evidence_ids = self._unique_uuid_attrs(
@@ -382,6 +403,7 @@ class InvestigationEvidenceConfidenceService:
             signal_count=len(observations),
             confidence=confidence,
             strength=strength,
+            source_reliability=reliability,
             corroboration=corroboration,
             contradiction=contradiction,
             independence=independence,
