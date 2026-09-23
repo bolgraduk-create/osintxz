@@ -100,8 +100,13 @@ Item {
         for (var i = 0; i < root.profileCandidates.length; ++i) {
             var candidate = root.profileCandidates[i]
             var status = String(candidate.reviewStatus || "unreviewed").toLowerCase()
+            var type = String(candidate.type || "").toLowerCase()
+            var reviewable = type === "username"
+                || type === "account"
+                || type === "url"
+                || type === "domain"
 
-            if (status !== "confirmed")
+            if (reviewable && status !== "confirmed")
                 review.push(candidate)
         }
 
@@ -1286,7 +1291,7 @@ Item {
                             id: candidateRow
                             required property var modelData
                             width: ListView.view.width
-                            height: 72
+                            height: 96
                             color: candidateMouse.containsMouse ? Theme.surfaceHover : "transparent"
 
                             Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; height: 1; color: Theme.divider }
