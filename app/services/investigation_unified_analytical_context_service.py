@@ -312,10 +312,6 @@ class InvestigationUnifiedAnalyticalContext:
         ...,
     ] = ()
 
-    explainability: InvestigationExplainabilityBundle = field(
-        default_factory=InvestigationExplainabilityBundle
-    )
-
     # ------------------------------------------------------
     # Stable case-level typed mathematical results.
     # ------------------------------------------------------
@@ -362,6 +358,12 @@ class InvestigationUnifiedAnalyticalContext:
         default_factory=(
             _empty_metadata
         )
+    )
+
+    # M025 unified explainability is appended at the end of the
+    # contract so existing positional construction remains stable.
+    explainability: InvestigationExplainabilityBundle = field(
+        default_factory=InvestigationExplainabilityBundle
     )
 
     # ======================================================
