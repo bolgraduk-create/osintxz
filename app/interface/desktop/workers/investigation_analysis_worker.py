@@ -425,6 +425,74 @@ class InvestigationAnalysisWorker(QObject):
                         else {}
                     )
 
+                    proposition_rows = [
+                        dict(item)
+                        for item in list(
+                            confidence_metadata.get(
+                                "propositions"
+                            )
+                            or []
+                        )
+                        if isinstance(
+                            item,
+                            dict,
+                        )
+                    ]
+                    strongest_proposition = (
+                        proposition_rows[0]
+                        if proposition_rows
+                        else {}
+                    )
+
+                    confidence_details = {
+                        "propositionKey": str(
+                            strongest_proposition.get(
+                                "proposition_key"
+                            )
+                            or ""
+                        ),
+                        "intrinsicStrength": (
+                            strongest_proposition.get(
+                                "intrinsic_strength"
+                            )
+                        ),
+                        "sourceReliability": (
+                            strongest_proposition.get(
+                                "source_reliability_score"
+                            )
+                        ),
+                        "sourceReliabilityCoverage": (
+                            strongest_proposition.get(
+                                "source_reliability_coverage"
+                            )
+                        ),
+                        "corroboration": (
+                            strongest_proposition.get(
+                                "effective_corroboration_score"
+                            )
+                        ),
+                        "independence": (
+                            strongest_proposition.get(
+                                "independence_score"
+                            )
+                        ),
+                        "independenceCoverage": (
+                            strongest_proposition.get(
+                                "independence_coverage"
+                            )
+                        ),
+                        "contradiction": (
+                            strongest_proposition.get(
+                                "contradiction_strength"
+                            )
+                        ),
+                        "hardConflict": bool(
+                            strongest_proposition.get(
+                                "hard_conflict"
+                            )
+                        ),
+                    }
+
                     source_row = {
                         "reference": str(
                             source.reference_id or ""
@@ -456,6 +524,9 @@ class InvestigationAnalysisWorker(QObject):
                             )
                             or 0
                         ),
+                        "evidenceConfidenceDetails": (
+                            confidence_details
+                        ),
                         "status": str(source.status or ""),
                         "matchedMethods": list(
                             source.matched_methods or ()
@@ -481,6 +552,13 @@ class InvestigationAnalysisWorker(QObject):
                                 source_row[
                                     "evidenceConfidenceCoverage"
                                 ]
+                            ),
+                            "evidenceConfidenceDetails": (
+                                dict(
+                                    source_row[
+                                        "evidenceConfidenceDetails"
+                                    ]
+                                )
                             ),
                             "notice": (
                                 "Direct source material selected by RAG; "
