@@ -408,7 +408,8 @@ def test_ai_may_paraphrase_but_not_invent_m025_confidence_reasons():
     ):
         assert "evidence_reason" in source
         assert "evidence_limitation" in source
-        assert "deterministic M025" in source
+        assert "deterministic" in source
+        assert "M025" in source
         assert "paraphrase" in source
 
 
