@@ -276,6 +276,37 @@ class AnalysisChatService:
                 else {}
             )
 
+            proposition_rows = [
+                dict(item)
+                for item in list(
+                    confidence_metadata.get(
+                        "propositions"
+                    )
+                    or []
+                )
+                if isinstance(
+                    item,
+                    dict,
+                )
+            ]
+            strongest_proposition = (
+                proposition_rows[0]
+                if proposition_rows
+                else {}
+            )
+            explanation_payload = (
+                strongest_proposition.get(
+                    "explanation"
+                )
+                if isinstance(
+                    strongest_proposition.get(
+                        "explanation"
+                    ),
+                    dict,
+                )
+                else {}
+            )
+
             sources.append(
                 {
                     "reference": reference,
@@ -298,6 +329,11 @@ class AnalysisChatService:
                             "proposition_count"
                         )
                         or 0
+                    ),
+                    "evidenceConfidenceExplanation": (
+                        dict(
+                            explanation_payload
+                        )
                     ),
                     "status": str(source.status or ""),
                     "snippet": safe_snippet,
