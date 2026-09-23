@@ -219,3 +219,49 @@ def test_non_profile_entity_cannot_be_identity_review_candidate():
             candidate=candidate,
             decision="confirmed",
         )
+
+
+def test_person_card_exposes_human_identity_review_controls():
+    from pathlib import Path
+
+    qml = Path(
+        "app/interface/desktop/qml/pages/Person.qml"
+    ).read_text(encoding="utf-8")
+    bridge = Path(
+        "app/interface/desktop/bridges/desktop_bridge.py"
+    ).read_text(encoding="utf-8")
+
+    for token in (
+        'text: "Confirm"',
+        'text: "Review"',
+        'text: "Reject"',
+        "desktopBridge.reviewIdentityCandidate",
+        "Manual status:",
+        "reviewStatus",
+        "reviewHistoryCount",
+    ):
+        assert token in qml
+
+    for token in (
+        "def reviewIdentityCandidate(",
+        "PersonIdentityReviewService",
+        "IdentityReviewDecision",
+        '"analyst_confirmed"',
+        '"identityReview": {',
+        "PersonProfileSelectionService",
+    ):
+        assert token in bridge
+
+
+def test_confirmed_candidates_are_bound_while_review_and_rejected_are_suppressed():
+    from pathlib import Path
+
+    bridge = Path(
+        "app/interface/desktop/bridges/desktop_bridge.py"
+    ).read_text(encoding="utf-8")
+
+    assert 'result.decision == "confirmed"' in bridge
+    assert '"rejected",' in bridge
+    assert '"review",' in bridge
+    assert '"analyst_confirmed"' in bridge
+    assert "is_identity_review" in bridge
