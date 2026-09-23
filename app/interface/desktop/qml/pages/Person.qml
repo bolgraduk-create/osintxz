@@ -94,19 +94,23 @@ Item {
         return text
     }
 
+    function isIdentityReviewable(item) {
+        var type = String((item || {}).type || "").toLowerCase()
+        return type === "username"
+            || type === "account"
+            || type === "url"
+            || type === "domain"
+    }
+
     function rebuildReviewRows() {
         var review = []
 
         for (var i = 0; i < root.profileCandidates.length; ++i) {
             var candidate = root.profileCandidates[i]
             var status = String(candidate.reviewStatus || "unreviewed").toLowerCase()
-            var type = String(candidate.type || "").toLowerCase()
-            var reviewable = type === "username"
-                || type === "account"
-                || type === "url"
-                || type === "domain"
+            var reviewable = root.isIdentityReviewable(candidate)
 
-            if (reviewable && status !== "confirmed")
+            if (!reviewable || status !== "confirmed")
                 review.push(candidate)
         }
 
@@ -1252,7 +1256,7 @@ Item {
                 Text { x: 20; y: 13; text: "Review account identity"; color: Theme.textPrimary; font.pixelSize: 18; font.weight: Font.DemiBold }
                 Text {
                     x: 20; y: 40; width: parent.width - 40
-                    text: "Confirm, reject, or keep an account for review. Manual decisions stay separate from machine confidence."
+                    text: "Review account identity, or add other existing intelligence. Manual identity decisions stay separate from machine confidence."
                     color: Theme.textMuted; font.pixelSize: 9; elide: Text.ElideRight
                 }
             }
@@ -1343,6 +1347,7 @@ Item {
                                 x: 66
                                 y: 65
                                 width: parent.width - 300
+                                visible: root.isIdentityReviewable(candidateRow.modelData)
                                 text: "Manual status: "
                                     + String(candidateRow.modelData.reviewLabel || "Unreviewed")
                                     + (candidateRow.modelData.reviewHistoryCount
@@ -1359,7 +1364,9 @@ Item {
                             }
 
                             Text {
-                                anchors.right: reviewActions.left
+                                anchors.right: root.isIdentityReviewable(candidateRow.modelData)
+                                    ? reviewActions.left
+                                    : addExistingButton.left
                                 anchors.rightMargin: 10
                                 anchors.top: parent.top
                                 anchors.topMargin: 12
@@ -1370,6 +1377,7 @@ Item {
 
                             Row {
                                 id: reviewActions
+                                visible: root.isIdentityReviewable(candidateRow.modelData)
                                 anchors.right: parent.right
                                 anchors.rightMargin: 10
                                 anchors.verticalCenter: parent.verticalCenter
@@ -1406,12 +1414,36 @@ Item {
                                 }
                             }
 
+                            AppButton {
+                                id: addExistingButton
+                                visible: !root.isIdentityReviewable(candidateRow.modelData)
+                                anchors.right: parent.right
+                                anchors.rightMargin: 10
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 82
+                                height: 30
+                                text: "Add"
+                                onClicked: {
+                                    root.candidateError = ""
+                                    var result = desktopBridge.addExistingDataToPerson(
+                                        String(candidateRow.modelData.id || "")
+                                    )
+                                    if (!(result && result.ok)) {
+                                        root.candidateError = result && result.error
+                                            ? String(result.error)
+                                            : "Unable to add selected intelligence."
+                                    }
+                                }
+                            }
+
                             MouseArea {
                                 id: candidateMouse
                                 anchors.left: parent.left
                                 anchors.top: parent.top
                                 anchors.bottom: parent.bottom
-                                anchors.right: reviewActions.left
+                                anchors.right: root.isIdentityReviewable(candidateRow.modelData)
+                                    ? reviewActions.left
+                                    : addExistingButton.left
                                 hoverEnabled: true
                                 acceptedButtons: Qt.NoButton
                             }
