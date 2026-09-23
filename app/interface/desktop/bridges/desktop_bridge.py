@@ -3744,11 +3744,33 @@ class DesktopBridge(QObject):
             if value not in (None, ""):
                 metadata_rows.append({"label": label, "value": str(value)})
 
-        excluded_profile_ids = {str(getattr(entity, "id", "") or "")} | {
+        reviewable_profile_types = {
+            EntityType.USERNAME.value,
+            EntityType.ACCOUNT.value,
+            EntityType.URL.value,
+            EntityType.DOMAIN.value,
+        }
+
+        excluded_profile_ids = {
+            str(getattr(entity, "id", "") or "")
+        }
+
+        excluded_profile_ids.update(
             str(item.get("id") or "")
             for item in related_rows
-            if item.get("id")
-        }
+            if (
+                item.get("id")
+                and str(
+                    item.get("rawType")
+                    or item.get("type")
+                    or ""
+                )
+                .strip()
+                .lower()
+                .replace(" ", "_")
+                not in reviewable_profile_types
+            )
+        )
         profile_candidates = (
             self._person_profile_candidates(
                 entity,
