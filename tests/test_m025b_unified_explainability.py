@@ -444,3 +444,71 @@ def test_ai_prompts_preserve_unified_why_semantic_boundaries():
         assert "investigation_reason" in source
         assert "M025b" in source
         assert "WHY" in source
+
+
+
+def test_unified_payload_round_trip_preserves_question_subject_and_reason():
+    service = InvestigationExplainabilityService()
+    original = service.explain_search_hit(
+        _search_hit()
+    )
+
+    restored = service.from_payloads(
+        original.to_payload()
+    )
+
+    assert isinstance(
+        restored,
+        InvestigationExplainabilityBundle,
+    )
+    assert len(restored.explanations) == len(
+        original.explanations
+    )
+    assert {
+        item.question
+        for item in restored.explanations
+    } == {
+        item.question
+        for item in original.explanations
+    }
+    assert (
+        restored.explanations[0].subject.object_id
+        == original.explanations[0].subject.object_id
+    )
+
+
+def test_unified_analytical_context_has_first_class_explainability_section():
+    source = Path(
+        "app/services/investigation_unified_analytical_context_service.py"
+    ).read_text(encoding="utf-8")
+
+    assert "InvestigationExplainabilityBundle" in source
+    assert "explainability:" in source
+    assert '"explainability"' in source
+    assert "normalized_explainability" in source
+
+
+def test_orchestrator_collects_existing_layers_without_materializing_graph_pairs():
+    source = Path(
+        "app/application/investigation_analysis_orchestrator.py"
+    ).read_text(encoding="utf-8")
+
+    assert "explain_entity_resolution(" in source
+    assert "explain_evidence_proposition(" in source
+    assert "explain_graph_entity(" in source
+    assert "from_payloads(" in source
+    assert "unified_explainability" in source
+    assert '"graph_pair_explanations_materialized": False' in source
+    assert ".explain_pair(" not in source
+
+
+def test_service_container_reuses_same_explainability_instance_for_rag_and_orchestrator():
+    source = Path(
+        "app/core/service_container.py"
+    ).read_text(encoding="utf-8")
+
+    assert source.count(
+        "self.investigation_explainability_service"
+    ) >= 3
+    assert "explainability_service=(" in source
+    assert "investigation_explainability_service=(" in source
