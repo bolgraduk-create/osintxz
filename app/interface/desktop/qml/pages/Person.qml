@@ -1370,6 +1370,10 @@ Item {
                         delegate: Rectangle {
                             id: candidateRow
                             required property var modelData
+                            property bool hasExternalUrl: String(modelData.url || "").length > 0
+                            property int actionReserve: root.isIdentityReviewable(modelData)
+                                ? (hasExternalUrl ? 360 : 300)
+                                : (hasExternalUrl ? 190 : 120)
                             width: ListView.view.width
                             height: 96
                             color: candidateMouse.containsMouse ? Theme.surfaceHover : "transparent"
@@ -1402,19 +1406,19 @@ Item {
                             }
 
                             Text {
-                                x: 66; y: 9; width: parent.width - 300
+                                x: 66; y: 9; width: Math.max(100, parent.width - 66 - candidateRow.actionReserve)
                                 text: String(candidateRow.modelData.value || "Unnamed intelligence item")
                                 color: Theme.textPrimary; font.pixelSize: 11; font.weight: Font.Medium; elide: Text.ElideRight
                             }
                             Text {
-                                x: 66; y: 29; width: parent.width - 300
+                                x: 66; y: 29; width: Math.max(100, parent.width - 66 - candidateRow.actionReserve)
                                 text: String(candidateRow.modelData.typeLabel || candidateRow.modelData.type || "Entity")
                                     + (candidateRow.modelData.connector ? " · " + String(candidateRow.modelData.connector) : "")
                                     + (candidateRow.modelData.source ? " · " + String(candidateRow.modelData.source) : "")
                                 color: Theme.textMuted; font.pixelSize: 9; elide: Text.ElideRight
                             }
                             Text {
-                                x: 66; y: 47; width: parent.width - 300
+                                x: 66; y: 47; width: Math.max(100, parent.width - 66 - candidateRow.actionReserve)
                                 text: {
                                     var hasCalibration = Number(candidateRow.modelData.calibrationIdentitySupport || 0) > 0
                                         || Number(candidateRow.modelData.calibrationRelationshipSupport || 0) > 0
@@ -1441,7 +1445,7 @@ Item {
                             Text {
                                 x: 66
                                 y: 65
-                                width: parent.width - 300
+                                width: Math.max(100, parent.width - 66 - candidateRow.actionReserve)
                                 visible: root.isIdentityReviewable(candidateRow.modelData)
                                 text: "Manual status: "
                                     + String(candidateRow.modelData.reviewLabel || "Unreviewed")
@@ -1465,9 +1469,11 @@ Item {
                             }
 
                             Text {
-                                anchors.right: root.isIdentityReviewable(candidateRow.modelData)
-                                    ? reviewActions.left
-                                    : addExistingButton.left
+                                anchors.right: candidateRow.hasExternalUrl
+                                    ? openExternalButton.left
+                                    : (root.isIdentityReviewable(candidateRow.modelData)
+                                        ? reviewActions.left
+                                        : addExistingButton.left)
                                 anchors.rightMargin: 10
                                 anchors.top: parent.top
                                 anchors.topMargin: 12
@@ -1486,6 +1492,27 @@ Item {
                                         ? "#36cfa1"
                                         : Theme.textSecondary)
                                 font.pixelSize: 9
+                            }
+
+                            AppButton {
+                                id: openExternalButton
+                                visible: candidateRow.hasExternalUrl
+                                anchors.right: root.isIdentityReviewable(candidateRow.modelData)
+                                    ? reviewActions.left
+                                    : addExistingButton.left
+                                anchors.rightMargin: 4
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 58
+                                height: 30
+                                text: "Open"
+                                onClicked: {
+                                    root.candidateError = ""
+                                    var opened = desktopBridge.openExternalUrl(
+                                        String(candidateRow.modelData.url || "")
+                                    )
+                                    if (!opened)
+                                        root.candidateError = "Unable to open this external link."
+                                }
                             }
 
                             Row {
@@ -1562,9 +1589,11 @@ Item {
                                 anchors.left: parent.left
                                 anchors.top: parent.top
                                 anchors.bottom: parent.bottom
-                                anchors.right: root.isIdentityReviewable(candidateRow.modelData)
-                                    ? reviewActions.left
-                                    : addExistingButton.left
+                                anchors.right: candidateRow.hasExternalUrl
+                                    ? openExternalButton.left
+                                    : (root.isIdentityReviewable(candidateRow.modelData)
+                                        ? reviewActions.left
+                                        : addExistingButton.left)
                                 hoverEnabled: true
                                 acceptedButtons: Qt.NoButton
                             }
