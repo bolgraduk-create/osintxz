@@ -1,212 +1,125 @@
-"""
-External tool runner.
+"""Compatibility wrapper for the canonical OSINT ToolRunner.
 
-Provides unified execution
-of third-party OSINT tools.
-
-Responsibilities:
-
-- execute subprocesses
-- check tool availability
-- manage timeouts
-- capture stdout/stderr
-- execute inside working directory
-
-Does NOT:
-
-- parse tool output
-- know specific connectors
-- call AI
+ExternalToolRunner used to own a second direct subprocess implementation. That
+created a security bypass around the R14 runtime policy. It now delegates all
+process creation to app.osint.runner.ToolRunner while preserving the historical
+result shape used by older connectors.
 """
 
 from __future__ import annotations
 
-import shutil
-import subprocess
-import tempfile
-import time
-
 from dataclasses import dataclass
 from pathlib import Path
+import shutil
+import tempfile
+
+from app.osint.runner import (
+    ToolExecutionResult as CanonicalToolExecutionResult,
+    ToolRunner,
+)
 
 
 @dataclass(slots=True)
 class ToolExecutionResult:
-    """
-    Raw execution result.
-    """
+    """Compatibility result for legacy ExternalToolRunner callers."""
 
     success: bool
-
     return_code: int
-
     stdout: str
-
     stderr: str
-
     execution_time: float
-
     working_directory: Path | None = None
-
     error: str | None = None
+    stopped_early: bool = False
+    blocked_by_policy: bool = False
+    stdout_truncated: bool = False
+    stderr_truncated: bool = False
+    resolved_executable: str | None = None
 
 
 class ExternalToolRunner:
-    """
-    Universal subprocess runner.
-    """
+    """Legacy facade that cannot bypass the canonical runtime policy."""
+
+    def __init__(
+        self,
+        runner: ToolRunner | None = None,
+    ) -> None:
+        self.runner = runner or ToolRunner()
 
     def is_available(
         self,
         executable: str,
     ) -> bool:
-        """
-        Check executable availability.
+        """Check whether an executable is discoverable.
+
+        Availability alone does not grant execution permission. ToolRunner
+        performs the authoritative inventory/policy check at launch time.
         """
 
-        return (
-            shutil.which(executable)
-            is not None
-        )
+        return shutil.which(executable) is not None
 
     def run(
         self,
         command: list[str],
         *,
-        timeout: int = 300,
+        timeout: int | float = 300,
         cwd: str | Path | None = None,
     ) -> ToolExecutionResult:
-        """
-        Execute external tool.
-        """
+        """Execute through the canonical ToolRunner security boundary."""
 
-        started = time.perf_counter()
+        canonical = self.runner.run(
+            command=command,
+            timeout=timeout,
+            working_directory=(
+                Path(cwd)
+                if cwd is not None
+                else None
+            ),
+        )
 
-        try:
+        return self._adapt(canonical)
 
-            process = subprocess.run(
+    @staticmethod
+    def _adapt(
+        result: CanonicalToolExecutionResult,
+    ) -> ToolExecutionResult:
+        error: str | None = None
 
-                command,
+        if result.blocked_by_policy:
+            error = result.stderr
+        elif result.return_code == -1:
+            error = "Execution timeout."
+        elif result.return_code == -2:
+            error = "Executable not found."
+        elif result.return_code == -999:
+            error = result.stderr or "External tool execution failed."
 
-                capture_output=True,
-
-                text=True,
-
-                timeout=timeout,
-
-                cwd=cwd,
-
-            )
-
-            elapsed = (
-                time.perf_counter()
-                - started
-            )
-
-            return ToolExecutionResult(
-
-                success=(
-                    process.returncode == 0
-                ),
-
-                return_code=process.returncode,
-
-                stdout=process.stdout,
-
-                stderr=process.stderr,
-
-                execution_time=elapsed,
-
-            )
-
-        except subprocess.TimeoutExpired:
-
-            elapsed = (
-                time.perf_counter()
-                - started
-            )
-
-            return ToolExecutionResult(
-
-                success=False,
-
-                return_code=-1,
-
-                stdout="",
-
-                stderr="",
-
-                execution_time=elapsed,
-
-                error="Execution timeout.",
-
-            )
-
-        except FileNotFoundError:
-
-            elapsed = (
-                time.perf_counter()
-                - started
-            )
-
-            return ToolExecutionResult(
-
-                success=False,
-
-                return_code=-1,
-
-                stdout="",
-
-                stderr="",
-
-                execution_time=elapsed,
-
-                error="Executable not found.",
-
-            )
-
-        except Exception as exc:
-
-            elapsed = (
-                time.perf_counter()
-                - started
-            )
-
-            return ToolExecutionResult(
-
-                success=False,
-
-                return_code=-1,
-
-                stdout="",
-
-                stderr="",
-
-                execution_time=elapsed,
-
-                error=str(exc),
-
-            )
+        return ToolExecutionResult(
+            success=result.success,
+            return_code=result.return_code,
+            stdout=result.stdout,
+            stderr=result.stderr,
+            execution_time=result.execution_time,
+            error=error,
+            stopped_early=result.stopped_early,
+            blocked_by_policy=result.blocked_by_policy,
+            stdout_truncated=result.stdout_truncated,
+            stderr_truncated=result.stderr_truncated,
+            resolved_executable=result.resolved_executable,
+        )
 
     def run_in_temp_directory(
         self,
         command_builder,
         *,
-        timeout: int = 300,
+        timeout: int | float = 300,
     ) -> tuple[
         ToolExecutionResult,
         Path,
     ]:
-        """
-        Execute tool inside
-        temporary directory.
-
-        command_builder receives
-        temporary directory Path.
-        """
+        """Execute inside a temporary directory using the canonical runner."""
 
         with tempfile.TemporaryDirectory() as temp:
-
             directory = Path(temp)
 
             command = command_builder(
@@ -214,20 +127,11 @@ class ExternalToolRunner:
             )
 
             result = self.run(
-
                 command,
-
                 timeout=timeout,
-
                 cwd=directory,
-
             )
 
-            result.working_directory = (
-                directory
-            )
+            result.working_directory = directory
 
-            return (
-                result,
-                directory,
-            )
+            return result, directory
