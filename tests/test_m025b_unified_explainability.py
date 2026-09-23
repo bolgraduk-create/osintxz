@@ -154,6 +154,8 @@ def test_unified_search_contract_answers_why_found_and_why_ranked_separately():
     assert found[0].domain == InvestigationExplanationDomain.SEARCH
     assert ranked[0].domain == InvestigationExplanationDomain.SEARCH
     assert "Exact token match" in found[0].reasons[0].message
+    assert "explains retrieval, not whether" in found[0].summary
+    assert found[0].metadata["retrievalRelevanceIsEvidenceConfidence"] is False
     assert "not Evidence confidence" in ranked[0].summary
     assert ranked[0].metadata["rankingChangedByExplainability"] is False
 
