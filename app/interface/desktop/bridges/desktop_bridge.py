@@ -1575,6 +1575,93 @@ class DesktopBridge(QObject):
         }
 
     @Slot(str, result="QVariantMap")
+    def identityReviewHistory(
+        self,
+        entity_id: str,
+    ) -> dict[str, Any]:
+        """Return append-only analyst review history for one candidate."""
+
+        person_id = str(
+            self._current_entity_id
+            or ""
+        ).strip()
+        candidate_id = str(
+            entity_id
+            or ""
+        ).strip()
+
+        if not person_id:
+            return {
+                "ok": False,
+                "error": "Open a person card first.",
+                "items": [],
+            }
+
+        if not candidate_id:
+            return {
+                "ok": False,
+                "error": "Select an identity candidate first.",
+                "items": [],
+            }
+
+        source_service = getattr(
+            self._container,
+            "source_service",
+            None,
+        )
+        evidence_service = getattr(
+            self._container,
+            "evidence_service",
+            None,
+        )
+        link_service = getattr(
+            self._container,
+            "evidence_link_service",
+            None,
+        )
+
+        if any(
+            service is None
+            for service in (
+                source_service,
+                evidence_service,
+                link_service,
+            )
+        ):
+            return {
+                "ok": False,
+                "error": "Identity review services are unavailable.",
+                "items": [],
+            }
+
+        try:
+            service = PersonIdentityReviewService(
+                source_service=source_service,
+                evidence_service=evidence_service,
+                evidence_link_service=link_service,
+            )
+
+            items = service.decision_history(
+                UUID(person_id),
+                UUID(candidate_id),
+            )
+        except Exception as exc:
+            LOGGER.exception(
+                "Unable to load identity review history"
+            )
+            return {
+                "ok": False,
+                "error": str(exc),
+                "items": [],
+            }
+
+        return {
+            "ok": True,
+            "items": items,
+            "count": len(items),
+        }
+
+    @Slot(str, result="QVariantMap")
     def addExistingDataToPerson(self, entity_id: str) -> dict[str, Any]:
         """Attach already-persisted investigation data to the open PERSON card.
 
