@@ -1094,6 +1094,86 @@ class InvestigationRAGContextBuilder:
             f"{source.final_score:.6f}"
         )
 
+        unified_explanations = (
+            source.metadata.get(
+                "investigation_explainability"
+            )
+            if isinstance(
+                source.metadata,
+                dict,
+            )
+            else None
+        )
+
+        if isinstance(
+            unified_explanations,
+            list,
+        ):
+            for explanation in unified_explanations[:4]:
+                if not isinstance(
+                    explanation,
+                    dict,
+                ):
+                    continue
+
+                domain = self._normalize_text(
+                    explanation.get(
+                        "domain"
+                    )
+                )
+                question = self._normalize_text(
+                    explanation.get(
+                        "question"
+                    )
+                )
+                summary = self._normalize_text(
+                    explanation.get(
+                        "summary"
+                    )
+                )
+
+                if (
+                    domain != "search"
+                    or question not in {
+                        "why_found",
+                        "why_ranked",
+                    }
+                    or not summary
+                ):
+                    continue
+
+                lines.append(
+                    "investigation_explanation: "
+                    f"{question}; {summary}"
+                )
+
+                for reason in list(
+                    explanation.get(
+                        "reasons"
+                    )
+                    or []
+                )[:3]:
+                    if not isinstance(
+                        reason,
+                        dict,
+                    ):
+                        continue
+                    code = self._normalize_text(
+                        reason.get(
+                            "code"
+                        )
+                    )
+                    message = self._normalize_text(
+                        reason.get(
+                            "message"
+                        )
+                    )
+                    if code and message:
+                        lines.append(
+                            "investigation_reason: "
+                            f"{question}; {code}; {message}"
+                        )
+
         confidence_metadata = (
             source.metadata.get(
                 "canonical_evidence_confidence"
