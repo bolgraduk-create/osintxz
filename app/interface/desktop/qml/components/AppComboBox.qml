@@ -49,7 +49,7 @@ ComboBox {
         required property int index
         width: root.width - 12
         height: 38
-        text: String(option.modelData)
+        text: root.textAt(option.index)
         highlighted: root.highlightedIndex === option.index
         hoverEnabled: true
         font.pixelSize: 12
