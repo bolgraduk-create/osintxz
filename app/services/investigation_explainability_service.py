@@ -461,6 +461,113 @@ class InvestigationExplainabilityService:
             )
         )
 
+    def from_payloads(
+        self,
+        payloads: Iterable[dict[str, Any]],
+    ) -> InvestigationExplainabilityBundle:
+        """Rehydrate payloads previously produced by the unified contract."""
+
+        explanations: list[InvestigationExplanation] = []
+
+        for row in payloads:
+            if not isinstance(row, dict):
+                continue
+
+            subject_payload = row.get("subject")
+            if not isinstance(subject_payload, dict):
+                continue
+
+            object_id = self._uuid(
+                subject_payload.get("objectId")
+            )
+            related_id = self._uuid(
+                subject_payload.get("relatedObjectId")
+            )
+            object_type = str(
+                subject_payload.get("objectType")
+                or ""
+            ).strip()
+            related_type = str(
+                subject_payload.get("relatedObjectType")
+                or ""
+            ).strip()
+
+            if not object_type or object_id is None:
+                continue
+            if bool(related_type) != (related_id is not None):
+                continue
+
+            try:
+                domain = InvestigationExplanationDomain(
+                    str(row.get("domain") or "")
+                )
+                question = InvestigationExplanationQuestion(
+                    str(row.get("question") or "")
+                )
+            except ValueError:
+                continue
+
+            summary = str(
+                row.get("summary")
+                or ""
+            ).strip()
+            if not summary:
+                continue
+
+            reasons = tuple(
+                self._contract_reason_from_payload(
+                    reason,
+                    default_effect=InvestigationExplanationEffect.CONTEXT,
+                )
+                for reason in (
+                    row.get("reasons")
+                    or []
+                )
+                if isinstance(reason, dict)
+            )
+            limitations = tuple(
+                self._contract_reason_from_payload(
+                    reason,
+                    default_effect=InvestigationExplanationEffect.LIMITATION,
+                )
+                for reason in (
+                    row.get("limitations")
+                    or []
+                )
+                if isinstance(reason, dict)
+            )
+
+            explanations.append(
+                InvestigationExplanation(
+                    domain=domain,
+                    question=question,
+                    subject=InvestigationExplanationSubject(
+                        object_type=object_type,
+                        object_id=object_id,
+                        related_object_type=(
+                            related_type
+                            or None
+                        ),
+                        related_object_id=related_id,
+                    ),
+                    summary=summary,
+                    reasons=reasons,
+                    limitations=limitations,
+                    metadata=dict(
+                        row.get("metadata")
+                        or {}
+                    ),
+                )
+            )
+
+        return InvestigationExplainabilityBundle(
+            explanations=tuple(
+                self._deduplicate(
+                    explanations
+                )
+            )
+        )
+
     def collect(
         self,
         bundles: Iterable[InvestigationExplainabilityBundle],
@@ -714,6 +821,38 @@ class InvestigationExplainabilityService:
                 )
             )
         return reasons
+
+    def _contract_reason_from_payload(
+        self,
+        row: dict[str, Any],
+        *,
+        default_effect: InvestigationExplanationEffect,
+    ) -> InvestigationExplanationReason:
+        return InvestigationExplanationReason(
+            code=str(
+                row.get("code")
+                or "unknown_reason"
+            ),
+            message=str(
+                row.get("message")
+                or "Explanation reason unavailable."
+            ),
+            effect=self._effect(
+                row.get("effect"),
+                default=default_effect,
+            ),
+            score=self._number(
+                row.get("score")
+            ),
+            method=str(
+                row.get("method")
+                or ""
+            ).strip() or None,
+            details=dict(
+                row.get("details")
+                or {}
+            ),
+        )
 
     @staticmethod
     def _strongest_proposition(
