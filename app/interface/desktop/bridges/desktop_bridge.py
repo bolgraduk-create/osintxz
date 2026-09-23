@@ -20,6 +20,10 @@ from PySide6.QtGui import QDesktopServices, QGuiApplication
 
 from app.application.person_attachment_service import PersonAttachmentService
 from app.application.person_profile_selection_service import PersonProfileSelectionService
+from app.application.person_identity_review_service import (
+    IdentityReviewDecision,
+    PersonIdentityReviewService,
+)
 from app.application.unified_target_profile import build_unified_target_profile
 from app.investigation.search_query import InvestigationSearchQuery, SearchMethod
 from app.models.entity import EntityType
@@ -1362,6 +1366,212 @@ class DesktopBridge(QObject):
             "message": "Person attachment saved.",
             "evidenceId": result.evidence_id if result is not None else "",
             "relatedEntityId": result.related_entity_id if result is not None else "",
+        }
+
+    @Slot(str, str, str, result="QVariantMap")
+    def reviewIdentityCandidate(
+        self,
+        entity_id: str,
+        decision: str,
+        note: str = "",
+    ) -> dict[str, Any]:
+        """Persist a human identity decision for an account/profile candidate."""
+
+        person_id = str(
+            self._current_entity_id
+            or ""
+        ).strip()
+        candidate_id = str(
+            entity_id
+            or ""
+        ).strip()
+
+        if not person_id:
+            return {
+                "ok": False,
+                "error": "Open a person card first.",
+            }
+
+        if not candidate_id:
+            return {
+                "ok": False,
+                "error": "Select an identity candidate first.",
+            }
+
+        entity_service = getattr(
+            self._container,
+            "entity_service",
+            None,
+        )
+        source_service = getattr(
+            self._container,
+            "source_service",
+            None,
+        )
+        evidence_service = getattr(
+            self._container,
+            "evidence_service",
+            None,
+        )
+        link_service = getattr(
+            self._container,
+            "evidence_link_service",
+            None,
+        )
+
+        if any(
+            service is None
+            for service in (
+                entity_service,
+                source_service,
+                evidence_service,
+                link_service,
+            )
+        ):
+            return {
+                "ok": False,
+                "error": "Identity review services are unavailable.",
+            }
+
+        try:
+            person = entity_service.get_entity(
+                UUID(person_id)
+            )
+            candidate = entity_service.get_entity(
+                UUID(candidate_id)
+            )
+
+            review_service = (
+                PersonIdentityReviewService(
+                    source_service=source_service,
+                    evidence_service=evidence_service,
+                    evidence_link_service=link_service,
+                )
+            )
+
+            result = review_service.record(
+                person=person,
+                candidate=candidate,
+                decision=decision,
+                note=note,
+            )
+
+            profile_result = None
+
+            if (
+                result.decision
+                ==
+                IdentityReviewDecision
+                .CONFIRMED
+                .value
+            ):
+                profile_result = (
+                    PersonProfileSelectionService(
+                        source_service=source_service,
+                        evidence_service=evidence_service,
+                        evidence_link_service=link_service,
+                    )
+                    .add(
+                        person=person,
+                        candidate=candidate,
+                    )
+                )
+
+            self._container.commit()
+
+        except Exception as exc:
+            try:
+                self._container.rollback()
+            except Exception:
+                LOGGER.debug(
+                    "Rollback after identity review failed",
+                    exc_info=True,
+                )
+
+            LOGGER.exception(
+                "Unable to persist identity review decision"
+            )
+
+            return {
+                "ok": False,
+                "error": str(exc),
+            }
+
+        try:
+            refreshed = (
+                entity_service.get_entity(
+                    UUID(person_id)
+                )
+                or person
+            )
+            self._current_entity_snapshot = (
+                self._build_person_snapshot(
+                    refreshed
+                )
+            )
+        except Exception:
+            LOGGER.exception(
+                "Identity decision saved but PERSON snapshot refresh failed"
+            )
+
+        for key in (
+            "entities",
+            "evidence",
+        ):
+            self._page_records.pop(
+                key,
+                None,
+            )
+            self._page_offsets.pop(
+                key,
+                None,
+            )
+            self._page_totals.pop(
+                key,
+                None,
+            )
+            self._page_errors.pop(
+                key,
+                None,
+            )
+
+        self._refresh_entity_type_counts()
+        self._generation += 1
+        self.changed.emit()
+
+        message = {
+            "confirmed": "Account confirmed and added to the person profile.",
+            "review": "Account marked for further review.",
+            "rejected": "Account rejected for this person.",
+        }.get(
+            result.decision,
+            "Identity review saved.",
+        )
+
+        self._set_message(
+            message
+        )
+
+        return {
+            "ok": True,
+            "decision": result.decision,
+            "previousDecision": result.previous_decision,
+            "duplicate": result.duplicate,
+            "evidenceId": result.evidence_id,
+            "selectedEntityId": result.candidate_entity_id,
+            "profileBound": bool(
+                result.decision == "confirmed"
+            ),
+            "profileSelectionDuplicate": bool(
+                getattr(
+                    profile_result,
+                    "duplicate",
+                    False,
+                )
+                if profile_result is not None
+                else False
+            ),
+            "message": message,
         }
 
     @Slot(str, result="QVariantMap")
@@ -2994,6 +3204,7 @@ class DesktopBridge(QObject):
         person: Any,
         *,
         excluded_ids: set[str],
+        review_decisions: dict[str, dict[str, Any]] | None = None,
     ) -> list[dict[str, Any]]:
         """Return bounded, already-persisted OSINT entities suitable for review.
 
@@ -3032,6 +3243,7 @@ class DesktopBridge(QObject):
 
         candidates: list[dict[str, Any]] = []
         person_id = str(getattr(person, "id", "") or "")
+        decisions = dict(review_decisions or {})
         for candidate in rows:
             candidate_id = str(getattr(candidate, "id", "") or "")
             if not candidate_id or candidate_id == person_id or candidate_id in excluded_ids:
@@ -3081,6 +3293,52 @@ class DesktopBridge(QObject):
                     "url": explicit_url,
                     "evidenceId": str(metadata.get("evidence_id") or ""),
                     "createdAt": self._date_text(getattr(candidate, "created_at", None)),
+                    "reviewStatus": str(
+                        decisions.get(
+                            candidate_id,
+                            {},
+                        ).get(
+                            "decision",
+                            "unreviewed",
+                        )
+                    ),
+                    "reviewLabel": str(
+                        decisions.get(
+                            candidate_id,
+                            {},
+                        ).get(
+                            "label",
+                            "Unreviewed",
+                        )
+                    ),
+                    "reviewNote": str(
+                        decisions.get(
+                            candidate_id,
+                            {},
+                        ).get(
+                            "note",
+                            "",
+                        )
+                    ),
+                    "reviewedAt": str(
+                        decisions.get(
+                            candidate_id,
+                            {},
+                        ).get(
+                            "reviewedAt",
+                            "",
+                        )
+                    ),
+                    "reviewHistoryCount": int(
+                        decisions.get(
+                            candidate_id,
+                            {},
+                        ).get(
+                            "historyCount",
+                            0,
+                        )
+                        or 0
+                    ),
                 }
             )
 
@@ -3215,7 +3473,14 @@ class DesktopBridge(QObject):
         if link_service is not None:
             evidence_objects = list(
                 link_service.get_evidence_objects_for_entity(getattr(entity, "id")) or []
-            )[:50]
+            )[:100]
+
+        identity_review_decisions = (
+            PersonIdentityReviewService
+            .latest_decisions_from_evidence(
+                evidence_objects
+            )
+        )
 
         for evidence in evidence_objects:
             evidence_metadata = self._metadata_dict(getattr(evidence, "metadata_json", None))
@@ -3230,6 +3495,7 @@ class DesktopBridge(QObject):
             evidence_workflow = str(evidence_metadata.get("workflow") or "")
             is_manual = evidence_workflow == "manual_person_attachment"
             is_profile_selection = evidence_workflow == "person_profile_selection"
+            is_identity_review = evidence_workflow == "person_identity_review"
             preview_url = ""
             if evidence_type == "image" and managed_path_obj is not None and managed_path_obj.is_file():
                 preview_url = QUrl.fromLocalFile(str(managed_path_obj)).toString()
@@ -3287,8 +3553,13 @@ class DesktopBridge(QObject):
                     evidence_title=evidence_title,
                 )
 
-            if link_service is None or entity_service is None:
+            if (
+                is_identity_review
+                or link_service is None
+                or entity_service is None
+            ):
                 continue
+
             for association in list(link_service.get_entities_for_evidence(getattr(evidence, "id")) or [])[:100]:
                 related_id = str(getattr(association, "entity_id", "") or "")
                 if not related_id or related_id == str(getattr(entity, "id", "")) or related_id in seen_related:
@@ -3300,10 +3571,42 @@ class DesktopBridge(QObject):
                     continue
                 if related is None:
                     continue
-                seen_related.add(related_id)
+
                 related_type = str(
                     getattr(getattr(related, "entity_type", None), "value", getattr(related, "entity_type", "other"))
                 ).strip().lower()
+
+                review_state = (
+                    identity_review_decisions
+                    .get(
+                        related_id,
+                        {},
+                    )
+                )
+                review_decision = str(
+                    review_state.get(
+                        "decision",
+                        "",
+                    )
+                )
+
+                if (
+                    related_type
+                    in {
+                        EntityType.USERNAME.value,
+                        EntityType.ACCOUNT.value,
+                        EntityType.URL.value,
+                        EntityType.DOMAIN.value,
+                    }
+                    and review_decision
+                    in {
+                        "rejected",
+                        "review",
+                    }
+                ):
+                    continue
+
+                seen_related.add(related_id)
                 related_metadata = self._metadata_dict(getattr(related, "metadata_json", None))
                 explicit_url = self._explicit_url_from_entity_values(
                     entity_type=related_type,
@@ -3319,9 +3622,17 @@ class DesktopBridge(QObject):
                     "url": explicit_url,
                     "evidenceTitle": evidence_title,
                     "basis": (
-                        "analyst_selected"
-                        if is_profile_selection
-                        else ("manual" if is_manual else "evidence")
+                        "analyst_confirmed"
+                        if review_decision == "confirmed"
+                        else (
+                            "analyst_selected"
+                            if is_profile_selection
+                            else ("manual" if is_manual else "evidence")
+                        )
+                    ),
+                    "reviewStatus": (
+                        review_decision
+                        or "unreviewed"
                     ),
                 })
                 if explicit_url:
@@ -3355,6 +3666,7 @@ class DesktopBridge(QObject):
             self._person_profile_candidates(
                 entity,
                 excluded_ids=excluded_profile_ids,
+                review_decisions=identity_review_decisions,
             )
             if include_candidates
             else []
@@ -3384,6 +3696,27 @@ class DesktopBridge(QObject):
             "mentions": mention_rows[:40],
             "relatedEntities": related_rows[:100],
             "profileCandidates": profile_candidates,
+            "identityReview": {
+                "confirmed": sum(
+                    1
+                    for item in identity_review_decisions.values()
+                    if item.get("decision") == "confirmed"
+                ),
+                "review": sum(
+                    1
+                    for item in identity_review_decisions.values()
+                    if item.get("decision") == "review"
+                ),
+                "rejected": sum(
+                    1
+                    for item in identity_review_decisions.values()
+                    if item.get("decision") == "rejected"
+                ),
+                "historyEntries": sum(
+                    int(item.get("historyCount") or 0)
+                    for item in identity_review_decisions.values()
+                ),
+            },
             "personGraph": person_graph,
             "associationNotice": (
                 "Profiles, pages and related identifiers below are surfaced only from "
