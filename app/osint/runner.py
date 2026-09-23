@@ -30,6 +30,11 @@ import subprocess
 import threading
 import time
 
+from app.security.tool_execution_policy import (
+    ToolExecutionPolicy,
+    ToolExecutionPolicyError,
+)
+
 
 @dataclass(slots=True)
 class ToolExecutionResult:
@@ -48,6 +53,8 @@ class ToolExecutionResult:
     execution_time: float
 
     stopped_early: bool = False
+
+    blocked_by_policy: bool = False
 
 
 def _coerce_process_output(
@@ -111,8 +118,14 @@ def _read_stream_lines(
 
 class ToolRunner:
     """
-    Executes external OSINT tools.
+    Executes external OSINT tools through one security policy boundary.
     """
+
+    def __init__(
+        self,
+        policy: ToolExecutionPolicy | None = None,
+    ) -> None:
+        self.policy = policy or ToolExecutionPolicy()
 
     def run(
         self,
@@ -142,23 +155,43 @@ class ToolRunner:
         the original buffered subprocess.run behaviour.
         """
 
-        process_env = os.environ.copy()
-
-        if env:
-            process_env.update(
-                {
-                    str(key): str(value)
-                    for key, value in env.items()
-                }
-            )
-
-        if stdout_line_limit is None:
-
-            return self._run_buffered(
+        try:
+            prepared = self.policy.prepare(
                 command=command,
                 timeout=timeout,
                 working_directory=working_directory,
                 stdin=stdin,
+                environment_overrides=env,
+            )
+        except ToolExecutionPolicyError as exc:
+            return ToolExecutionResult(
+                success=False,
+                return_code=-4,
+                stdout="",
+                stderr=(
+                    "Execution blocked by runtime policy: "
+                    f"{exc}"
+                ),
+                execution_time=0.0,
+                blocked_by_policy=True,
+            )
+
+        process_env = os.environ.copy()
+        process_env.update(
+            prepared.environment_overrides
+        )
+
+        normalized_command = list(
+            prepared.command
+        )
+
+        if stdout_line_limit is None:
+
+            return self._run_buffered(
+                command=normalized_command,
+                timeout=prepared.timeout,
+                working_directory=prepared.working_directory,
+                stdin=prepared.stdin,
                 process_env=process_env,
             )
 
@@ -168,10 +201,10 @@ class ToolRunner:
         )
 
         return self._run_streaming(
-            command=command,
-            timeout=timeout,
-            working_directory=working_directory,
-            stdin=stdin,
+            command=normalized_command,
+            timeout=prepared.timeout,
+            working_directory=prepared.working_directory,
+            stdin=prepared.stdin,
             process_env=process_env,
             stdout_line_limit=line_limit,
         )
@@ -180,7 +213,7 @@ class ToolRunner:
     def _run_buffered(
         *,
         command: list[str],
-        timeout: int,
+        timeout: int | float,
         working_directory: Path | None,
         stdin: str | None,
         process_env: dict[str, str],
@@ -303,7 +336,7 @@ class ToolRunner:
         self,
         *,
         command: list[str],
-        timeout: int,
+        timeout: int | float,
         working_directory: Path | None,
         stdin: str | None,
         process_env: dict[str, str],
