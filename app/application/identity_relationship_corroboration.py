@@ -529,10 +529,34 @@ class IdentityRelationshipCorroborationService:
                 if isinstance(raw, (list, tuple, set, frozenset))
                 else [raw]
             )
+
+            if key in {
+                "evidence_id",
+                "evidence_ids",
+                "source_evidence_id",
+                "supporting_evidence_id",
+                "supporting_evidence_ids",
+            }:
+                namespace = "evidence"
+            elif key in {
+                "source_id",
+                "source_ids",
+            }:
+                namespace = "source"
+            elif key in {
+                "message_id",
+                "message_ids",
+            }:
+                namespace = "message"
+            else:
+                namespace = "finding"
+
             for value in values:
                 text = str(value or "").strip()
                 if text:
-                    tokens.add(f"{key}:{text}")
+                    tokens.add(
+                        f"{namespace}:{text}"
+                    )
 
         lineage = metadata.get("provenance")
         if isinstance(lineage, dict):
