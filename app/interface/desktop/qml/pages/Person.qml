@@ -1415,14 +1415,23 @@ Item {
                             }
                             Text {
                                 x: 66; y: 47; width: parent.width - 300
-                                text: Number(candidateRow.modelData.relationshipBoost || 0) > 0
-                                    ? String(candidateRow.modelData.relationshipSummary || "Known-associate corroboration")
-                                    : (candidateRow.modelData.origin
+                                text: {
+                                    var hasCalibration = Number(candidateRow.modelData.calibrationIdentitySupport || 0) > 0
+                                        || Number(candidateRow.modelData.calibrationRelationshipSupport || 0) > 0
+                                        || Number(candidateRow.modelData.calibrationConflictPenalty || 0) > 0
+                                        || Boolean(candidateRow.modelData.calibrationHardConflict)
+                                    if (hasCalibration)
+                                        return String(candidateRow.modelData.calibrationSummary || "Calibrated identity evidence")
+                                    return candidateRow.modelData.origin
                                         ? "Origin: " + String(candidateRow.modelData.origin)
-                                        : "Stored OSINT finding")
-                                color: Number(candidateRow.modelData.relationshipBoost || 0) > 0
-                                    ? "#36cfa1"
-                                    : "#6f879a"
+                                        : "Stored OSINT finding"
+                                }
+                                color: Boolean(candidateRow.modelData.calibrationHardConflict)
+                                    ? Theme.danger
+                                    : ((Number(candidateRow.modelData.calibrationIdentitySupport || 0) > 0
+                                        || Number(candidateRow.modelData.calibrationRelationshipSupport || 0) > 0)
+                                        ? "#36cfa1"
+                                        : "#6f879a")
                                 font.pixelSize: 8
                                 elide: Text.ElideRight
                             }
@@ -1437,8 +1446,11 @@ Item {
                                     + (candidateRow.modelData.reviewHistoryCount
                                         ? " · history " + String(candidateRow.modelData.reviewHistoryCount)
                                         : "")
-                                    + (Number(candidateRow.modelData.relationshipBoost || 0) > 0
-                                        ? " · social +" + String(candidateRow.modelData.relationshipBoost) + "%"
+                                    + (candidateRow.modelData.calibrationLabel
+                                        ? " · " + String(candidateRow.modelData.calibrationLabel)
+                                        : "")
+                                    + (Number(candidateRow.modelData.calibrationRelationshipSupport || 0) > 0
+                                        ? " · social " + String(candidateRow.modelData.calibrationRelationshipSupport) + "%"
                                         : "")
                                 color: {
                                     var status = String(candidateRow.modelData.reviewStatus || "unreviewed")
@@ -1465,9 +1477,12 @@ Item {
                                         ? baseValue + " → " + effectiveValue
                                         : baseValue
                                 }
-                                color: Number(candidateRow.modelData.relationshipBoost || 0) > 0
-                                    ? "#36cfa1"
-                                    : Theme.textSecondary
+                                color: Boolean(candidateRow.modelData.calibrationHardConflict)
+                                    ? Theme.danger
+                                    : (String(candidateRow.modelData.effectiveConfidence || "")
+                                        !== String(candidateRow.modelData.baseConfidence || candidateRow.modelData.confidence || "")
+                                        ? "#36cfa1"
+                                        : Theme.textSecondary)
                                 font.pixelSize: 9
                             }
 
