@@ -39,16 +39,17 @@ class FakeEvidenceService:
         )
 
     def create_evidence(self, **kwargs):
+        payload = dict(kwargs)
+        metadata_json = payload.pop(
+            "metadata_json",
+            None,
+        )
         row = SimpleNamespace(
             id=uuid4(),
-            source_id=kwargs.get("source_id"),
             created_at=datetime.now(UTC)
             + timedelta(microseconds=len(self.rows)),
-            metadata_json=kwargs.pop(
-                "metadata_json",
-                None,
-            ),
-            **kwargs,
+            metadata_json=metadata_json,
+            **payload,
         )
         self.rows.append(row)
         return row
