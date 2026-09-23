@@ -66,8 +66,14 @@ class InvestigationSearchBridge(QObject):
     def accountEnrichmentBusy(self) -> bool:
         return self._account_busy
 
-    @Slot("QVariantMap", str, "QVariantMap", result=bool)
-    def search(self, profile: object, case_id: str, options: object = None) -> bool:
+    @Slot("QVariantMap", str, "QVariantMap", str, result=bool)
+    def search(
+        self,
+        profile: object,
+        case_id: str,
+        options: object = None,
+        person_entity_id: str = "",
+    ) -> bool:
         if self._busy or self._account_busy:
             self._set_message(
                 "Another investigation or account-enrichment task is already running."
@@ -77,6 +83,82 @@ class InvestigationSearchBridge(QObject):
         normalized_case_id = str(case_id or "").strip()
         if not normalized_case_id:
             self._set_message("Select an investigation before running all-source search.")
+            return False
+
+        normalized_person_id = str(
+            person_entity_id
+            or ""
+        ).strip()
+        if not normalized_person_id:
+            self._set_message(
+                "Select the person these search results belong to."
+            )
+            return False
+
+        entity_service = getattr(
+            self._container,
+            "entity_service",
+            None,
+        )
+        if entity_service is None:
+            self._set_message(
+                "PERSON selection is unavailable because the entity service is not configured."
+            )
+            return False
+
+        try:
+            case_uuid = UUID(
+                normalized_case_id
+            )
+            person = entity_service.get_entity(
+                UUID(normalized_person_id)
+            )
+        except Exception as exc:
+            LOGGER.exception(
+                "Unable to resolve PERSON search target"
+            )
+            self._set_message(
+                f"Unable to resolve selected person: {exc}"
+            )
+            return False
+
+        if person is None:
+            self._set_message(
+                "The selected person no longer exists."
+            )
+            return False
+
+        person_type = str(
+            getattr(
+                getattr(
+                    person,
+                    "entity_type",
+                    None,
+                ),
+                "value",
+                getattr(
+                    person,
+                    "entity_type",
+                    "",
+                ),
+            )
+            or ""
+        ).strip().lower()
+
+        if person_type != EntityType.PERSON.value:
+            self._set_message(
+                "The selected search target must be a person."
+            )
+            return False
+
+        if getattr(
+            person,
+            "case_id",
+            None,
+        ) != case_uuid:
+            self._set_message(
+                "The selected person belongs to a different investigation."
+            )
             return False
 
         payload = dict(profile) if isinstance(profile, dict) else {}
@@ -93,6 +175,15 @@ class InvestigationSearchBridge(QObject):
             "startedAt": started_at,
             "profile": payload,
             "options": settings,
+            "personEntityId": normalized_person_id,
+            "personLabel": str(
+                getattr(
+                    person,
+                    "value",
+                    "",
+                )
+                or "Person"
+            ),
         }
         self._run = {
             "hasRun": True,
@@ -117,6 +208,17 @@ class InvestigationSearchBridge(QObject):
             "startedLabel": started_at.strftime("%b %d, %Y · %H:%M:%S"),
             "durationText": "Running…",
             "error": "",
+            "personTarget": {
+                "id": normalized_person_id,
+                "label": str(
+                    getattr(
+                        person,
+                        "value",
+                        "",
+                    )
+                    or "Person"
+                ),
+            },
             "rawSecretValuesStored": False,
         }
         self._busy = True
@@ -129,6 +231,7 @@ class InvestigationSearchBridge(QObject):
                 case_id=normalized_case_id,
                 profile=payload,
                 options=settings,
+                person_entity_id=normalized_person_id,
             )
             worker.moveToThread(thread)
             thread.started.connect(worker.run)
