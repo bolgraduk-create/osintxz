@@ -3288,8 +3288,24 @@ class DesktopBridge(QObject):
             conflict_categories=string_tuple(
                 conflict_categories
             ),
-            pivot_allowed=bool(
+            pivot_allowed=(
                 pivot_raw
+                if isinstance(
+                    pivot_raw,
+                    bool,
+                )
+                else str(
+                    pivot_raw
+                    or ""
+                )
+                .strip()
+                .lower()
+                in {
+                    "1",
+                    "true",
+                    "yes",
+                    "on",
+                }
             ),
         )
 
