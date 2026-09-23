@@ -100,6 +100,9 @@ from app.services.investigation_rag_grounded_citation_service import (
 from app.services.investigation_unified_analytical_context_service import (
     InvestigationUnifiedAnalyticalContextService,
 )
+from app.services.investigation_explainability_service import (
+    InvestigationExplainabilityService,
+)
 
 
 logger = logging.getLogger(
@@ -178,6 +181,10 @@ class InvestigationAnalysisOrchestrator:
         investigation_unified_analytical_context_service: (
             InvestigationUnifiedAnalyticalContextService
         ),
+        investigation_explainability_service: (
+            InvestigationExplainabilityService
+            | None
+        ) = None,
     ) -> None:
 
         self.case_service = (
@@ -234,6 +241,11 @@ class InvestigationAnalysisOrchestrator:
 
         self.investigation_unified_analytical_context_service = (
             investigation_unified_analytical_context_service
+        )
+
+        self.investigation_explainability_service = (
+            investigation_explainability_service
+            or InvestigationExplainabilityService()
         )
 
         self._stage_handlers: dict[
@@ -1491,6 +1503,68 @@ class InvestigationAnalysisOrchestrator:
             )
         )
 
+        explainability_bundles = []
+
+        if entity_resolution is not None:
+            for resolution_result in (
+                entity_resolution.resolution.results
+            ):
+                explainability_bundles.append(
+                    self.investigation_explainability_service
+                    .explain_entity_resolution(
+                        resolution_result
+                    )
+                )
+
+        if evidence is not None:
+            for proposition in (
+                evidence.proposition_confidence_results
+            ):
+                explainability_bundles.append(
+                    self.investigation_explainability_service
+                    .explain_evidence_proposition(
+                        proposition
+                    )
+                )
+
+        if graph is not None:
+            for graph_entity_explanation in (
+                graph.explainability.entity_explanations
+            ):
+                explainability_bundles.append(
+                    self.investigation_explainability_service
+                    .explain_graph_entity(
+                        graph_entity_explanation
+                    )
+                )
+
+        if rag_retrieval is not None:
+            for rag_source in rag_retrieval.sources:
+                source_metadata = (
+                    rag_source.metadata
+                    if isinstance(
+                        rag_source.metadata,
+                        dict,
+                    )
+                    else {}
+                )
+                explainability_bundles.append(
+                    self.investigation_explainability_service
+                    .from_payloads(
+                        source_metadata.get(
+                            "investigation_explainability"
+                        )
+                        or ()
+                    )
+                )
+
+        unified_explainability = (
+            self.investigation_explainability_service
+            .collect(
+                explainability_bundles
+            )
+        )
+
         return (
             self
             .investigation_unified_analytical_context_service
@@ -1517,6 +1591,9 @@ class InvestigationAnalysisOrchestrator:
                 multimodal_results=(
                     multimodal_results
                 ),
+                explainability=(
+                    unified_explainability
+                ),
                 rag_retrieval=rag_retrieval,
                 rag_context=rag_context,
                 rag_summary=rag_summary,
@@ -1532,6 +1609,10 @@ class InvestigationAnalysisOrchestrator:
                     "question_supplied": bool(
                         request.question
                     ),
+                    "explainability_count": len(
+                        unified_explainability.explanations
+                    ),
+                    "graph_pair_explanations_materialized": False,
                 },
             )
         )
