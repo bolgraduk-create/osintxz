@@ -185,6 +185,68 @@ def test_same_provenance_is_suppressed_as_circular_support():
     assert result.suppressed_circular == 1
 
 
+def test_equivalent_evidence_provenance_keys_are_treated_as_same_lineage():
+    case_id = uuid4()
+    shared_evidence = uuid4()
+
+    person = _entity(
+        case_id=case_id,
+        entity_type=EntityType.PERSON,
+        value="Person A",
+    )
+    candidate = _entity(
+        case_id=case_id,
+        entity_type=EntityType.ACCOUNT,
+        value="@candidate",
+        confidence=0.58,
+    )
+    associate = _entity(
+        case_id=case_id,
+        entity_type=EntityType.PERSON,
+        value="Person B",
+    )
+
+    known = _relationship(
+        case_id=case_id,
+        source=person,
+        target=associate,
+        confidence=0.9,
+    )
+    known.metadata_json = json.dumps(
+        {
+            "supporting_evidence_id": str(
+                shared_evidence
+            )
+        }
+    )
+
+    observed = _relationship(
+        case_id=case_id,
+        source=candidate,
+        target=associate,
+        confidence=0.9,
+        evidence_id=shared_evidence,
+    )
+
+    relationships = [
+        known,
+        observed,
+    ]
+
+    result = _service(
+        relationships,
+        [person, candidate, associate],
+    ).assess(
+        person=person,
+        candidate=candidate,
+        relationships=relationships,
+    )
+
+    assert result.effective_confidence == 0.58
+    assert result.suppressed_circular == 1
+    assert result.signals == ()
+
+
 def test_incomplete_lineage_is_downweighted_not_treated_as_full_support():
     case_id = uuid4()
     person = _entity(
