@@ -142,6 +142,41 @@ class InvestigationEvidenceConfidenceSearchEnrichmentService:
                 "ranking_unchanged": True,
             }
 
+            search_explanation = hit.metadata.get(
+                "search_explanation"
+            )
+            if isinstance(
+                search_explanation,
+                dict,
+            ):
+                search_explanation[
+                    "canonical_evidence_confidence"
+                ] = {
+                    "scope": "proposition_support",
+                    "confidence": (
+                        strongest[
+                            "confidence_score"
+                        ]
+                    ),
+                    "coverage": (
+                        strongest[
+                            "assessment_coverage"
+                        ]
+                    ),
+                    "proposition_key": (
+                        strongest[
+                            "proposition_key"
+                        ]
+                    ),
+                    "explanation": dict(
+                        strongest.get(
+                            "explanation"
+                        )
+                        or {}
+                    ),
+                    "search_ranking_changed": False,
+                }
+
         return hits
 
     def _payload(
