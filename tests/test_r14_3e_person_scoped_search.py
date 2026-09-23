@@ -191,6 +191,19 @@ def test_entity_directory_is_person_only_and_can_create_people():
         assert removed_category not in qml
 
 
+def test_app_combo_box_honors_text_role_for_object_models():
+    combo = Path(
+        "app/interface/desktop/qml/components/AppComboBox.qml"
+    ).read_text(encoding="utf-8")
+    search = Path(
+        "app/interface/desktop/qml/pages/Search.qml"
+    ).read_text(encoding="utf-8")
+
+    assert "text: root.textAt(option.index)" in combo
+    assert 'textRole: "label"' in search
+    assert "text: String(option.modelData)" not in combo
+
+
 def test_search_requires_explicit_person_scope_and_can_create_new_person():
     qml = Path(
         "app/interface/desktop/qml/pages/Search.qml"
