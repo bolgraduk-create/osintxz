@@ -27,6 +27,10 @@ from app.application.person_identity_review_service import (
 from app.application.identity_relationship_corroboration import (
     IdentityRelationshipCorroborationService,
 )
+from app.application.identity_confidence_calibration import (
+    IdentityConfidenceCalibrationService,
+)
+from app.application.identity_resolution import IdentityResolution
 from app.application.unified_target_profile import build_unified_target_profile
 from app.investigation.search_query import InvestigationSearchQuery, SearchMethod
 from app.models.entity import EntityType
@@ -3183,6 +3187,112 @@ class DesktopBridge(QObject):
         counts["all"] = sum(self._entity_type_counts.values())
         return counts
 
+    @classmethod
+    def _identity_resolution_from_metadata(
+        cls,
+        metadata: dict[str, Any],
+    ) -> IdentityResolution | None:
+        """Read persisted/search identity fields when provenance carries them."""
+
+        if not isinstance(metadata, dict):
+            return None
+
+        status = str(
+            metadata.get("identityStatus")
+            or metadata.get("identity_status")
+            or ""
+        ).strip().lower()
+
+        score = cls._safe_optional_float(
+            metadata.get("identityAlignmentScore")
+            if metadata.get("identityAlignmentScore") is not None
+            else metadata.get("identity_alignment_score")
+        )
+
+        matched = metadata.get(
+            "identityMatchedSignals"
+        )
+        if matched is None:
+            matched = metadata.get(
+                "identity_matched_signals"
+            )
+
+        conflicts = metadata.get(
+            "identityConflictSignals"
+        )
+        if conflicts is None:
+            conflicts = metadata.get(
+                "identity_conflict_signals"
+            )
+
+        matched_categories = metadata.get(
+            "identityMatchedCategories"
+        )
+        if matched_categories is None:
+            matched_categories = metadata.get(
+                "identity_matched_categories"
+            )
+
+        conflict_categories = metadata.get(
+            "identityConflictCategories"
+        )
+        if conflict_categories is None:
+            conflict_categories = metadata.get(
+                "identity_conflict_categories"
+            )
+
+        pivot_raw = metadata.get(
+            "identityPivotAllowed"
+        )
+        if pivot_raw is None:
+            pivot_raw = metadata.get(
+                "identity_pivot_allowed"
+            )
+
+        if (
+            not status
+            and score is None
+            and not matched
+            and not conflicts
+        ):
+            return None
+
+        def string_tuple(value: Any) -> tuple[str, ...]:
+            if not isinstance(
+                value,
+                (list, tuple, set, frozenset),
+            ):
+                return ()
+            return tuple(
+                dict.fromkeys(
+                    str(item).strip()
+                    for item in value
+                    if str(item).strip()
+                )
+            )
+
+        return IdentityResolution(
+            status=status or "not_applicable",
+            score=max(
+                0.0,
+                min(
+                    100.0,
+                    float(score or 0.0),
+                ),
+            ),
+            matched=string_tuple(matched),
+            conflicts=string_tuple(conflicts),
+            matched_categories=string_tuple(
+                matched_categories
+            ),
+            conflict_categories=string_tuple(
+                conflict_categories
+            ),
+            pivot_allowed=bool(
+                pivot_raw
+            ),
+        )
+
     @staticmethod
     def _metadata_dict(value: Any) -> dict[str, Any]:
         if isinstance(value, dict):
@@ -3341,6 +3451,9 @@ class DesktopBridge(QObject):
             None,
         )
         corroboration_service = None
+        calibration_service = (
+            IdentityConfidenceCalibrationService()
+        )
         case_relationships: list[Any] = []
 
         if (
@@ -3412,6 +3525,7 @@ class DesktopBridge(QObject):
                     )
                 )
             )
+            corroboration_result = None
             corroboration_payload: dict[str, Any] = {}
 
             if (
@@ -3425,7 +3539,7 @@ class DesktopBridge(QObject):
                 }
             ):
                 try:
-                    corroboration_payload = (
+                    corroboration_result = (
                         corroboration_service
                         .assess(
                             person=person,
@@ -3437,6 +3551,9 @@ class DesktopBridge(QObject):
                                 else 0.0
                             ),
                         )
+                    )
+                    corroboration_payload = (
+                        corroboration_result
                         .to_payload()
                     )
                 except Exception:
@@ -3446,14 +3563,33 @@ class DesktopBridge(QObject):
                         exc_info=True,
                     )
 
-            effective_confidence_value = (
-                self._safe_optional_float(
-                    corroboration_payload.get(
-                        "effectiveConfidence"
-                    )
+            identity_resolution = (
+                self._identity_resolution_from_metadata(
+                    metadata
                 )
-                if corroboration_payload
-                else base_confidence_value
+            )
+            review_state = decisions.get(
+                candidate_id,
+                {},
+            )
+            calibration = calibration_service.calibrate(
+                base_confidence=(
+                    base_confidence_value
+                    if base_confidence_value is not None
+                    else 0.0
+                ),
+                identity_resolution=identity_resolution,
+                relationship_result=corroboration_result,
+                analyst_decision=str(
+                    review_state.get(
+                        "decision",
+                        "unreviewed",
+                    )
+                ),
+            )
+            calibration_payload = calibration.to_payload()
+            effective_confidence_value = (
+                calibration.calibrated_confidence
             )
 
             candidates.append(
@@ -3470,6 +3606,66 @@ class DesktopBridge(QObject):
                     ),
                     "effectiveConfidence": self._confidence_text(
                         effective_confidence_value
+                    ),
+                    "calibratedConfidence": self._confidence_text(
+                        calibration.calibrated_confidence
+                    ),
+                    "calibrationLabel": str(
+                        calibration_payload.get(
+                            "machineLabel",
+                            "",
+                        )
+                    ),
+                    "calibrationSummary": str(
+                        calibration_payload.get(
+                            "summary",
+                            "",
+                        )
+                    ),
+                    "calibrationIdentitySupport": round(
+                        float(
+                            calibration.identity_support
+                        )
+                        * 100.0,
+                        1,
+                    ),
+                    "calibrationRelationshipSupport": round(
+                        float(
+                            calibration.relationship_support
+                        )
+                        * 100.0,
+                        1,
+                    ),
+                    "calibrationConflictPenalty": round(
+                        float(
+                            calibration.conflict_penalty
+                        )
+                        * 100.0,
+                        1,
+                    ),
+                    "calibrationHardConflict": bool(
+                        calibration.hard_conflict
+                    ),
+                    "calibrationReviewRequired": bool(
+                        calibration.review_required
+                    ),
+                    "calibrationPivotAllowed": bool(
+                        calibration.pivot_allowed
+                    ),
+                    "calibrationPositiveSignals": list(
+                        calibration.positive_signals
+                    ),
+                    "calibrationNegativeSignals": list(
+                        calibration.negative_signals
+                    ),
+                    "socialEffectiveConfidence": self._confidence_text(
+                        self._safe_optional_float(
+                            corroboration_payload.get(
+                                "effectiveConfidence"
+                            )
+                        )
+                        if corroboration_payload
+                        else base_confidence_value
                     ),
                     "relationshipBoost": round(
                         float(
