@@ -95,39 +95,31 @@ Item {
     }
 
     function rebuildReviewRows() {
-        var known = ({})
-        function addKnown(value) {
-            var key = root.normalizeReviewKey(value)
-            if (key.length) known[key] = true
-        }
-
-        addKnown(root.person.title)
-        addKnown(root.person.normalizedValue)
-        for (var i = 0; i < root.relatedRows.length; ++i) {
-            addKnown(root.relatedRows[i].value)
-            addKnown(root.relatedRows[i].url)
-        }
-        for (var j = 0; j < root.links.length; ++j) {
-            addKnown(root.links[j].value)
-            addKnown(root.links[j].url)
-        }
-        for (var k = 0; k < root.profileRows.length; ++k) {
-            addKnown(root.profileRows[k].value)
-            addKnown(root.profileRows[k].url)
-        }
-
         var review = []
-        for (var n = 0; n < root.profileCandidates.length; ++n) {
-            var candidate = root.profileCandidates[n]
-            var originKey = root.normalizeReviewKey(candidate.origin)
-            var valueKey = root.normalizeReviewKey(candidate.value)
-            var urlKey = root.normalizeReviewKey(candidate.url)
-            if ((originKey.length && known[originKey])
-                    || (valueKey.length && known[valueKey])
-                    || (urlKey.length && known[urlKey])) {
+
+        for (var i = 0; i < root.profileCandidates.length; ++i) {
+            var candidate = root.profileCandidates[i]
+            var status = String(candidate.reviewStatus || "unreviewed").toLowerCase()
+
+            if (status !== "confirmed")
                 review.push(candidate)
-            }
         }
+
+        var order = {
+            "unreviewed": 0,
+            "review": 1,
+            "rejected": 2
+        }
+
+        review.sort(function(a, b) {
+            var aStatus = String(a.reviewStatus || "unreviewed").toLowerCase()
+            var bStatus = String(b.reviewStatus || "unreviewed").toLowerCase()
+            var aOrder = order[aStatus] === undefined ? 9 : order[aStatus]
+            var bOrder = order[bStatus] === undefined ? 9 : order[bStatus]
+            if (aOrder !== bOrder) return aOrder - bOrder
+            return String(a.value || "").localeCompare(String(b.value || ""))
+        })
+
         root.reviewRows = review
     }
 
@@ -213,7 +205,8 @@ Item {
         var parts = []
         var rawType = String(item.rawType || item.type || "").replace(/_/g, " ")
         if (rawType.length) parts.push(rawType)
-        if (item.basis === "analyst_selected") parts.push("analyst linked")
+        if (item.basis === "analyst_confirmed") parts.push("analyst confirmed")
+        else if (item.basis === "analyst_selected") parts.push("analyst linked")
         else if (item.basis === "manual") parts.push("manual")
         else if (item.basis) parts.push(String(item.basis))
         if (item.evidenceTitle) parts.push(String(item.evidenceTitle))
@@ -251,6 +244,23 @@ Item {
             if (haystack.indexOf(query) >= 0) result.push(item)
         }
         return result
+    }
+
+    function applyIdentityDecision(candidateId, decision) {
+        root.candidateError = ""
+
+        var result = desktopBridge.reviewIdentityCandidate(
+            String(candidateId || ""),
+            String(decision || ""),
+            ""
+        )
+
+        if (!(result && result.ok)) {
+            root.candidateError = result && result.error
+                ? String(result.error)
+                : "Unable to save identity review decision."
+            return
+        }
     }
 
     function reload() {
@@ -404,7 +414,7 @@ Item {
                                 x: 18
                                 y: 18
                                 width: 72
-                                height: 72
+                                height: 96
                                 source: String(root.person.avatarUrl || "")
                                 fallbackSource: "../../assets/icons/users_purple.svg"
                                 backgroundColor: "#2a2140"
@@ -1234,10 +1244,10 @@ Item {
                 Layout.preferredHeight: 72
                 color: "transparent"
                 Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; height: 1; color: Theme.divider }
-                Text { x: 20; y: 13; text: "Add existing intelligence"; color: Theme.textPrimary; font.pixelSize: 18; font.weight: Font.DemiBold }
+                Text { x: 20; y: 13; text: "Review account identity"; color: Theme.textPrimary; font.pixelSize: 18; font.weight: Font.DemiBold }
                 Text {
                     x: 20; y: 40; width: parent.width - 40
-                    text: "Choose already-persisted OSINT data for this person. Selection records relevance, not verified ownership."
+                    text: "Confirm, reject, or keep an account for review. Manual decisions stay separate from machine confidence."
                     color: Theme.textMuted; font.pixelSize: 9; elide: Text.ElideRight
                 }
             }
@@ -1307,48 +1317,87 @@ Item {
                             }
 
                             Text {
-                                x: 66; y: 11; width: parent.width - 220
+                                x: 66; y: 9; width: parent.width - 300
                                 text: String(candidateRow.modelData.value || "Unnamed intelligence item")
                                 color: Theme.textPrimary; font.pixelSize: 11; font.weight: Font.Medium; elide: Text.ElideRight
                             }
                             Text {
-                                x: 66; y: 31; width: parent.width - 220
+                                x: 66; y: 29; width: parent.width - 300
                                 text: String(candidateRow.modelData.typeLabel || candidateRow.modelData.type || "Entity")
                                     + (candidateRow.modelData.connector ? " · " + String(candidateRow.modelData.connector) : "")
                                     + (candidateRow.modelData.source ? " · " + String(candidateRow.modelData.source) : "")
                                 color: Theme.textMuted; font.pixelSize: 9; elide: Text.ElideRight
                             }
                             Text {
-                                x: 66; y: 49; width: parent.width - 220
+                                x: 66; y: 47; width: parent.width - 300
                                 text: candidateRow.modelData.origin ? "Origin: " + String(candidateRow.modelData.origin) : "Stored OSINT finding"
                                 color: "#6f879a"; font.pixelSize: 8; elide: Text.ElideRight
                             }
 
                             Text {
-                                anchors.right: addExistingButton.left
-                                anchors.rightMargin: 12
-                                anchors.verticalCenter: parent.verticalCenter
+                                x: 66
+                                y: 65
+                                width: parent.width - 300
+                                text: "Manual status: "
+                                    + String(candidateRow.modelData.reviewLabel || "Unreviewed")
+                                    + (candidateRow.modelData.reviewHistoryCount
+                                        ? " · history " + String(candidateRow.modelData.reviewHistoryCount)
+                                        : "")
+                                color: {
+                                    var status = String(candidateRow.modelData.reviewStatus || "unreviewed")
+                                    if (status === "rejected") return Theme.danger
+                                    if (status === "review") return "#e5a84b"
+                                    return Theme.textSecondary
+                                }
+                                font.pixelSize: 8
+                                elide: Text.ElideRight
+                            }
+
+                            Text {
+                                anchors.right: reviewActions.left
+                                anchors.rightMargin: 10
+                                anchors.top: parent.top
+                                anchors.topMargin: 12
                                 text: String(candidateRow.modelData.confidence || "")
                                 color: Theme.textSecondary
                                 font.pixelSize: 9
                             }
 
-                            AppButton {
-                                id: addExistingButton
+                            Row {
+                                id: reviewActions
                                 anchors.right: parent.right
-                                anchors.rightMargin: 12
+                                anchors.rightMargin: 10
                                 anchors.verticalCenter: parent.verticalCenter
-                                width: 82
-                                height: 30
-                                text: "Add"
-                                onClicked: {
-                                    root.candidateError = ""
-                                    var result = desktopBridge.addExistingDataToPerson(String(candidateRow.modelData.id || ""))
-                                    if (!(result && result.ok)) {
-                                        root.candidateError = result && result.error
-                                            ? String(result.error)
-                                            : "Unable to add selected intelligence."
-                                    }
+                                spacing: 4
+
+                                AppButton {
+                                    width: 72
+                                    height: 30
+                                    text: "Confirm"
+                                    onClicked: root.applyIdentityDecision(
+                                        candidateRow.modelData.id,
+                                        "confirmed"
+                                    )
+                                }
+
+                                AppButton {
+                                    width: 68
+                                    height: 30
+                                    text: "Review"
+                                    onClicked: root.applyIdentityDecision(
+                                        candidateRow.modelData.id,
+                                        "review"
+                                    )
+                                }
+
+                                AppButton {
+                                    width: 68
+                                    height: 30
+                                    text: "Reject"
+                                    onClicked: root.applyIdentityDecision(
+                                        candidateRow.modelData.id,
+                                        "rejected"
+                                    )
                                 }
                             }
 
@@ -1357,7 +1406,7 @@ Item {
                                 anchors.left: parent.left
                                 anchors.top: parent.top
                                 anchors.bottom: parent.bottom
-                                anchors.right: addExistingButton.left
+                                anchors.right: reviewActions.left
                                 hoverEnabled: true
                                 acceptedButtons: Qt.NoButton
                             }
@@ -1370,7 +1419,7 @@ Item {
                         anchors.centerIn: parent
                         visible: candidateList.count === 0
                         text: root.reviewRows.length === 0
-                            ? "No unlinked OSINT profile candidates are currently stored in this investigation."
+                            ? "No OSINT account/profile candidates are currently available for identity review."
                             : "No candidates match this filter."
                         color: Theme.textMuted
                         font.pixelSize: 10
@@ -1391,7 +1440,7 @@ Item {
                     Layout.fillWidth: true
                     Text {
                         Layout.fillWidth: true
-                        text: String(root.reviewRows.length) + " relevant candidate(s) available"
+                        text: String(root.reviewRows.length) + " candidate(s) available for identity review"
                         color: Theme.textMuted
                         font.pixelSize: 9
                     }
