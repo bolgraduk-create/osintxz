@@ -24,6 +24,9 @@ from app.application.person_identity_review_service import (
     IdentityReviewDecision,
     PersonIdentityReviewService,
 )
+from app.application.identity_relationship_corroboration import (
+    IdentityRelationshipCorroborationService,
+)
 from app.application.unified_target_profile import build_unified_target_profile
 from app.investigation.search_query import InvestigationSearchQuery, SearchMethod
 from app.models.entity import EntityType
@@ -3331,6 +3334,40 @@ class DesktopBridge(QObject):
         candidates: list[dict[str, Any]] = []
         person_id = str(getattr(person, "id", "") or "")
         decisions = dict(review_decisions or {})
+
+        relationship_service = getattr(
+            self._container,
+            "relationship_service",
+            None,
+        )
+        corroboration_service = None
+        case_relationships: list[Any] = []
+
+        if (
+            relationship_service is not None
+            and entity_service is not None
+        ):
+            corroboration_service = (
+                IdentityRelationshipCorroborationService(
+                    relationship_service=relationship_service,
+                    entity_service=entity_service,
+                )
+            )
+            try:
+                case_relationships = list(
+                    relationship_service
+                    .get_case_relationships(
+                        getattr(person, "case_id")
+                    )
+                    or []
+                )
+            except Exception:
+                LOGGER.debug(
+                    "Unable to load relationships for identity corroboration",
+                    exc_info=True,
+                )
+                case_relationships = []
+
         for candidate in rows:
             candidate_id = str(getattr(candidate, "id", "") or "")
             if not candidate_id or candidate_id == person_id or candidate_id in excluded_ids:
@@ -3365,6 +3402,60 @@ class DesktopBridge(QObject):
                 value=value,
                 metadata=metadata,
             )
+
+            base_confidence_value = (
+                self._safe_optional_float(
+                    getattr(
+                        candidate,
+                        "confidence",
+                        None,
+                    )
+                )
+            )
+            corroboration_payload: dict[str, Any] = {}
+
+            if (
+                corroboration_service is not None
+                and candidate_type
+                in {
+                    EntityType.USERNAME.value,
+                    EntityType.ACCOUNT.value,
+                    EntityType.URL.value,
+                    EntityType.DOMAIN.value,
+                }
+            ):
+                try:
+                    corroboration_payload = (
+                        corroboration_service
+                        .assess(
+                            person=person,
+                            candidate=candidate,
+                            relationships=case_relationships,
+                            base_confidence=(
+                                base_confidence_value
+                                if base_confidence_value is not None
+                                else 0.0
+                            ),
+                        )
+                        .to_payload()
+                    )
+                except Exception:
+                    LOGGER.debug(
+                        "Unable to calculate relationship corroboration for %s",
+                        candidate_id,
+                        exc_info=True,
+                    )
+
+            effective_confidence_value = (
+                self._safe_optional_float(
+                    corroboration_payload.get(
+                        "effectiveConfidence"
+                    )
+                )
+                if corroboration_payload
+                else base_confidence_value
+            )
+
             candidates.append(
                 {
                     "id": candidate_id,
@@ -3372,7 +3463,56 @@ class DesktopBridge(QObject):
                     "typeLabel": candidate_type.replace("_", " ").title(),
                     "value": value,
                     "confidence": self._confidence_text(
-                        self._safe_optional_float(getattr(candidate, "confidence", None))
+                        base_confidence_value
+                    ),
+                    "baseConfidence": self._confidence_text(
+                        base_confidence_value
+                    ),
+                    "effectiveConfidence": self._confidence_text(
+                        effective_confidence_value
+                    ),
+                    "relationshipBoost": round(
+                        float(
+                            corroboration_payload.get(
+                                "boost",
+                                0.0,
+                            )
+                            or 0.0
+                        )
+                        * 100.0,
+                        1,
+                    ),
+                    "relationshipSupport": round(
+                        float(
+                            corroboration_payload.get(
+                                "support",
+                                0.0,
+                            )
+                            or 0.0
+                        )
+                        * 100.0,
+                        1,
+                    ),
+                    "relationshipSummary": str(
+                        corroboration_payload.get(
+                            "summary",
+                            ""
+                        )
+                        or ""
+                    ),
+                    "relationshipSignals": list(
+                        corroboration_payload.get(
+                            "signals",
+                            []
+                        )
+                        or []
+                    ),
+                    "relationshipSuppressedCircular": int(
+                        corroboration_payload.get(
+                            "suppressedCircular",
+                            0,
+                        )
+                        or 0
                     ),
                     "connector": str(metadata.get("connector") or ""),
                     "source": str(metadata.get("finding_source") or metadata.get("source") or ""),
