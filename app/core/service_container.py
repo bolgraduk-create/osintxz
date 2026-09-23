@@ -311,6 +311,10 @@ from app.services.investigation_evidence_confidence_search_enrichment_service im
     InvestigationEvidenceConfidenceSearchEnrichmentService,
 )
 
+from app.services.investigation_explainability_service import (
+    InvestigationExplainabilityService,
+)
+
 from app.services.investigation_rag_context_builder import (
     InvestigationRAGContextBuilder,
 )
@@ -1118,6 +1122,10 @@ class ServiceContainer:
             InvestigationEvidenceConfidenceSearchEnrichmentService()
         )
 
+        self.investigation_explainability_service = (
+            InvestigationExplainabilityService()
+        )
+
         self.investigation_rag_retrieval_service = (
             InvestigationRAGRetrievalService(
                 unified_search_service=(
@@ -1125,6 +1133,9 @@ class ServiceContainer:
                 ),
                 evidence_confidence_enrichment_service=(
                     self.investigation_evidence_confidence_search_enrichment_service
+                ),
+                explainability_service=(
+                    self.investigation_explainability_service
                 ),
             )
         )
