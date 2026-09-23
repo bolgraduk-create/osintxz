@@ -1309,6 +1309,82 @@ class InvestigationRAGContextBuilder:
                         )
                     )
 
+                    explanation = (
+                        proposition.get(
+                            "explanation"
+                        )
+                    )
+                    if isinstance(
+                        explanation,
+                        dict,
+                    ):
+                        explanation_summary = (
+                            self._normalize_text(
+                                explanation.get(
+                                    "summary"
+                                )
+                            )
+                        )
+                        if explanation_summary:
+                            lines.append(
+                                "evidence_explanation: "
+                                + explanation_summary
+                            )
+
+                        for reason in list(
+                            explanation.get(
+                                "reasons"
+                            )
+                            or []
+                        )[:4]:
+                            if not isinstance(
+                                reason,
+                                dict,
+                            ):
+                                continue
+                            code = self._normalize_text(
+                                reason.get(
+                                    "code"
+                                )
+                            )
+                            message = self._normalize_text(
+                                reason.get(
+                                    "message"
+                                )
+                            )
+                            if code and message:
+                                lines.append(
+                                    "evidence_reason: "
+                                    f"{code}; {message}"
+                                )
+
+                        for limitation in list(
+                            explanation.get(
+                                "limitations"
+                            )
+                            or []
+                        )[:4]:
+                            if not isinstance(
+                                limitation,
+                                dict,
+                            ):
+                                continue
+                            code = self._normalize_text(
+                                limitation.get(
+                                    "code"
+                                )
+                            )
+                            message = self._normalize_text(
+                                limitation.get(
+                                    "message"
+                                )
+                            )
+                            if code and message:
+                                lines.append(
+                                    "evidence_limitation: "
+                                    f"{code}; {message}"
+                                )
+
         if methods:
 
             lines.append(
