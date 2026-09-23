@@ -1,18 +1,18 @@
 """Security policy for external OSINT tool execution.
 
-This module validates process-launch inputs before ToolRunner reaches
-subprocess APIs. It deliberately does not know individual connectors and does
-not parse tool output.
+All third-party CLI launches pass through this module before subprocess APIs.
+The policy is intentionally connector-agnostic and fail-closed.
 
-R14.2a scope:
-- validate command shape;
-- bound process timeout and stdin size;
-- validate working directories;
-- bound and sanitize per-process environment overrides;
-- block environment variables commonly used for executable/library injection.
+R14.2a:
+- command/input validation;
+- timeout and stdin bounds;
+- working-directory validation;
+- environment override restrictions.
 
-Executable inventory/allowlisting and bounded stdout/stderr capture are handled
-by later R14.2 hardening steps.
+R14.2b:
+- explicit executable inventory;
+- deterministic executable resolution to an absolute path;
+- stdout/stderr capture budgets consumed by ToolRunner.
 """
 
 from __future__ import annotations
@@ -20,7 +20,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from os import PathLike
 from pathlib import Path
+import shutil
+import sys
 from typing import Mapping, Sequence
+
+from app.security.tool_execution_inventory import (
+    canonical_executable_name,
+    is_approved_osint_executable,
+)
 
 
 class ToolExecutionPolicyError(ValueError):
@@ -36,6 +43,8 @@ class PreparedToolExecution:
     working_directory: Path | None
     stdin: str | None
     environment_overrides: dict[str, str]
+    resolved_executable: Path
+    executable_name: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,6 +57,14 @@ class ToolExecutionPolicy:
     max_stdin_bytes: int = 2 * 1024 * 1024
     max_environment_overrides: int = 32
     max_environment_value_characters: int = 32_768
+
+    # Capture limits protect the desktop process from tools that emit
+    # unexpectedly large output. ToolRunner keeps draining beyond the limit
+    # but discards additional text and marks the result as truncated.
+    max_stdout_characters: int = 8 * 1024 * 1024
+    max_stderr_characters: int = 2 * 1024 * 1024
+    output_read_chunk_characters: int = 8192
+
     blocked_environment_keys: frozenset[str] = field(
         default_factory=lambda: frozenset(
             {
@@ -76,6 +93,15 @@ class ToolExecutionPolicy:
         """Validate and normalize one process launch."""
 
         normalized_command = self._normalize_command(command)
+        resolved_executable, executable_name = self._resolve_executable(
+            normalized_command[0]
+        )
+
+        normalized_command = (
+            str(resolved_executable),
+            *normalized_command[1:],
+        )
+
         normalized_timeout = self._normalize_timeout(timeout)
         normalized_directory = self._normalize_working_directory(
             working_directory
@@ -85,12 +111,16 @@ class ToolExecutionPolicy:
             environment_overrides
         )
 
+        self._validate_output_limits()
+
         return PreparedToolExecution(
             command=normalized_command,
             timeout=normalized_timeout,
             working_directory=normalized_directory,
             stdin=normalized_stdin,
             environment_overrides=normalized_environment,
+            resolved_executable=resolved_executable,
+            executable_name=executable_name,
         )
 
     def _normalize_command(
@@ -142,6 +172,65 @@ class ToolExecutionPolicy:
             )
 
         return tuple(normalized)
+
+    def _resolve_executable(
+        self,
+        raw_executable: str,
+    ) -> tuple[Path, str]:
+        """Resolve and approve the executable before subprocess launch."""
+
+        requested = str(raw_executable).strip()
+
+        if not requested:
+            raise ToolExecutionPolicyError(
+                "Executable argument must not be empty."
+            )
+
+        current_python = Path(sys.executable).expanduser().resolve()
+
+        candidate: Path | None = None
+        requested_path = Path(requested).expanduser()
+
+        # Explicit paths are never searched through PATH.
+        if (
+            requested_path.is_absolute()
+            or requested_path.parent != Path(".")
+        ):
+            try:
+                candidate = requested_path.resolve(strict=True)
+            except (OSError, RuntimeError) as exc:
+                raise ToolExecutionPolicyError(
+                    "Executable path does not exist or cannot be resolved."
+                ) from exc
+        else:
+            resolved = shutil.which(requested)
+            if resolved:
+                try:
+                    candidate = Path(resolved).resolve(strict=True)
+                except (OSError, RuntimeError) as exc:
+                    raise ToolExecutionPolicyError(
+                        "Resolved executable cannot be accessed."
+                    ) from exc
+
+        if candidate is None or not candidate.is_file():
+            raise ToolExecutionPolicyError(
+                f"Executable is not available: {requested}"
+            )
+
+        try:
+            if candidate.samefile(current_python):
+                return candidate, "python-runtime"
+        except OSError:
+            pass
+
+        if not is_approved_osint_executable(candidate):
+            name = canonical_executable_name(candidate)
+            raise ToolExecutionPolicyError(
+                "Executable is not present in the approved OSINT inventory: "
+                f"{name or requested}"
+            )
+
+        return candidate, canonical_executable_name(candidate)
 
     def _normalize_timeout(
         self,
@@ -255,6 +344,24 @@ class ToolExecutionPolicy:
             normalized[key] = value
 
         return normalized
+
+    def _validate_output_limits(self) -> None:
+        for name, value in (
+            ("max_stdout_characters", self.max_stdout_characters),
+            ("max_stderr_characters", self.max_stderr_characters),
+            (
+                "output_read_chunk_characters",
+                self.output_read_chunk_characters,
+            ),
+        ):
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, int)
+                or value < 1
+            ):
+                raise ToolExecutionPolicyError(
+                    f"{name} must be an integer greater than zero."
+                )
 
 
 __all__ = [
