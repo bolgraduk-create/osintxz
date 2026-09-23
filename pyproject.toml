@@ -66,6 +66,7 @@ dependencies = [
     "scikit-learn>=1.6,<2.0",
     "pillow>=11.0,<13.0",
     "pillow-heif>=0.18,<2.0",
+    "av==18.1.0",
 
     # ------------------------
     # Dashboard
@@ -161,8 +162,6 @@ media = [
     "faster-whisper==1.2.1",
 
     "ctranslate2==4.8.1",
-
-    "av==18.1.0",
 ]
 
 
