@@ -14,6 +14,11 @@ Item {
     property bool showLocations: true
     property bool showPhotoGps: true
     property bool showNearbyPois: true
+    property string baseMapMode: mapWebEngineAvailable ? "streets" : "schematic"
+    property bool interactiveMapFailed: false
+    property bool useInteractiveMap: baseMapMode === "streets"
+        && Boolean(mapWebEngineAvailable)
+        && !interactiveMapFailed
     property var geoRun: geoBridge.runData || ({})
     property var nearbyPlaces: geoRun.nearbyPlaces || []
     property var weatherData: geoRun.weather || ({})
@@ -92,6 +97,23 @@ Item {
     function selectMarker(item) {
         root.selectedMarkerId = String((item || {}).id || "")
         root.selectedMarkerKind = String((item || {}).kind || "")
+        if (root.useInteractiveMap && interactiveMapLoader.item) {
+            interactiveMapLoader.item.focusMarker(
+                root.selectedMarkerKind,
+                root.selectedMarkerId
+            )
+        }
+    }
+
+    function selectMarkerByKey(kind, markerId) {
+        var rows = root.visibleMarkers()
+        for (var i = 0; i < rows.length; ++i) {
+            if (String(rows[i].kind || "") === String(kind || "")
+                    && String(rows[i].id || "") === String(markerId || "")) {
+                root.selectMarker(rows[i])
+                return
+            }
+        }
     }
 
     function useSelectedCoordinates() {
@@ -308,7 +330,7 @@ Item {
                 anchors.right: parent.right
                 anchors.rightMargin: 12
                 anchors.verticalCenter: parent.verticalCenter
-                spacing: 8
+                spacing: 6
 
                 Text {
                     text: "BASE MAP"
@@ -319,28 +341,74 @@ Item {
                 }
 
                 Rectangle {
-                    width: 112
+                    width: 82
                     height: 26
                     radius: 6
-                    color: Theme.accentSoft
+                    color: root.baseMapMode === "streets" ? Theme.accentSoft : Theme.surface
                     border.width: 1
-                    border.color: Theme.accent
+                    border.color: root.baseMapMode === "streets" ? Theme.accent : Theme.border
+
                     Text {
                         anchors.centerIn: parent
-                        text: "Local schematic"
-                        color: Theme.textPrimary
+                        text: "Streets"
+                        color: root.baseMapMode === "streets" ? Theme.textPrimary : Theme.textSecondary
                         font.pixelSize: 8
                         font.weight: Font.DemiBold
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        enabled: Boolean(mapWebEngineAvailable)
+                        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                        onClicked: {
+                            root.interactiveMapFailed = false
+                            root.baseMapMode = "streets"
+                        }
+                    }
+
+                    ToolTip.visible: !Boolean(mapWebEngineAvailable) && streetsHover.containsMouse
+                    ToolTip.text: "Qt WebEngine is unavailable; using the local schematic."
+                    MouseArea {
+                        id: streetsHover
+                        anchors.fill: parent
+                        enabled: !Boolean(mapWebEngineAvailable)
+                        hoverEnabled: true
+                        acceptedButtons: Qt.NoButton
                     }
                 }
 
                 Rectangle {
-                    width: 116
+                    width: 92
+                    height: 26
+                    radius: 6
+                    color: root.baseMapMode === "schematic" ? Theme.accentSoft : Theme.surface
+                    border.width: 1
+                    border.color: root.baseMapMode === "schematic" ? Theme.accent : Theme.border
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "Schematic"
+                        color: root.baseMapMode === "schematic" ? Theme.textPrimary : Theme.textSecondary
+                        font.pixelSize: 8
+                        font.weight: Font.DemiBold
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.baseMapMode = "schematic"
+                    }
+                }
+
+                Rectangle {
+                    width: 104
                     height: 26
                     radius: 6
                     color: Theme.surface
                     border.width: 1
                     border.color: Theme.border
+                    opacity: 0.58
+
                     Text {
                         anchors.centerIn: parent
                         text: "Satellite · next"
@@ -349,6 +417,7 @@ Item {
                     }
                 }
             }
+
         }
 
         RowLayout {
@@ -360,7 +429,9 @@ Item {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 title: "Geographic Canvas"
-                subtitle: "Equirectangular local projection · no network map provider required"
+                subtitle: root.useInteractiveMap
+                    ? "Interactive streets · pan · zoom · clusters · live investigation layers"
+                    : "Offline-safe schematic fallback"
                 iconSource: "../../assets/icons/pin_purple.svg"
 
                 Item {
@@ -377,139 +448,198 @@ Item {
                         border.color: Theme.border
                     }
 
-                    Item {
-                        id: projection
-                        anchors.centerIn: parent
-                        width: Math.max(120, parent.width - 20)
-                        height: Math.max(
-                            60,
-                            Math.min(
-                                parent.height - 20,
-                                width / 2
-                            )
-                        )
+                    Loader {
+                        id: interactiveMapLoader
+                        anchors.fill: parent
+                        active: root.useInteractiveMap
+                        source: active ? "../components/InteractiveMapView.qml" : ""
 
-                        Image {
-                            anchors.fill: parent
-                            source: "../../assets/images/world_map_dots.svg"
-                            fillMode: Image.Stretch
-                            opacity: 0.54
-                            smooth: true
-                        }
-
-                        Repeater {
-                            model: root.visibleMarkers()
-
-                            delegate: Rectangle {
-                                id: geoMarker
-                                required property var modelData
-                                width: markerMouse.containsMouse || selected ? 18 : 14
-                                height: width
-                                radius: width / 2
-                                property bool selected: root.selectedMarkerId === String(modelData.id || "")
-                                    && root.selectedMarkerKind === String(modelData.kind || "")
-                                x: root.markerX(modelData, projection.width) - width / 2
-                                y: root.markerY(modelData, projection.height) - height / 2
-                                color: String(modelData.kind || "") === "photo"
-                                    ? "#e5a84b"
-                                    : (String(modelData.kind || "") === "poi"
-                                        ? "#49c5d8"
-                                        : (String(modelData.kind || "") === "query"
-                                            ? "#36cfa1"
-                                            : "#c78cf4"))
-                                border.width: 2
-                                border.color: selected ? Theme.textPrimary : "#d7e3ec"
-                                z: selected ? 5 : 2
-
-                                Behavior on width { NumberAnimation { duration: 90 } }
-
-                                MouseArea {
-                                    id: markerMouse
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    cursorShape: Qt.PointingHandCursor
-                                    onClicked: root.selectMarker(geoMarker.modelData)
-                                }
-
-                                ToolTip.visible: markerMouse.containsMouse
-                                ToolTip.delay: 300
-                                ToolTip.text: String(modelData.title || "Location")
-                                    + "\n"
-                                    + root.coordinateText(modelData)
-                            }
+                        onLoaded: {
+                            item.markers = Qt.binding(function() {
+                                return root.visibleMarkers()
+                            })
+                            item.selectedMarkerId = Qt.binding(function() {
+                                return root.selectedMarkerId
+                            })
+                            item.selectedMarkerKind = Qt.binding(function() {
+                                return root.selectedMarkerKind
+                            })
                         }
                     }
 
-                    Column {
-                        anchors.centerIn: parent
-                        visible: root.visibleMarkers().length === 0
-                        width: Math.min(500, parent.width - 80)
-                        spacing: 10
+                    Connections {
+                        target: interactiveMapLoader.item
+                        function onMarkerSelected(kind, markerId) {
+                            root.selectMarkerByKey(kind, markerId)
+                        }
+                        function onMapUnavailable(message) {
+                            root.interactiveMapFailed = true
+                            root.baseMapMode = "schematic"
+                        }
+                    }
 
-                        Image {
-                            anchors.horizontalCenter: parent.horizontalCenter
-                            width: 42
-                            height: 42
-                            source: "../../assets/icons/pin_purple.svg"
-                            opacity: 0.6
+                    Item {
+                        id: schematicMap
+                        anchors.fill: parent
+                        visible: !root.useInteractiveMap
+
+                        Item {
+                            id: projection
+                            anchors.centerIn: parent
+                            width: Math.max(120, parent.width - 20)
+                            height: Math.max(
+                                60,
+                                Math.min(
+                                    parent.height - 20,
+                                    width / 2
+                                )
+                            )
+
+                            Image {
+                                anchors.fill: parent
+                                source: "../../assets/images/world_map_dots.svg"
+                                fillMode: Image.Stretch
+                                opacity: 0.54
+                                smooth: true
+                            }
+
+                            Repeater {
+                                model: root.visibleMarkers()
+
+                                delegate: Rectangle {
+                                    id: geoMarker
+                                    required property var modelData
+                                    width: markerMouse.containsMouse || selected ? 18 : 14
+                                    height: width
+                                    radius: width / 2
+                                    property bool selected: root.selectedMarkerId === String(modelData.id || "")
+                                        && root.selectedMarkerKind === String(modelData.kind || "")
+                                    x: root.markerX(modelData, projection.width) - width / 2
+                                    y: root.markerY(modelData, projection.height) - height / 2
+                                    color: String(modelData.kind || "") === "photo"
+                                        ? "#e5a84b"
+                                        : (String(modelData.kind || "") === "poi"
+                                            ? "#49c5d8"
+                                            : (String(modelData.kind || "") === "query"
+                                                ? "#36cfa1"
+                                                : "#c78cf4"))
+                                    border.width: 2
+                                    border.color: selected ? Theme.textPrimary : "#d7e3ec"
+                                    z: selected ? 5 : 2
+
+                                    Behavior on width { NumberAnimation { duration: 90 } }
+
+                                    MouseArea {
+                                        id: markerMouse
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: root.selectMarker(geoMarker.modelData)
+                                    }
+
+                                    ToolTip.visible: markerMouse.containsMouse
+                                    ToolTip.delay: 300
+                                    ToolTip.text: String(modelData.title || "Location")
+                                        + "\n"
+                                        + root.coordinateText(modelData)
+                                }
+                            }
                         }
 
-                        Text {
-                            width: parent.width
-                            horizontalAlignment: Text.AlignHCenter
-                            text: root.payload.hasCase ? "No mapped coordinates yet" : "No investigation selected"
-                            color: Theme.textPrimary
-                            font.pixelSize: 16
-                            font.weight: Font.DemiBold
+                        Column {
+                            anchors.centerIn: parent
+                            visible: root.visibleMarkers().length === 0
+                            width: Math.min(500, parent.width - 80)
+                            spacing: 10
+
+                            Image {
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                width: 42
+                                height: 42
+                                source: "../../assets/icons/pin_purple.svg"
+                                opacity: 0.6
+                            }
+
+                            Text {
+                                width: parent.width
+                                horizontalAlignment: Text.AlignHCenter
+                                text: root.payload.hasCase ? "No mapped coordinates yet" : "No investigation selected"
+                                color: Theme.textPrimary
+                                font.pixelSize: 16
+                                font.weight: Font.DemiBold
+                            }
+
+                            Text {
+                                width: parent.width
+                                horizontalAlignment: Text.AlignHCenter
+                                wrapMode: Text.Wrap
+                                text: root.payload.hasCase
+                                    ? "LOCATION entities, live POI and GPS-tagged images will appear here automatically."
+                                    : "Select an investigation before opening the Map workspace."
+                                color: Theme.textSecondary
+                                font.pixelSize: 10
+                            }
                         }
 
-                        Text {
-                            width: parent.width
-                            horizontalAlignment: Text.AlignHCenter
-                            wrapMode: Text.Wrap
-                            text: root.payload.hasCase
-                                ? "LOCATION entities with coordinates and GPS-tagged images will appear here automatically."
-                                : "Select an investigation before opening the Map workspace."
-                            color: Theme.textSecondary
-                            font.pixelSize: 10
+                        Rectangle {
+                            anchors.left: parent.left
+                            anchors.leftMargin: 12
+                            anchors.bottom: parent.bottom
+                            anchors.bottomMargin: 12
+                            width: legendRow.implicitWidth + 20
+                            height: 30
+                            radius: 7
+                            color: "#d9081722"
+                            border.width: 1
+                            border.color: Theme.border
+
+                            Row {
+                                id: legendRow
+                                anchors.centerIn: parent
+                                spacing: 12
+
+                                Row {
+                                    spacing: 5
+                                    Rectangle { width: 9; height: 9; radius: 5; color: "#c78cf4"; anchors.verticalCenter: parent.verticalCenter }
+                                    Text { text: "Location"; color: Theme.textSecondary; font.pixelSize: 8 }
+                                }
+
+                                Row {
+                                    spacing: 5
+                                    Rectangle { width: 9; height: 9; radius: 5; color: "#e5a84b"; anchors.verticalCenter: parent.verticalCenter }
+                                    Text { text: "Photo GPS"; color: Theme.textSecondary; font.pixelSize: 8 }
+                                }
+
+                                Row {
+                                    spacing: 5
+                                    visible: root.nearbyPlaces.length > 0
+                                    Rectangle { width: 9; height: 9; radius: 5; color: "#49c5d8"; anchors.verticalCenter: parent.verticalCenter }
+                                    Text { text: "Live POI"; color: Theme.textSecondary; font.pixelSize: 8 }
+                                }
+                            }
                         }
                     }
 
                     Rectangle {
                         anchors.left: parent.left
                         anchors.leftMargin: 12
-                        anchors.bottom: parent.bottom
-                        anchors.bottomMargin: 12
-                        width: legendRow.implicitWidth + 20
-                        height: 30
+                        anchors.top: parent.top
+                        anchors.topMargin: 12
+                        visible: root.interactiveMapFailed
+                        width: fallbackText.implicitWidth + 18
+                        height: 28
                         radius: 7
-                        color: "#d9081722"
+                        color: "#d95a261f"
                         border.width: 1
-                        border.color: Theme.border
+                        border.color: Theme.warning
 
-                        Row {
-                            id: legendRow
+                        Text {
+                            id: fallbackText
                             anchors.centerIn: parent
-                            spacing: 12
-
-                            Row {
-                                spacing: 5
-                                Rectangle { width: 9; height: 9; radius: 5; color: "#c78cf4"; anchors.verticalCenter: parent.verticalCenter }
-                                Text { text: "Location"; color: Theme.textSecondary; font.pixelSize: 8 }
-                            }
-
-                            Row {
-                                spacing: 5
-                                Rectangle { width: 9; height: 9; radius: 5; color: "#e5a84b"; anchors.verticalCenter: parent.verticalCenter }
-                                Text { text: "Photo GPS"; color: Theme.textSecondary; font.pixelSize: 8 }
-                            }
-
-                            Row {
-                                spacing: 5
-                                visible: root.nearbyPlaces.length > 0
-                                Rectangle { width: 9; height: 9; radius: 5; color: "#49c5d8"; anchors.verticalCenter: parent.verticalCenter }
-                                Text { text: "Live POI"; color: Theme.textSecondary; font.pixelSize: 8 }
-                            }
+                            text: "Interactive basemap unavailable · schematic fallback"
+                            color: Theme.warning
+                            font.pixelSize: 8
+                            font.weight: Font.DemiBold
                         }
                     }
                 }
