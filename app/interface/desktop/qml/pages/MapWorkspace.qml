@@ -1,0 +1,580 @@
+pragma ComponentBehavior: Bound
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
+import "../components"
+import "../theme"
+
+Item {
+    id: root
+
+    property var payload: desktopBridge.analysisMapWorkspace || ({})
+    property var markers: payload.markers || []
+    property var counts: payload.counts || ({})
+    property bool showLocations: true
+    property bool showPhotoGps: true
+    property string selectedMarkerId: ""
+    property string selectedMarkerKind: ""
+    property var selectedMarker: root.findSelectedMarker()
+
+    function visibleMarkers() {
+        var result = []
+        for (var i = 0; i < root.markers.length; ++i) {
+            var item = root.markers[i]
+            var kind = String(item.kind || "")
+            if (kind === "location" && !root.showLocations)
+                continue
+            if (kind === "photo" && !root.showPhotoGps)
+                continue
+            result.push(item)
+        }
+        return result
+    }
+
+    function markerKey(item) {
+        return String((item || {}).kind || "")
+            + ":"
+            + String((item || {}).id || "")
+    }
+
+    function findSelectedMarker() {
+        var wanted = root.selectedMarkerKind + ":" + root.selectedMarkerId
+        for (var i = 0; i < root.markers.length; ++i) {
+            if (root.markerKey(root.markers[i]) === wanted)
+                return root.markers[i]
+        }
+        return ({})
+    }
+
+    function ensureMarkerSelection() {
+        var rows = root.visibleMarkers()
+        if (rows.length === 0) {
+            root.selectedMarkerId = ""
+            root.selectedMarkerKind = ""
+            return
+        }
+
+        var wanted = root.selectedMarkerKind + ":" + root.selectedMarkerId
+        for (var i = 0; i < rows.length; ++i) {
+            if (root.markerKey(rows[i]) === wanted)
+                return
+        }
+
+        root.selectedMarkerId = String(rows[0].id || "")
+        root.selectedMarkerKind = String(rows[0].kind || "")
+    }
+
+    function selectMarker(item) {
+        root.selectedMarkerId = String((item || {}).id || "")
+        root.selectedMarkerKind = String((item || {}).kind || "")
+    }
+
+    function coordinateText(item) {
+        if (item.latitude === undefined || item.latitude === null
+                || item.longitude === undefined || item.longitude === null)
+            return "Coordinates unavailable"
+
+        return Number(item.latitude).toFixed(6)
+            + ", "
+            + Number(item.longitude).toFixed(6)
+    }
+
+    function markerX(item, canvasWidth) {
+        return Math.max(
+            8,
+            Math.min(
+                canvasWidth - 24,
+                ((Number(item.longitude) + 180.0) / 360.0) * (canvasWidth - 24)
+            )
+        )
+    }
+
+    function markerY(item, canvasHeight) {
+        return Math.max(
+            8,
+            Math.min(
+                canvasHeight - 24,
+                ((90.0 - Number(item.latitude)) / 180.0) * (canvasHeight - 24)
+            )
+        )
+    }
+
+    Component.onCompleted: root.ensureMarkerSelection()
+
+    Connections {
+        target: desktopBridge
+        function onChanged() {
+            Qt.callLater(root.ensureMarkerSelection)
+        }
+    }
+
+    ColumnLayout {
+        anchors.fill: parent
+        anchors.leftMargin: Spacing.page
+        anchors.rightMargin: Spacing.page
+        anchors.topMargin: 16
+        anchors.bottomMargin: 22
+        spacing: 10
+
+        Item {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 68
+
+            Text {
+                x: 1
+                y: 0
+                text: "GEO INTELLIGENCE"
+                color: Theme.textMuted
+                font.pixelSize: 9
+                font.weight: Font.Medium
+                font.letterSpacing: 1.6
+            }
+
+            Text {
+                x: 1
+                y: 18
+                text: "Map"
+                color: Theme.textPrimary
+                font.pixelSize: 28
+                font.weight: Font.DemiBold
+            }
+
+            Text {
+                x: 2
+                y: 52
+                width: parent.width - 410
+                text: root.payload.hasCase
+                    ? ("Investigation: " + String(root.payload.caseTitle || "Current investigation"))
+                    : "Select an investigation to inspect stored geographic intelligence."
+                color: Theme.textSecondary
+                font.pixelSize: 11
+                elide: Text.ElideRight
+            }
+
+            Row {
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                spacing: 8
+
+                Rectangle {
+                    width: mappedBadge.implicitWidth + 20
+                    height: 28
+                    radius: 7
+                    color: Theme.surface
+                    border.width: 1
+                    border.color: Theme.border
+                    Text {
+                        id: mappedBadge
+                        anchors.centerIn: parent
+                        text: String(root.counts.mapped || 0) + " mapped"
+                        color: Theme.textSecondary
+                        font.pixelSize: 9
+                    }
+                }
+
+                Rectangle {
+                    width: photoBadge.implicitWidth + 20
+                    height: 28
+                    radius: 7
+                    color: Theme.surface
+                    border.width: 1
+                    border.color: Theme.border
+                    Text {
+                        id: photoBadge
+                        anchors.centerIn: parent
+                        text: String(root.counts.photoGps || 0) + " photo GPS"
+                        color: Theme.textSecondary
+                        font.pixelSize: 9
+                    }
+                }
+            }
+        }
+
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 42
+            radius: 8
+            color: Theme.surface
+            border.width: 1
+            border.color: Theme.border
+
+            Row {
+                anchors.left: parent.left
+                anchors.leftMargin: 12
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: 18
+
+                Text {
+                    text: "LAYERS"
+                    color: Theme.textMuted
+                    font.pixelSize: 8
+                    font.weight: Font.DemiBold
+                    font.letterSpacing: 1.0
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+
+                CheckBox {
+                    text: "Locations"
+                    checked: root.showLocations
+                    onToggled: {
+                        root.showLocations = checked
+                        root.ensureMarkerSelection()
+                    }
+                }
+
+                CheckBox {
+                    text: "Photo GPS"
+                    checked: root.showPhotoGps
+                    onToggled: {
+                        root.showPhotoGps = checked
+                        root.ensureMarkerSelection()
+                    }
+                }
+            }
+
+            Row {
+                anchors.right: parent.right
+                anchors.rightMargin: 12
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: 8
+
+                Text {
+                    text: "BASE MAP"
+                    color: Theme.textMuted
+                    font.pixelSize: 8
+                    font.weight: Font.DemiBold
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+
+                Rectangle {
+                    width: 112
+                    height: 26
+                    radius: 6
+                    color: Theme.accentSoft
+                    border.width: 1
+                    border.color: Theme.accent
+                    Text {
+                        anchors.centerIn: parent
+                        text: "Local schematic"
+                        color: Theme.textPrimary
+                        font.pixelSize: 8
+                        font.weight: Font.DemiBold
+                    }
+                }
+
+                Rectangle {
+                    width: 116
+                    height: 26
+                    radius: 6
+                    color: Theme.surface
+                    border.width: 1
+                    border.color: Theme.border
+                    Text {
+                        anchors.centerIn: parent
+                        text: "Satellite · next"
+                        color: Theme.textMuted
+                        font.pixelSize: 8
+                    }
+                }
+            }
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            spacing: Spacing.panelGap
+
+            Panel {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                title: "Geographic Canvas"
+                subtitle: "Equirectangular local projection · no network map provider required"
+                iconSource: "../../assets/icons/pin_purple.svg"
+
+                Item {
+                    id: mapCanvas
+                    anchors.fill: parent
+                    anchors.margins: 12
+                    clip: true
+
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: 10
+                        color: "#081722"
+                        border.width: 1
+                        border.color: Theme.border
+                    }
+
+                    Image {
+                        anchors.fill: parent
+                        anchors.margins: 10
+                        source: "../../assets/images/world_map_dots.svg"
+                        fillMode: Image.PreserveAspectFit
+                        opacity: 0.54
+                        smooth: true
+                    }
+
+                    Repeater {
+                        model: root.visibleMarkers()
+
+                        delegate: Rectangle {
+                            id: geoMarker
+                            required property var modelData
+                            width: markerMouse.containsMouse || selected ? 18 : 14
+                            height: width
+                            radius: width / 2
+                            property bool selected: root.selectedMarkerId === String(modelData.id || "")
+                                && root.selectedMarkerKind === String(modelData.kind || "")
+                            x: root.markerX(modelData, mapCanvas.width) - width / 2
+                            y: root.markerY(modelData, mapCanvas.height) - height / 2
+                            color: String(modelData.kind || "") === "photo"
+                                ? "#e5a84b"
+                                : "#c78cf4"
+                            border.width: 2
+                            border.color: selected ? Theme.textPrimary : "#d7e3ec"
+                            z: selected ? 5 : 2
+
+                            Behavior on width { NumberAnimation { duration: 90 } }
+
+                            MouseArea {
+                                id: markerMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.selectMarker(geoMarker.modelData)
+                            }
+
+                            ToolTip.visible: markerMouse.containsMouse
+                            ToolTip.delay: 300
+                            ToolTip.text: String(modelData.title || "Location")
+                                + "\n"
+                                + root.coordinateText(modelData)
+                        }
+                    }
+
+                    Column {
+                        anchors.centerIn: parent
+                        visible: root.visibleMarkers().length === 0
+                        width: Math.min(500, parent.width - 80)
+                        spacing: 10
+
+                        Image {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            width: 42
+                            height: 42
+                            source: "../../assets/icons/pin_purple.svg"
+                            opacity: 0.6
+                        }
+
+                        Text {
+                            width: parent.width
+                            horizontalAlignment: Text.AlignHCenter
+                            text: root.payload.hasCase ? "No mapped coordinates yet" : "No investigation selected"
+                            color: Theme.textPrimary
+                            font.pixelSize: 16
+                            font.weight: Font.DemiBold
+                        }
+
+                        Text {
+                            width: parent.width
+                            horizontalAlignment: Text.AlignHCenter
+                            wrapMode: Text.Wrap
+                            text: root.payload.hasCase
+                                ? "LOCATION entities with coordinates and GPS-tagged images will appear here automatically."
+                                : "Select an investigation before opening the Map workspace."
+                            color: Theme.textSecondary
+                            font.pixelSize: 10
+                        }
+                    }
+
+                    Rectangle {
+                        anchors.left: parent.left
+                        anchors.leftMargin: 12
+                        anchors.bottom: parent.bottom
+                        anchors.bottomMargin: 12
+                        width: legendRow.implicitWidth + 20
+                        height: 30
+                        radius: 7
+                        color: "#d9081722"
+                        border.width: 1
+                        border.color: Theme.border
+
+                        Row {
+                            id: legendRow
+                            anchors.centerIn: parent
+                            spacing: 12
+
+                            Row {
+                                spacing: 5
+                                Rectangle { width: 9; height: 9; radius: 5; color: "#c78cf4"; anchors.verticalCenter: parent.verticalCenter }
+                                Text { text: "Location"; color: Theme.textSecondary; font.pixelSize: 8 }
+                            }
+
+                            Row {
+                                spacing: 5
+                                Rectangle { width: 9; height: 9; radius: 5; color: "#e5a84b"; anchors.verticalCenter: parent.verticalCenter }
+                                Text { text: "Photo GPS"; color: Theme.textSecondary; font.pixelSize: 8 }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Panel {
+                Layout.preferredWidth: 360
+                Layout.maximumWidth: 400
+                Layout.fillHeight: true
+                title: "Location Inspector"
+                subtitle: String(root.visibleMarkers().length) + " visible marker(s)"
+                iconSource: "../../assets/icons/search.svg"
+
+                Flickable {
+                    anchors.fill: parent
+                    clip: true
+                    contentWidth: width
+                    contentHeight: locationInspectorColumn.height + 20
+                    boundsBehavior: Flickable.StopAtBounds
+
+                    Column {
+                        id: locationInspectorColumn
+                        x: 14
+                        width: parent.width - 28
+                        spacing: 10
+
+                        Item { width: 1; height: 2 }
+
+                        Rectangle {
+                            width: parent.width
+                            height: 122
+                            radius: 9
+                            color: "#0b1a25"
+                            border.width: 1
+                            border.color: Theme.border
+                            clip: true
+
+                            Image {
+                                anchors.fill: parent
+                                source: String(root.selectedMarker.previewUrl || "")
+                                fillMode: Image.PreserveAspectCrop
+                                asynchronous: true
+                                cache: false
+                                visible: String(root.selectedMarker.previewUrl || "").length > 0
+                            }
+
+                            Image {
+                                anchors.centerIn: parent
+                                width: 38
+                                height: 38
+                                source: "../../assets/icons/pin_purple.svg"
+                                opacity: 0.72
+                                visible: String(root.selectedMarker.previewUrl || "").length === 0
+                            }
+                        }
+
+                        Text {
+                            width: parent.width
+                            text: String(root.selectedMarker.title || "No marker selected")
+                            color: Theme.textPrimary
+                            font.pixelSize: 15
+                            font.weight: Font.DemiBold
+                            wrapMode: Text.Wrap
+                        }
+
+                        Text {
+                            width: parent.width
+                            text: root.coordinateText(root.selectedMarker)
+                            color: Theme.accent
+                            font.pixelSize: 10
+                        }
+
+                        Text {
+                            width: parent.width
+                            text: String(root.selectedMarker.detail || "")
+                            color: Theme.textSecondary
+                            font.pixelSize: 9
+                            wrapMode: Text.Wrap
+                            visible: String(root.selectedMarker.detail || "").length > 0
+                        }
+
+                        Rectangle { width: parent.width; height: 1; color: Theme.divider }
+
+                        GridLayout {
+                            width: parent.width
+                            columns: 2
+                            columnSpacing: 8
+                            rowSpacing: 8
+
+                            Text { text: "LAYER"; color: Theme.textMuted; font.pixelSize: 8 }
+                            Text { Layout.fillWidth: true; text: String(root.selectedMarker.kind || "—").toUpperCase(); color: Theme.textPrimary; font.pixelSize: 9 }
+                            Text { text: "SOURCE"; color: Theme.textMuted; font.pixelSize: 8 }
+                            Text { Layout.fillWidth: true; text: String(root.selectedMarker.source || "—"); color: Theme.textPrimary; font.pixelSize: 9; elide: Text.ElideRight }
+                            Text { text: "ALTITUDE"; color: Theme.textMuted; font.pixelSize: 8 }
+                            Text {
+                                Layout.fillWidth: true
+                                text: root.selectedMarker.altitude === undefined || root.selectedMarker.altitude === null
+                                    ? "—"
+                                    : String(root.selectedMarker.altitude) + " m"
+                                color: Theme.textPrimary
+                                font.pixelSize: 9
+                            }
+                        }
+
+                        AppButton {
+                            width: parent.width
+                            visible: String(root.selectedMarker.evidenceId || "").length > 0
+                            text: "Open source Evidence"
+                            primary: true
+                            onClicked: desktopBridge.focusWorkspaceRecord(
+                                "evidence",
+                                String(root.selectedMarker.evidenceId || "")
+                            )
+                        }
+
+                        Rectangle { width: parent.width; height: 1; color: Theme.divider }
+
+                        Text {
+                            text: "SATELLITE"
+                            color: Theme.textMuted
+                            font.pixelSize: 8
+                            font.weight: Font.DemiBold
+                            font.letterSpacing: 1.0
+                        }
+
+                        Rectangle {
+                            width: parent.width
+                            height: 76
+                            radius: 8
+                            color: Theme.surface
+                            border.width: 1
+                            border.color: Theme.border
+
+                            Text {
+                                anchors.fill: parent
+                                anchors.margins: 12
+                                text: "Satellite imagery is not connected yet. Copernicus/Sentinel will become a base layer here instead of a separate application page."
+                                color: Theme.textSecondary
+                                font.pixelSize: 9
+                                wrapMode: Text.Wrap
+                                verticalAlignment: Text.AlignVCenter
+                            }
+                        }
+
+                        Text {
+                            visible: Number(root.counts.unmapped || 0) > 0
+                            width: parent.width
+                            text: String(root.counts.unmapped || 0)
+                                + " stored location/address item(s) have no coordinates and are not plotted."
+                            color: Theme.warning
+                            font.pixelSize: 9
+                            wrapMode: Text.Wrap
+                        }
+
+                        Item { width: 1; height: 8 }
+                    }
+
+                    ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+                }
+            }
+        }
+    }
+}
