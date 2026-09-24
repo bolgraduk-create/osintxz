@@ -83,13 +83,13 @@ def test_ui_r1_analysis_workspace_reuses_existing_analysis_graph_and_timeline():
         assert f'{{ key: "{key}", label: "{label}"' in qml
 
 
-def test_ui_r1_map_and_media_are_foundations_not_fake_data_views():
+def test_ui_r1_map_and_media_workspace_slots_remain_available():
     qml = _read("pages/AnalysisWorkspace.qml")
 
-    assert 'root.activeWorkspace === "map" || root.activeWorkspace === "media"' in qml
-    assert "GEO enrichment, satellite layers" in qml
-    assert "images, video and audio" in qml
-    assert "FOUNDATION READY · DATA CONNECTION NEXT" in qml
+    assert '{ key: "map", label: "Map"' in qml
+    assert '{ key: "media", label: "Media"' in qml
+    assert 'return "MapWorkspace.qml"' in qml
+    assert 'return "MediaWorkspace.qml"' in qml
 
 
 def test_ui_r1_source_center_remains_reachable_from_sidebar_status():
