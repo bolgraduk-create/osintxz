@@ -163,6 +163,12 @@ class GeoBridge(QObject):
 
         if status == "failed":
             self._set_message("GEO enrichment failed.")
+        elif status == "partial":
+            self._set_message(
+                "GEO enrichment completed with provider warnings: "
+                + str(int(summary.get("nearbyPlaces") or 0))
+                + " nearby place(s)."
+            )
         else:
             self._set_message(
                 "GEO enrichment complete: "
