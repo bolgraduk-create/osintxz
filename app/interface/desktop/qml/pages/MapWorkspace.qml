@@ -16,7 +16,7 @@ Item {
     property bool showNearbyPois: true
     property bool webEngineRuntimeAvailable: (
         typeof mapWebEngineAvailable !== "undefined"
-        && root.webEngineRuntimeAvailable
+        && Boolean(mapWebEngineAvailable)
     )
     property string baseMapMode: webEngineRuntimeAvailable ? "streets" : "schematic"
     property bool interactiveMapFailed: false
