@@ -182,12 +182,16 @@ class OverpassNearbyProvider(GeoIntelligenceProvider):
             f'  nwr(around:{radius},{lat},{lon})["{key}"];'
             for key in self.TAG_KEYS
         )
+        server_limit = min(
+            max(request.poi_limit * 4, 100),
+            400,
+        )
         return (
             f"[out:json][timeout:{min(request.timeout_seconds, 25)}];\n"
             "(\n"
             f"{clauses}\n"
             ");\n"
-            "out center tags qt;"
+            f"out center qt {server_limit};"
         )
 
     @staticmethod
