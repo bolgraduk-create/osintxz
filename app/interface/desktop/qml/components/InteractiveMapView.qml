@@ -79,8 +79,11 @@ Item {
                 root.pageReady = true
                 Qt.callLater(root.syncState)
             } else if (loadRequest.status === WebEngineView.LoadFailedStatus) {
-                root.pageReady = false
-                root.mapUnavailable(String(loadRequest.errorString || "Interactive map failed to load."))
+                var failedUrl = String(loadRequest.url || "")
+                if (failedUrl.indexOf("osintxz://") !== 0) {
+                    root.pageReady = false
+                    root.mapUnavailable(String(loadRequest.errorString || "Interactive map failed to load."))
+                }
             }
         }
 
