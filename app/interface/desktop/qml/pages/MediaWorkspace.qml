@@ -64,8 +64,8 @@ Item {
 
     function typeIcon(value) {
         var key = String(value || "").toLowerCase()
-        if (key === "image") return "../../assets/icons/image.svg"
-        if (key === "video") return "../../assets/icons/video.svg"
+        if (key === "image") return "../../assets/icons/document_blue.svg"
+        if (key === "video") return "../../assets/icons/chart.svg"
         if (key === "audio") return "../../assets/icons/clock.svg"
         return "../../assets/icons/document_blue.svg"
     }
