@@ -48,7 +48,8 @@ def test_ui_r1_sidebar_collapses_and_normalizes_legacy_routes():
     assert 'if (key === "report")' in sidebar
     assert "collapsed: root.collapsed" in sidebar
     assert "property bool collapsed: false" in item
-    assert "root.collapsed ? 76" in main
+    assert "sidebar.collapsed" in main
+    assert "? 76" in main
 
 
 def test_ui_r1_analysis_route_uses_workspace_shell_and_keeps_legacy_routes():
