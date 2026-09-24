@@ -40,9 +40,7 @@ Rectangle {
 
         Image {
             id: logo
-            anchors.left: root.collapsed ? undefined : parent.left
-            anchors.leftMargin: root.collapsed ? 0 : 18
-            anchors.horizontalCenter: root.collapsed ? parent.horizontalCenter : undefined
+            x: root.collapsed ? Math.round((parent.width - width) / 2) : 18
             anchors.verticalCenter: parent.verticalCenter
             anchors.verticalCenterOffset: -3
             width: root.collapsed ? 42 : 50
