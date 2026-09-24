@@ -6,6 +6,7 @@ from pathlib import Path
 
 QML_ROOT = Path("app/interface/desktop/qml")
 BRIDGE = Path("app/interface/desktop/bridges/desktop_bridge.py")
+PAYLOADS = Path("app/interface/desktop/analysis_workspace_payloads.py")
 
 
 def _qml(name: str) -> str:
@@ -16,8 +17,13 @@ def _bridge() -> str:
     return BRIDGE.read_text(encoding="utf-8")
 
 
+def _payloads() -> str:
+    return PAYLOADS.read_text(encoding="utf-8")
+
+
 def test_ui_r4_bridge_python_remains_syntactically_valid():
     ast.parse(_bridge())
+    ast.parse(_payloads())
 
 
 def test_ui_r4_analysis_workspace_routes_map_and_media_to_real_pages():
@@ -82,20 +88,18 @@ def test_ui_r4_map_layers_distinguish_locations_photo_gps_and_future_satellite()
     assert "satelliteImageUrl" not in qml
 
 
-def test_ui_r4_bridge_exposes_read_only_analysis_payloads():
+def test_ui_r4_bridge_stays_thin_and_payload_module_is_read_only():
     bridge = _bridge()
+    payloads = _payloads()
 
     assert "def analysisMediaWorkspace(self)" in bridge
     assert "def analysisMapWorkspace(self)" in bridge
-    assert "def _analysis_media_workspace_payload(" in bridge
-    assert "def _analysis_map_workspace_payload(" in bridge
-    assert "def _analysis_case_evidence(" in bridge
-    assert "def _analysis_case_location_entities(" in bridge
-    assert "limit: int = 300" in bridge
-
-    start = bridge.index("def _analysis_case_evidence(")
-    end = bridge.index("def _metadata_dict(", start)
-    block = bridge[start:end]
+    assert "build_media_workspace_payload(" in bridge
+    assert "build_map_workspace_payload(" in bridge
+    assert "def _analysis_case_evidence(" not in bridge
+    assert "WORKSPACE_LIMIT = 300" in payloads
+    assert "def build_media_workspace_payload(" in payloads
+    assert "def build_map_workspace_payload(" in payloads
 
     for forbidden in (
         ".create_entity(",
@@ -104,11 +108,11 @@ def test_ui_r4_bridge_exposes_read_only_analysis_payloads():
         ".commit(",
         ".delete_",
     ):
-        assert forbidden not in block
+        assert forbidden not in payloads
 
 
 def test_ui_r4_bridge_understands_supported_image_gps_metadata_layouts():
-    from app.interface.desktop.bridges.desktop_bridge import DesktopBridge
+    from app.interface.desktop.analysis_workspace_payloads import extract_gps
 
     nested = {
         "processing_metadata": {
@@ -123,7 +127,7 @@ def test_ui_r4_bridge_understands_supported_image_gps_metadata_layouts():
             }
         }
     }
-    gps = DesktopBridge._analysis_extract_gps(nested)
+    gps = extract_gps(nested)
 
     assert gps == {
         "available": True,
@@ -140,7 +144,7 @@ def test_ui_r4_bridge_understands_supported_image_gps_metadata_layouts():
             }
         }
     }
-    fallback = DesktopBridge._analysis_extract_gps(compatibility)
+    fallback = extract_gps(compatibility)
 
     assert fallback["available"] is True
     assert fallback["latitude"] == 50.4501
@@ -150,7 +154,7 @@ def test_ui_r4_bridge_understands_supported_image_gps_metadata_layouts():
 def test_ui_r4_bridge_rejects_invalid_coordinates_in_presentation_layer():
     from app.interface.desktop.bridges.desktop_bridge import DesktopBridge
 
-    gps = DesktopBridge._analysis_extract_gps(
+    gps = extract_gps(
         {
             "processing_metadata": {
                 "gps_latitude": 120,
