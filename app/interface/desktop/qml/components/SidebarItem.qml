@@ -47,9 +47,7 @@ Rectangle {
 
     Image {
         id: icon
-        anchors.left: root.collapsed ? undefined : parent.left
-        anchors.leftMargin: root.collapsed ? 0 : 22
-        anchors.horizontalCenter: root.collapsed ? parent.horizontalCenter : undefined
+        x: root.collapsed ? Math.round((parent.width - width) / 2) : 22
         anchors.verticalCenter: parent.verticalCenter
         width: 22
         height: 22
