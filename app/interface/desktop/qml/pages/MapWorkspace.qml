@@ -725,6 +725,32 @@ Item {
                             wrapMode: Text.Wrap
                         }
 
+                        Column {
+                            width: parent.width
+                            visible: Boolean(root.geoRun.hasRun)
+                            spacing: 4
+
+                            Repeater {
+                                model: root.geoRun.providers || []
+
+                                delegate: Text {
+                                    required property var modelData
+                                    width: parent.width
+                                    visible: String(modelData.error || "").length > 0
+                                    text: String(modelData.source || "provider")
+                                        + " · "
+                                        + String(modelData.status || "unknown").toUpperCase()
+                                        + " · "
+                                        + String(modelData.error || "")
+                                    color: String(modelData.status || "") === "failed"
+                                        ? Theme.danger
+                                        : Theme.warning
+                                    font.pixelSize: 8
+                                    wrapMode: Text.Wrap
+                                }
+                            }
+                        }
+
                         Row {
                             width: parent.width
                             visible: Boolean(root.geoRun.hasRun)
