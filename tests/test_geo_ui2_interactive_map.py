@@ -39,7 +39,7 @@ def test_geo_ui2_map_workspace_defaults_to_streets_with_schematic_fallback():
     assert 'text: "Schematic"' in qml
     assert 'text: "Satellite · next"' in qml
     assert 'source: active ? "../components/InteractiveMapView.qml" : ""' in qml
-    assert "root.baseMapMode = "schematic"" in qml
+    assert 'root.baseMapMode = "schematic"' in qml
     assert "Interactive basemap unavailable · schematic fallback" in qml
 
 
@@ -67,6 +67,7 @@ def test_geo_ui2_interactive_map_syncs_markers_and_inspector_selection():
     assert "window.osintxzMap.setState(" in web_qml
     assert "window.osintxzMap.focusMarker(" in web_qml
     assert 'target.indexOf("osintxz://select?") === 0' in web_qml
+    assert 'failedUrl.indexOf("osintxz://") !== 0' in web_qml
 
 
 def test_geo_ui2_web_profile_identifies_app_and_uses_disk_cache():
