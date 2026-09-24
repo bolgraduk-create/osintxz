@@ -23,6 +23,11 @@ from pathlib import Path
 
 import PySide6
 
+try:
+    from PySide6.QtWebEngineQuick import QtWebEngineQuick
+except ImportError:
+    QtWebEngineQuick = None
+
 _pyside_dll_directory = None
 if sys.platform == "win32":
     _pyside_dll_directory = os.add_dll_directory(
@@ -56,6 +61,10 @@ class DesktopApplication:
 
         self.container = container
         os.environ.setdefault("QT_QUICK_CONTROLS_STYLE", "Basic")
+
+        self.map_web_engine_available = QtWebEngineQuick is not None
+        if self.map_web_engine_available:
+            QtWebEngineQuick.initialize()
 
         self.app = QApplication(
             sys.argv,
@@ -94,6 +103,10 @@ class DesktopApplication:
         self.engine.rootContext().setContextProperty(
             "geoBridge",
             self.geo_bridge,
+        )
+        self.engine.rootContext().setContextProperty(
+            "mapWebEngineAvailable",
+            self.map_web_engine_available,
         )
         self.engine.rootContext().setContextProperty(
             "sourceBridge",
