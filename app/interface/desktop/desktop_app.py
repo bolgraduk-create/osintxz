@@ -37,6 +37,7 @@ from PySide6.QtWidgets import QApplication
 from app.interface.desktop.bridges import (
     AnalysisBridge,
     DesktopBridge,
+    GeoBridge,
     InvestigationSearchBridge,
     RegistryCenterBridge,
     SourceCenterBridge,
@@ -74,6 +75,7 @@ class DesktopApplication:
             container=self.container,
             desktop_bridge=self.bridge,
         )
+        self.geo_bridge = GeoBridge()
         self.source_bridge = SourceCenterBridge(container=self.container)
         self.registry_bridge = RegistryCenterBridge(container=self.container)
         self.investigation_search_bridge = InvestigationSearchBridge(
@@ -88,6 +90,10 @@ class DesktopApplication:
         self.engine.rootContext().setContextProperty(
             "analysisBridge",
             self.analysis_bridge,
+        )
+        self.engine.rootContext().setContextProperty(
+            "geoBridge",
+            self.geo_bridge,
         )
         self.engine.rootContext().setContextProperty(
             "sourceBridge",
