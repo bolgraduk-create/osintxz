@@ -148,6 +148,10 @@ MASSIVE_REMOTE_SOURCES: tuple[Source, ...] = (
     _source("zenodo_public", "Zenodo Public Records API", categories={Category.ACADEMIC, Category.OPEN_DATA, Category.ARCHIVE}, capabilities={"research_output", "publication", "dataset", "software", "doi", "author"}, transport=Transport.REST, access=Access.NO_AUTH, origin=Origin.AGGREGATOR, global_scope=True, default_enabled=True, sensitivity=DataSensitivity.PUBLIC_SENSITIVE, documentation_url="https://developers.zenodo.org/", notes="Anonymous published-record metadata search; files are not downloaded."),
     _source("internet_archive_metadata", "Internet Archive Metadata Search", categories={Category.ARCHIVE, Category.OPEN_DATA}, capabilities={"archive_search", "internet_archive", "historical_document", "keyword", "name"}, transport=Transport.REST, access=Access.NO_AUTH, origin=Origin.COMMUNITY_INDEX, global_scope=True, default_enabled=True, sensitivity=DataSensitivity.PUBLIC_SENSITIVE, documentation_url="https://archive.org/advancedsearch.php", notes="Advanced Search item metadata only; item content/media are not downloaded."),
     _source("un_sc_sanctions", "UN Security Council Consolidated Sanctions List", categories={Category.SANCTIONS, Category.PUBLIC_OFFICIAL}, capabilities={"sanctions_name", "sanctions_entity", "un_sanctions"}, transport=Transport.PUBLIC_HTTP, access=Access.NO_AUTH, origin=Origin.OFFICIAL_OPEN_DATA, global_scope=True, default_enabled=False, sensitivity=DataSensitivity.PUBLIC_SENSITIVE, documentation_url="https://main.un.org/securitycouncil/en/content/un-sc-consolidated-list", notes="Explicit sanctions search only. Small official XML is processed transiently and not persisted; name matches are not identity confirmation or proof of guilt."),
+
+    # GEO Connector Pack 1 — transient, no-key, low-footprint enrichment.
+    _source("overpass_osm", "OpenStreetMap Overpass API", categories={Category.OPEN_DATA, Category.WEB_OSINT}, capabilities={"coordinates", "location", "nearby_poi", "osm_object", "geolocation"}, transport=Transport.REST, access=Access.NO_AUTH, origin=Origin.COMMUNITY_INDEX, global_scope=True, default_enabled=True, documentation_url="https://wiki.openstreetmap.org/wiki/Overpass_API", notes="GEO-C1 bounded read-only nearby-object query. Shared public endpoint, radius and response size are capped; results stay transient until an analyst explicitly persists them."),
+    _source("open_meteo_historical", "Open-Meteo Historical Weather", categories={Category.OPEN_DATA}, capabilities={"coordinates", "location", "historical_weather", "weather_verification"}, transport=Transport.REST, access=Access.NO_AUTH, origin=Origin.AGGREGATOR, global_scope=True, default_enabled=True, documentation_url="https://open-meteo.com/en/docs/historical-weather-api", notes="GEO-C1 no-key historical weather context. Queries one explicit date in UTC; returned weather is contextual analysis data and is not automatically persisted as Evidence."),
 )
 
 
@@ -229,6 +233,8 @@ COVERAGE_ENTRIES: tuple[SourceCoverageEntry, ...] = (
     SourceCoverageEntry("zenodo_public", Status.ACTIVE, "ZenodoPublicAdapter", "R13.17 public record metadata"),
     SourceCoverageEntry("internet_archive_metadata", Status.ACTIVE, "InternetArchiveMetadataAdapter", "R13.17 metadata-only archive search"),
     SourceCoverageEntry("un_sc_sanctions", Status.ACTIVE, "UnSecurityCouncilSanctionsAdapter", "R13.17 explicit transient sanctions search"),
+    SourceCoverageEntry("overpass_osm", Status.ACTIVE, "OverpassNearbyProvider", "GEO-C1 bounded transient nearby POI"),
+    SourceCoverageEntry("open_meteo_historical", Status.ACTIVE, "OpenMeteoHistoricalProvider", "GEO-C1 one-day historical weather"),
 )
 
 
