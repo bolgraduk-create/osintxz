@@ -53,7 +53,7 @@ def test_overpass_provider_posts_bounded_query_and_maps_node_and_way():
         assert "around:750,46.4825000,30.7233000" in query
         assert '["amenity"]' in query
         assert '["tourism"]' in query
-        assert "out center tags qt;" in query
+        assert "out center qt 100;" in query
         return httpx.Response(
             200,
             json={
