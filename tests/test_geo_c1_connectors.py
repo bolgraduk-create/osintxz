@@ -248,6 +248,41 @@ def test_geo_service_combines_providers_without_persistence():
     assert result["persisted"] is False
 
 
+def test_geo_service_treats_failed_only_attempt_as_failed_when_weather_skipped():
+    class FailedOverpass:
+        source_code = "overpass_osm"
+
+        def enrich(self, request):
+            from app.geo_intelligence.contracts import GeoProviderResult
+            return GeoProviderResult(
+                source=self.source_code,
+                status=GeoProviderStatus.FAILED,
+                error="offline",
+            )
+
+    class SkippedWeather:
+        source_code = "open_meteo_historical"
+
+        def enrich(self, request):
+            from app.geo_intelligence.contracts import GeoProviderResult
+            return GeoProviderResult(
+                source=self.source_code,
+                status=GeoProviderStatus.SKIPPED,
+            )
+
+    result = GeoIntelligenceService(
+        overpass=FailedOverpass(),
+        weather=SkippedWeather(),
+    ).enrich(
+        latitude=46.4825,
+        longitude=30.7233,
+    )
+
+    assert result["status"] == "failed"
+    assert result["summary"]["providerFailures"] == 1
+    assert result["summary"]["weatherAvailable"] is False
+
+
 def test_geo_c1_sources_are_active_in_source_catalog():
     catalog = IntelligenceSourceCatalog()
     coverage = register_massive_remote_sources(catalog)
