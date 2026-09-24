@@ -71,6 +71,7 @@ Item {
         settings.javascriptCanOpenWindows: false
         settings.localContentCanAccessRemoteUrls: true
         settings.localContentCanAccessFileUrls: true
+        settings.unknownUrlSchemePolicy: WebEngineSettings.AllowUnknownUrlSchemesFromUserInteraction
         settings.webRTCPublicInterfacesOnly: true
 
         onLoadingChanged: function(loadRequest) {
