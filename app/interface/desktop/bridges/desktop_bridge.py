@@ -4073,9 +4073,9 @@ class DesktopBridge(QObject):
             ),
             "gps": gps,
             "camera": camera,
-            "ocrText": ocr_text,
+            "ocrText": ocr_text[:4000],
             "faceCount": face_count,
-            "transcript": transcript,
+            "transcript": transcript[:6000],
             "hasAnalysis": bool(
                 ocr_text
                 or transcript
