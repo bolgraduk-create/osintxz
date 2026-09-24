@@ -43,6 +43,7 @@ Item {
     property var identityHistoryRows: []
     property string identityHistoryTitle: ""
     property string identityHistoryError: ""
+    property string activePersonTab: "overview"
 
 
     function buildProfileRows() {
@@ -212,6 +213,25 @@ Item {
             parts.push(String(rows[i].label || rows[i].basis || "Source") + " " + String(rows[i].count || 0))
         }
         return parts.join(" · ")
+    }
+
+    function personTabCount(tab) {
+        if (tab === "accounts")
+            return root.profileRows.length + root.mentionRows.length
+        if (tab === "media")
+            return root.attachmentRows.length
+        if (tab === "locations")
+            return root.locationRows.length
+        if (tab === "relations")
+            return root.relatedRows.length
+        if (tab === "evidence")
+            return root.evidenceRows.length
+        return -1
+    }
+
+    function personTabLabel(label, tab) {
+        var count = root.personTabCount(tab)
+        return count >= 0 ? label + "  " + String(count) : label
     }
 
     function intelligenceRowDetail(item) {
@@ -429,6 +449,98 @@ Item {
             }
         }
 
+        Item {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 44
+            Layout.minimumHeight: 44
+            Layout.maximumHeight: 44
+
+            Rectangle {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                height: 1
+                color: Theme.divider
+            }
+
+            Flickable {
+                anchors.fill: parent
+                contentWidth: personTabs.width
+                contentHeight: height
+                flickableDirection: Flickable.HorizontalFlick
+                boundsBehavior: Flickable.StopAtBounds
+                clip: true
+
+                Row {
+                    id: personTabs
+                    height: parent.height
+                    spacing: 6
+
+                    Repeater {
+                        model: [
+                            { key: "overview", label: "Overview", icon: "users_purple.svg" },
+                            { key: "accounts", label: "Accounts", icon: "globe_blue.svg" },
+                            { key: "media", label: "Media", icon: "document_blue.svg" },
+                            { key: "locations", label: "Locations", icon: "pin_purple.svg" },
+                            { key: "relations", label: "Relations", icon: "graph_blue.svg" },
+                            { key: "evidence", label: "Evidence", icon: "document_blue.svg" },
+                            { key: "timeline", label: "Timeline", icon: "clock.svg" }
+                        ]
+
+                        delegate: Rectangle {
+                            id: personTabButton
+                            required property var modelData
+                            property bool selected: root.activePersonTab === String(modelData.key)
+                            height: 34
+                            width: Math.max(92, personTabContent.implicitWidth + 26)
+                            anchors.verticalCenter: parent.verticalCenter
+                            radius: 8
+                            color: selected
+                                ? Theme.accentSoft
+                                : (personTabMouse.containsMouse ? Theme.surfaceHover : "transparent")
+                            border.width: 1
+                            border.color: selected ? Theme.accent : "transparent"
+
+                            Row {
+                                id: personTabContent
+                                anchors.centerIn: parent
+                                spacing: 7
+
+                                Image {
+                                    width: 15
+                                    height: 15
+                                    source: "../../assets/icons/" + String(personTabButton.modelData.icon)
+                                    fillMode: Image.PreserveAspectFit
+                                    opacity: personTabButton.selected ? 1.0 : 0.72
+                                }
+
+                                Text {
+                                    text: root.personTabLabel(
+                                        String(personTabButton.modelData.label),
+                                        String(personTabButton.modelData.key)
+                                    )
+                                    color: personTabButton.selected ? Theme.textPrimary : Theme.textSecondary
+                                    font.pixelSize: 10
+                                    font.weight: personTabButton.selected ? Font.DemiBold : Font.Medium
+                                }
+                            }
+
+                            MouseArea {
+                                id: personTabMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    root.activePersonTab = String(personTabButton.modelData.key)
+                                    rightDetailScroll.contentY = 0
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         RowLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
@@ -439,7 +551,7 @@ Item {
                 Layout.maximumWidth: 430
                 Layout.fillHeight: true
                 title: "Person Overview"
-                subtitle: "Stored identity record and provenance"
+                subtitle: "Identity anchor · always visible while exploring this person"
                 iconSource: "../../assets/icons/users_purple.svg"
 
                 Flickable {
@@ -575,6 +687,7 @@ Item {
                     spacing: Spacing.panelGap
 
                 Panel {
+                    visible: root.activePersonTab === "overview"
                     Layout.fillWidth: true
                     Layout.preferredHeight: 166
                     Layout.minimumHeight: 166
@@ -625,6 +738,7 @@ Item {
                 }
 
                 Panel {
+                    visible: root.activePersonTab === "overview"
                     Layout.fillWidth: true
                     Layout.preferredHeight: Math.min(560, Math.max(352, 94 + Math.ceil(root.intelligenceGroups.length / 2) * 132))
                     Layout.minimumHeight: 352
@@ -724,6 +838,7 @@ Item {
                 }
 
                 Panel {
+                    visible: root.activePersonTab === "accounts"
                     Layout.fillWidth: true
                     Layout.preferredHeight: Math.min(420, Math.max(210, 96 + root.profileRows.length * 66))
                     Layout.minimumHeight: 210
@@ -832,6 +947,7 @@ Item {
                 }
 
                 Panel {
+                    visible: root.activePersonTab === "accounts"
                     Layout.fillWidth: true
                     Layout.preferredHeight: Math.min(420, Math.max(210, 96 + root.mentionRows.length * 78))
                     Layout.minimumHeight: 210
@@ -895,6 +1011,7 @@ Item {
                 }
 
                 Panel {
+                    visible: root.activePersonTab === "media"
                     Layout.fillWidth: true
                     Layout.preferredHeight: Math.min(460, Math.max(250, 100 + root.attachmentRows.length * 104))
                     Layout.minimumHeight: 250
@@ -993,7 +1110,169 @@ Item {
                     }
                 }
 
+                Panel {
+                    visible: root.activePersonTab === "locations"
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: Math.min(520, Math.max(280, 110 + root.locationRows.length * 68))
+                    Layout.minimumHeight: 280
+                    Layout.maximumHeight: 520
+                    title: "Person Locations"
+                    subtitle: root.locationRows.length > 0
+                        ? String(root.locationRows.length) + " evidence-linked location item(s)"
+                        : "No location intelligence linked to this person yet"
+                    iconSource: "../../assets/icons/pin_purple.svg"
+
+                    Item {
+                        anchors.fill: parent
+
+                        EmptyState {
+                            anchors.fill: parent
+                            anchors.margins: 14
+                            visible: root.locationRows.length === 0
+                            iconSource: "../../assets/icons/pin_purple.svg"
+                            title: "No linked locations"
+                            description: "Addresses, coordinates and future GEO observations linked by evidence will appear here. Map and satellite context will be added in the GEO workspace."
+                        }
+
+                        ListView {
+                            anchors.fill: parent
+                            visible: root.locationRows.length > 0
+                            clip: true
+                            model: root.locationRows
+                            boundsBehavior: Flickable.StopAtBounds
+
+                            delegate: Rectangle {
+                                id: personLocationRow
+                                required property var modelData
+                                width: ListView.view.width
+                                height: 66
+                                color: locationMouse.containsMouse ? Theme.surfaceHover : "transparent"
+
+                                Rectangle {
+                                    anchors.left: parent.left
+                                    anchors.right: parent.right
+                                    anchors.bottom: parent.bottom
+                                    height: 1
+                                    color: Theme.divider
+                                }
+
+                                Image {
+                                    x: 16
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: 22
+                                    height: 22
+                                    source: "../../assets/icons/pin_purple.svg"
+                                }
+
+                                Text {
+                                    x: 52
+                                    y: 11
+                                    width: parent.width - 130
+                                    text: String(personLocationRow.modelData.value || "Location")
+                                    color: Theme.textPrimary
+                                    font.pixelSize: 11
+                                    font.weight: Font.Medium
+                                    elide: Text.ElideRight
+                                }
+
+                                Text {
+                                    x: 52
+                                    y: 34
+                                    width: parent.width - 130
+                                    text: root.intelligenceRowDetail(personLocationRow.modelData)
+                                    color: Theme.textMuted
+                                    font.pixelSize: 9
+                                    elide: Text.ElideRight
+                                }
+
+                                Text {
+                                    anchors.right: parent.right
+                                    anchors.rightMargin: 16
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: String(personLocationRow.modelData.confidence || "")
+                                    color: Theme.textSecondary
+                                    font.pixelSize: 9
+                                }
+
+                                MouseArea {
+                                    id: locationMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    acceptedButtons: Qt.NoButton
+                                }
+                            }
+
+                            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+                        }
+                    }
+                }
+
+                Panel {
+                    visible: root.activePersonTab === "timeline"
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 300
+                    Layout.minimumHeight: 300
+                    Layout.maximumHeight: 300
+                    title: "Person Timeline"
+                    subtitle: "Person-scoped temporal workspace foundation"
+                    iconSource: "../../assets/icons/clock.svg"
+
+                    Item {
+                        anchors.fill: parent
+
+                        Column {
+                            anchors.centerIn: parent
+                            width: Math.min(520, parent.width - 80)
+                            spacing: 12
+
+                            Rectangle {
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                width: 52
+                                height: 52
+                                radius: 13
+                                color: Theme.accentSoft
+                                border.width: 1
+                                border.color: Theme.borderHover
+
+                                Image {
+                                    anchors.centerIn: parent
+                                    width: 25
+                                    height: 25
+                                    source: "../../assets/icons/clock.svg"
+                                }
+                            }
+
+                            Text {
+                                width: parent.width
+                                horizontalAlignment: Text.AlignHCenter
+                                text: "Person-scoped timeline is ready for the next data stage"
+                                color: Theme.textPrimary
+                                font.pixelSize: 16
+                                font.weight: Font.DemiBold
+                            }
+
+                            Text {
+                                width: parent.width
+                                horizontalAlignment: Text.AlignHCenter
+                                wrapMode: Text.Wrap
+                                text: "The investigation already has a global Timeline. A dedicated PERSON timeline will be connected only when events can be filtered by evidence-backed person associations without inventing attribution."
+                                color: Theme.textSecondary
+                                font.pixelSize: 10
+                                lineHeight: 1.35
+                            }
+
+                            AppButton {
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                width: 180
+                                text: "Open Investigation Timeline"
+                                onClicked: desktopBridge.navigateTo("timeline")
+                            }
+                        }
+                    }
+                }
+
                 RowLayout {
+                    visible: root.activePersonTab === "relations" || root.activePersonTab === "evidence"
                     Layout.fillWidth: true
                     Layout.preferredHeight: Math.min(520, Math.max(300, 96 + Math.max(root.relatedRows.length * 58, root.evidenceRows.length * 62)))
                     Layout.minimumHeight: 300
@@ -1001,6 +1280,7 @@ Item {
                     spacing: Spacing.panelGap
 
                     Panel {
+                    visible: root.activePersonTab === "relations"
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         title: "Intelligence Attributes"
@@ -1048,6 +1328,7 @@ Item {
                     }
 
                     Panel {
+                    visible: root.activePersonTab === "evidence"
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         title: "Supporting Evidence"
@@ -1088,6 +1369,7 @@ Item {
                 }
 
                 Rectangle {
+                    visible: root.activePersonTab === "overview" || root.activePersonTab === "relations"
                     Layout.fillWidth: true
                     Layout.preferredHeight: 60
                     Layout.minimumHeight: 60
