@@ -386,16 +386,18 @@ class DesktopBridge(QObject):
                     # This also keeps lightweight/legacy service doubles usable
                     # without weakening filtered production queries.
                     if entity_types:
-                        rows = svc.get_page(
+                        rows = self._call_entity_service_with_optional_type_filter(
+                            svc.get_page,
+                            entity_types=entity_types,
                             limit=self.PAGE_SIZE,
                             offset=offset,
                             case_id=case_id,
-                            entity_types=entity_types,
                         )
                         total = (
-                            svc.count_all(
-                                case_id=case_id,
+                            self._call_entity_service_with_optional_type_filter(
+                                svc.count_all,
                                 entity_types=entity_types,
+                                case_id=case_id,
                             )
                             if offset == 0
                             else self._page_totals[page]
@@ -428,6 +430,29 @@ class DesktopBridge(QObject):
             self._generation += 1
             if notify:
                 self.changed.emit()
+
+    @staticmethod
+    def _call_entity_service_with_optional_type_filter(
+        method: Any,
+        *,
+        entity_types: tuple[EntityType, ...],
+        **kwargs: Any,
+    ) -> Any:
+        # Production EntityService supports entity_types. Lightweight legacy
+        # adapters/test doubles may still expose the previous paging signature.
+        try:
+            return method(
+                entity_types=entity_types,
+                **kwargs,
+            )
+        except TypeError as exc:
+            message = str(exc)
+            if (
+                "unexpected keyword argument" not in message
+                or "entity_types" not in message
+            ):
+                raise
+            return method(**kwargs)
 
     @staticmethod
     def _model_dict(row: Any) -> dict[str, Any]:
