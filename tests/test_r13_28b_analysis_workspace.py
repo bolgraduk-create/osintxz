@@ -199,8 +199,13 @@ def test_analysis_workspace_is_registered_in_shell():
         "app/interface/desktop/bridges/desktop_bridge.py"
     ).read_text(encoding="utf-8")
 
-    assert 'case "analysis": return "pages/Analysis.qml"' in main
-    assert '{key:"analysis", label:"Analysis", icon:"chart.svg"}' in sidebar
+    analysis_workspace = Path(
+        "app/interface/desktop/qml/pages/AnalysisWorkspace.qml"
+    ).read_text(encoding="utf-8")
+
+    assert 'case "analysis": return "pages/AnalysisWorkspace.qml"' in main
+    assert 'return "Analysis.qml"' in analysis_workspace
+    assert '{ key: "analysis", label: "Analysis", icon: "chart.svg" }' in sidebar
     assert '"analysisBridge"' in desktop_app
     assert "AnalysisBridge" in desktop_app
     assert '"analysis"' in desktop_bridge
