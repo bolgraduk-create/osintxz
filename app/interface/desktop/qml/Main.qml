@@ -33,7 +33,7 @@ ApplicationWindow {
         case "person": return "pages/Person.qml"
         case "graph": return "pages/Graph.qml"
         case "timeline": return "pages/Timeline.qml"
-        case "analysis": return "pages/Analysis.qml"
+        case "analysis": return "pages/AnalysisWorkspace.qml"
         case "osint": return "pages/Osint.qml"
         case "sources": return "pages/Sources.qml"
         case "evidence": return "pages/Evidence.qml"
@@ -44,7 +44,6 @@ ApplicationWindow {
         }
     }
 
-    // Custom title strip, kept very thin to match the concept.
     Rectangle {
         id: titleStrip
         anchors.left: parent.left
@@ -63,7 +62,9 @@ ApplicationWindow {
                 model: ["#ff625f", "#f6bd4e", "#44cb6b"]
                 delegate: Rectangle {
                     required property var modelData
-                    width: 12; height: 12; radius: 6
+                    width: 12
+                    height: 12
+                    radius: 6
                     color: modelData
                     opacity: 0.95
                 }
@@ -76,7 +77,9 @@ ApplicationWindow {
             anchors.top: parent.top
             anchors.bottom: parent.bottom
             onPressed: window.startSystemMove()
-            onDoubleClicked: window.visibility === Window.Maximized ? window.showNormal() : window.showMaximized()
+            onDoubleClicked: window.visibility === Window.Maximized
+                ? window.showNormal()
+                : window.showMaximized()
         }
 
         Row {
@@ -88,7 +91,9 @@ ApplicationWindow {
             TitleButton { symbol: "−"; onClicked: window.showMinimized() }
             TitleButton {
                 symbol: window.visibility === Window.Maximized ? "❐" : "□"
-                onClicked: window.visibility === Window.Maximized ? window.showNormal() : window.showMaximized()
+                onClicked: window.visibility === Window.Maximized
+                    ? window.showNormal()
+                    : window.showMaximized()
             }
             TitleButton { symbol: "×"; dangerHover: true; onClicked: window.close() }
         }
@@ -99,13 +104,22 @@ ApplicationWindow {
         anchors.left: parent.left
         anchors.top: titleStrip.bottom
         anchors.bottom: parent.bottom
-        width: Math.max(228, Math.min(276, window.width * 0.166))
+        width: collapsed
+            ? 76
+            : Math.max(228, Math.min(276, window.width * 0.166))
         currentPage: window.currentPage
         systemOnline: desktopBridge.databaseAvailable
         sourceCount: String((sourceBridge.sourceCenter.counts || {}).total || 0)
         integrationCount: String((sourceBridge.sourceCenter.counts || {}).searchable || 0)
         monitorCount: sourceBridge.busy ? "1" : "0"
         onNavigate: function(page) { window.currentPage = page }
+
+        Behavior on width {
+            NumberAnimation {
+                duration: 150
+                easing.type: Easing.OutCubic
+            }
+        }
     }
 
     Item {
@@ -167,5 +181,3 @@ ApplicationWindow {
         bridge: desktopBridge
     }
 }
-
-
