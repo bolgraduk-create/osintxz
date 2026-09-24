@@ -13,6 +13,11 @@ Item {
     property var counts: payload.counts || ({})
     property bool showLocations: true
     property bool showPhotoGps: true
+    property bool showNearbyPois: true
+    property var geoRun: geoBridge.runData || ({})
+    property var nearbyPlaces: geoRun.nearbyPlaces || []
+    property var weatherData: geoRun.weather || ({})
+    property var weatherSummary: weatherData.summary || ({})
     property string selectedMarkerId: ""
     property string selectedMarkerKind: ""
     property var selectedMarker: root.findSelectedMarker()
@@ -28,6 +33,25 @@ Item {
                 continue
             result.push(item)
         }
+
+        if (Boolean(root.geoRun.hasRun)
+                && String(root.geoRun.status || "") !== "failed") {
+            result.push({
+                id: "geo-query-center",
+                kind: "query",
+                title: "Live GEO query center",
+                detail: "Transient query center · not persisted",
+                latitude: root.geoRun.latitude,
+                longitude: root.geoRun.longitude,
+                source: "Live GEO enrichment",
+                transient: true
+            })
+        }
+
+        if (root.showNearbyPois) {
+            for (var j = 0; j < root.nearbyPlaces.length; ++j)
+                result.push(root.nearbyPlaces[j])
+        }
         return result
     }
 
@@ -39,9 +63,10 @@ Item {
 
     function findSelectedMarker() {
         var wanted = root.selectedMarkerKind + ":" + root.selectedMarkerId
-        for (var i = 0; i < root.markers.length; ++i) {
-            if (root.markerKey(root.markers[i]) === wanted)
-                return root.markers[i]
+        var rows = root.visibleMarkers()
+        for (var i = 0; i < rows.length; ++i) {
+            if (root.markerKey(rows[i]) === wanted)
+                return rows[i]
         }
         return ({})
     }
@@ -67,6 +92,29 @@ Item {
     function selectMarker(item) {
         root.selectedMarkerId = String((item || {}).id || "")
         root.selectedMarkerKind = String((item || {}).kind || "")
+    }
+
+    function useSelectedCoordinates() {
+        var item = root.selectedMarker || ({})
+        if (item.latitude === undefined || item.latitude === null
+                || item.longitude === undefined || item.longitude === null)
+            return
+        geoLatitudeInput.text = Number(item.latitude).toFixed(7)
+        geoLongitudeInput.text = Number(item.longitude).toFixed(7)
+    }
+
+    function runGeoEnrichment() {
+        var latitude = Number(geoLatitudeInput.text)
+        var longitude = Number(geoLongitudeInput.text)
+        var radius = parseInt(geoRadiusInput.text)
+        if (!isFinite(radius))
+            radius = 750
+        geoBridge.runEnrichment(
+            latitude,
+            longitude,
+            geoDateInput.text,
+            radius
+        )
     }
 
     function coordinateText(item) {
@@ -103,6 +151,13 @@ Item {
 
     Connections {
         target: desktopBridge
+        function onChanged() {
+            Qt.callLater(root.ensureMarkerSelection)
+        }
+    }
+
+    Connections {
+        target: geoBridge
         function onChanged() {
             Qt.callLater(root.ensureMarkerSelection)
         }
@@ -230,6 +285,16 @@ Item {
                         root.ensureMarkerSelection()
                     }
                 }
+
+                CheckBox {
+                    text: "Nearby POI"
+                    checked: root.showNearbyPois
+                    enabled: root.nearbyPlaces.length > 0
+                    onToggled: {
+                        root.showNearbyPois = checked
+                        root.ensureMarkerSelection()
+                    }
+                }
             }
 
             Row {
@@ -340,7 +405,11 @@ Item {
                                 y: root.markerY(modelData, projection.height) - height / 2
                                 color: String(modelData.kind || "") === "photo"
                                     ? "#e5a84b"
-                                    : "#c78cf4"
+                                    : (String(modelData.kind || "") === "poi"
+                                        ? "#49c5d8"
+                                        : (String(modelData.kind || "") === "query"
+                                            ? "#36cfa1"
+                                            : "#c78cf4"))
                                 border.width: 2
                                 border.color: selected ? Theme.textPrimary : "#d7e3ec"
                                 z: selected ? 5 : 2
@@ -426,6 +495,13 @@ Item {
                                 spacing: 5
                                 Rectangle { width: 9; height: 9; radius: 5; color: "#e5a84b"; anchors.verticalCenter: parent.verticalCenter }
                                 Text { text: "Photo GPS"; color: Theme.textSecondary; font.pixelSize: 8 }
+                            }
+
+                            Row {
+                                spacing: 5
+                                visible: root.nearbyPlaces.length > 0
+                                Rectangle { width: 9; height: 9; radius: 5; color: "#49c5d8"; anchors.verticalCenter: parent.verticalCenter }
+                                Text { text: "Live POI"; color: Theme.textSecondary; font.pixelSize: 8 }
                             }
                         }
                     }
@@ -540,6 +616,278 @@ Item {
                                 "evidence",
                                 String(root.selectedMarker.evidenceId || "")
                             )
+                        }
+
+                        AppButton {
+                            width: parent.width
+                            visible: String(root.selectedMarker.sourceUrl || "").length > 0
+                            text: "Open source page"
+                            onClicked: desktopBridge.openExternalUrl(
+                                String(root.selectedMarker.sourceUrl || "")
+                            )
+                        }
+
+                        Rectangle { width: parent.width; height: 1; color: Theme.divider }
+
+                        Text {
+                            text: "LIVE GEO ENRICHMENT"
+                            color: Theme.textMuted
+                            font.pixelSize: 8
+                            font.weight: Font.DemiBold
+                            font.letterSpacing: 1.0
+                        }
+
+                        Text {
+                            width: parent.width
+                            text: "Overpass / OpenStreetMap nearby objects + Open-Meteo historical weather. Live results are transient and are not persisted."
+                            color: Theme.textSecondary
+                            font.pixelSize: 9
+                            wrapMode: Text.Wrap
+                        }
+
+                        GridLayout {
+                            width: parent.width
+                            columns: 2
+                            columnSpacing: 8
+                            rowSpacing: 8
+
+                            AppTextField {
+                                id: geoLatitudeInput
+                                Layout.fillWidth: true
+                                placeholderText: "Latitude"
+                                text: ""
+                            }
+
+                            AppTextField {
+                                id: geoLongitudeInput
+                                Layout.fillWidth: true
+                                placeholderText: "Longitude"
+                                text: ""
+                            }
+
+                            AppTextField {
+                                id: geoRadiusInput
+                                Layout.fillWidth: true
+                                placeholderText: "Radius m"
+                                text: "750"
+                                inputMethodHints: Qt.ImhDigitsOnly
+                            }
+
+                            AppTextField {
+                                id: geoDateInput
+                                Layout.fillWidth: true
+                                placeholderText: "YYYY-MM-DD (optional)"
+                                text: ""
+                            }
+                        }
+
+                        Row {
+                            width: parent.width
+                            spacing: 8
+
+                            AppButton {
+                                width: (parent.width - 8) * 0.38
+                                text: "Use selected"
+                                enabled: root.selectedMarker.latitude !== undefined
+                                    && root.selectedMarker.latitude !== null
+                                    && root.selectedMarker.longitude !== undefined
+                                    && root.selectedMarker.longitude !== null
+                                    && !geoBridge.busy
+                                onClicked: root.useSelectedCoordinates()
+                            }
+
+                            AppButton {
+                                width: (parent.width - 8) * 0.62
+                                text: geoBridge.busy ? "Enriching…" : "Run GEO Enrichment"
+                                primary: true
+                                enabled: !geoBridge.busy
+                                    && geoLatitudeInput.text.trim().length > 0
+                                    && geoLongitudeInput.text.trim().length > 0
+                                onClicked: root.runGeoEnrichment()
+                            }
+                        }
+
+                        Text {
+                            width: parent.width
+                            visible: String(geoBridge.message || "").length > 0
+                            text: String(geoBridge.message || "")
+                            color: String(root.geoRun.status || "") === "failed"
+                                ? Theme.danger
+                                : Theme.textSecondary
+                            font.pixelSize: 9
+                            wrapMode: Text.Wrap
+                        }
+
+                        Row {
+                            width: parent.width
+                            visible: Boolean(root.geoRun.hasRun)
+                            spacing: 6
+
+                            Rectangle {
+                                width: nearbyCountText.implicitWidth + 16
+                                height: 24
+                                radius: 6
+                                color: Theme.surface
+                                border.width: 1
+                                border.color: Theme.border
+                                Text {
+                                    id: nearbyCountText
+                                    anchors.centerIn: parent
+                                    text: String((root.geoRun.summary || {}).nearbyPlaces || 0) + " POI"
+                                    color: Theme.textSecondary
+                                    font.pixelSize: 8
+                                }
+                            }
+
+                            Rectangle {
+                                width: weatherBadgeText.implicitWidth + 16
+                                height: 24
+                                radius: 6
+                                color: Boolean((root.geoRun.summary || {}).weatherAvailable)
+                                    ? "#12362f"
+                                    : Theme.surface
+                                border.width: 1
+                                border.color: Boolean((root.geoRun.summary || {}).weatherAvailable)
+                                    ? Theme.success
+                                    : Theme.border
+                                Text {
+                                    id: weatherBadgeText
+                                    anchors.centerIn: parent
+                                    text: Boolean((root.geoRun.summary || {}).weatherAvailable)
+                                        ? "WEATHER READY"
+                                        : "WEATHER SKIPPED"
+                                    color: Boolean((root.geoRun.summary || {}).weatherAvailable)
+                                        ? Theme.success
+                                        : Theme.textMuted
+                                    font.pixelSize: 8
+                                    font.weight: Font.DemiBold
+                                }
+                            }
+
+                            Rectangle {
+                                width: 94
+                                height: 24
+                                radius: 6
+                                color: Theme.surface
+                                border.width: 1
+                                border.color: Theme.border
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "TRANSIENT"
+                                    color: Theme.warning
+                                    font.pixelSize: 8
+                                    font.weight: Font.DemiBold
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            width: parent.width
+                            height: weatherColumn.visible ? weatherColumn.height + 20 : 0
+                            visible: weatherColumn.visible
+                            radius: 8
+                            color: Theme.surface
+                            border.width: 1
+                            border.color: Theme.border
+
+                            Column {
+                                id: weatherColumn
+                                x: 10
+                                y: 10
+                                width: parent.width - 20
+                                visible: Boolean(root.weatherData.available)
+                                spacing: 5
+
+                                Text {
+                                    text: "HISTORICAL WEATHER · " + String(root.weatherSummary.date || "")
+                                    color: Theme.textPrimary
+                                    font.pixelSize: 9
+                                    font.weight: Font.DemiBold
+                                }
+
+                                Text {
+                                    width: parent.width
+                                    text: "Temperature "
+                                        + String(root.weatherSummary.temperature_2m_min ?? "—")
+                                        + " → "
+                                        + String(root.weatherSummary.temperature_2m_max ?? "—")
+                                        + " °C · precipitation "
+                                        + String(root.weatherSummary.precipitation_sum ?? "—")
+                                        + " mm"
+                                    color: Theme.textSecondary
+                                    font.pixelSize: 9
+                                    wrapMode: Text.Wrap
+                                }
+
+                                Text {
+                                    width: parent.width
+                                    text: "Sunrise "
+                                        + String(root.weatherSummary.sunrise || "—")
+                                        + " · sunset "
+                                        + String(root.weatherSummary.sunset || "—")
+                                    color: Theme.textMuted
+                                    font.pixelSize: 8
+                                    wrapMode: Text.Wrap
+                                }
+                            }
+                        }
+
+                        Column {
+                            width: parent.width
+                            visible: root.nearbyPlaces.length > 0
+                            spacing: 5
+
+                            Text {
+                                text: "NEARBY OSM OBJECTS"
+                                color: Theme.textMuted
+                                font.pixelSize: 8
+                                font.weight: Font.DemiBold
+                                font.letterSpacing: 1.0
+                            }
+
+                            Repeater {
+                                model: root.nearbyPlaces.slice(0, 8)
+
+                                delegate: Rectangle {
+                                    id: poiRow
+                                    required property var modelData
+                                    width: parent.width
+                                    height: 44
+                                    radius: 6
+                                    color: poiMouse.containsMouse ? Theme.surfaceHover : Theme.surface
+                                    border.width: 1
+                                    border.color: Theme.border
+
+                                    Text {
+                                        x: 9
+                                        y: 7
+                                        width: parent.width - 18
+                                        text: String(poiRow.modelData.title || "OSM object")
+                                        color: Theme.textPrimary
+                                        font.pixelSize: 9
+                                        font.weight: Font.Medium
+                                        elide: Text.ElideRight
+                                    }
+
+                                    Text {
+                                        x: 9
+                                        y: 24
+                                        width: parent.width - 18
+                                        text: String(poiRow.modelData.category || "poi").replace(/_/g, " ")
+                                        color: Theme.textMuted
+                                        font.pixelSize: 8
+                                        elide: Text.ElideRight
+                                    }
+
+                                    MouseArea {
+                                        id: poiMouse
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: root.selectMarker(poiRow.modelData)
+                                    }
+                                }
+                            }
                         }
 
                         Rectangle { width: parent.width; height: 1; color: Theme.divider }
