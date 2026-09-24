@@ -44,6 +44,7 @@ Item {
     property string identityHistoryTitle: ""
     property string identityHistoryError: ""
     property string activePersonTab: "overview"
+    property string loadedPersonId: ""
 
 
     function buildProfileRows() {
@@ -333,7 +334,12 @@ Item {
     }
 
     function reload() {
-        root.person = desktopBridge.currentEntity || ({})
+        var nextPerson = desktopBridge.currentEntity || ({})
+        var nextPersonId = String(nextPerson.id || "")
+        if (root.loadedPersonId.length > 0 && nextPersonId !== root.loadedPersonId)
+            root.activePersonTab = "overview"
+        root.loadedPersonId = nextPersonId
+        root.person = nextPerson
         root.links = root.person.links || []
         root.photos = root.person.photos || []
         root.files = root.person.files || []
@@ -1274,7 +1280,15 @@ Item {
                 RowLayout {
                     visible: root.activePersonTab === "relations" || root.activePersonTab === "evidence"
                     Layout.fillWidth: true
-                    Layout.preferredHeight: Math.min(520, Math.max(300, 96 + Math.max(root.relatedRows.length * 58, root.evidenceRows.length * 62)))
+                    Layout.preferredHeight: Math.min(
+                        520,
+                        Math.max(
+                            300,
+                            96 + (root.activePersonTab === "relations"
+                                ? root.relatedRows.length * 58
+                                : root.evidenceRows.length * 62)
+                        )
+                    )
                     Layout.minimumHeight: 300
                     Layout.maximumHeight: 520
                     spacing: Spacing.panelGap
