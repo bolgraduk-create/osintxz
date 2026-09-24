@@ -61,23 +61,32 @@ class GeoIntelligenceService:
             and bool(weather_result.summary)
         )
 
-        usable_count = sum(1 for item in provider_results if item.usable)
+        attempted_results = [
+            item
+            for item in provider_results
+            if item.status is not GeoProviderStatus.SKIPPED
+        ]
         failed_count = sum(
             1
-            for item in provider_results
+            for item in attempted_results
             if item.status is GeoProviderStatus.FAILED
         )
         partial_count = sum(
             1
-            for item in provider_results
+            for item in attempted_results
             if item.status is GeoProviderStatus.PARTIAL
         )
+        success_count = sum(
+            1
+            for item in attempted_results
+            if item.status is GeoProviderStatus.SUCCESS
+        )
 
-        if failed_count == len(provider_results):
+        if attempted_results and failed_count == len(attempted_results):
             overall = "failed"
         elif failed_count or partial_count:
             overall = "partial"
-        elif usable_count:
+        elif success_count:
             overall = "completed"
         else:
             overall = "completed"
