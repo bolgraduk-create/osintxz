@@ -11,6 +11,8 @@ Item {
     property string workspaceMode: "investigation"
     property string activeTab: "results"
     property string resultViewMode: "clean"
+    property bool advancedFieldsOpen: false
+    property bool searchPolicyOpen: false
     // R13.24 ADAPTIVE RELEVANCE
     property var runData: investigationSearchBridge.runData || ({})
     property var summary: runData.summary || ({})
@@ -96,6 +98,53 @@ Item {
             for (let j = 0; j < decisions.length; ++j) rows.push(decisions[j])
         }
         return rows
+    }
+
+    function resultSectionForTab(tab) {
+        if (tab === "results" || tab === "accounts" || tab === "mentions")
+            return "results"
+        if (tab === "possible" || tab === "identity" || tab === "candidates")
+            return "review"
+        return "activity"
+    }
+
+    function sectionDefaultTab(section) {
+        if (section === "review") return "possible"
+        if (section === "activity") return "providers"
+        return "results"
+    }
+
+    function sectionTabs(section) {
+        if (section === "results") {
+            return [
+                { key: "results", label: "Results" },
+                { key: "accounts", label: "Accounts" },
+                { key: "mentions", label: "Mentions" }
+            ]
+        }
+        if (section === "review") {
+            return [
+                { key: "possible", label: "Possible" },
+                { key: "identity", label: "Identity" },
+                { key: "candidates", label: "Candidates" }
+            ]
+        }
+        return [
+            { key: "providers", label: "Providers" },
+            { key: "pivots", label: "Pivots" },
+            { key: "quality", label: "Quality" },
+            { key: "exploration", label: "Explore" },
+            { key: "schedule", label: "Schedule" },
+            { key: "errors", label: "Errors" }
+        ]
+    }
+
+    function sectionCount(section) {
+        const tabs = root.sectionTabs(section)
+        let total = 0
+        for (let i = 0; i < tabs.length; ++i)
+            total += root.itemCount(String(tabs[i].key))
+        return total
     }
 
     function itemCount(tab) {
@@ -345,6 +394,61 @@ Item {
         return selectedUsername.length > 0 && selectedUsername === enrichmentUsername
     }
 
+    component CompactMetric: Rectangle {
+        id: compactMetric
+        property string title: "Metric"
+        property string value: "0"
+        property string detail: ""
+        property color accentColor: Theme.accent
+
+        implicitHeight: 52
+        radius: 8
+        color: Theme.surface
+        border.width: 1
+        border.color: Theme.border
+
+        Rectangle {
+            x: 12
+            anchors.verticalCenter: parent.verticalCenter
+            width: 4
+            height: 28
+            radius: 2
+            color: compactMetric.accentColor
+        }
+
+        Text {
+            x: 26
+            y: 8
+            text: compactMetric.title
+            color: Theme.textMuted
+            font.pixelSize: 8
+            font.weight: Font.DemiBold
+            font.letterSpacing: 0.8
+        }
+
+        Text {
+            x: 26
+            y: 23
+            text: compactMetric.value
+            color: Theme.textPrimary
+            font.pixelSize: 17
+            font.weight: Font.DemiBold
+        }
+
+        Text {
+            anchors.left: parent.left
+            anchors.leftMargin: 72
+            anchors.right: parent.right
+            anchors.rightMargin: 10
+            anchors.verticalCenter: parent.verticalCenter
+            text: compactMetric.detail
+            color: Theme.textSecondary
+            font.pixelSize: 9
+            elide: Text.ElideRight
+            horizontalAlignment: Text.AlignRight
+        }
+    }
+
     opacity: 0
     Component.onCompleted: {
         root.reloadTargetPeople("")
@@ -490,52 +594,38 @@ Item {
         RowLayout {
             visible: root.workspaceMode === "investigation"
             Layout.fillWidth: true
-            Layout.preferredHeight: visible ? 86 : 0
-            spacing: Spacing.panelGap
+            Layout.preferredHeight: visible ? 52 : 0
+            spacing: 8
 
-            StatCard {
+            CompactMetric {
                 Layout.fillWidth: true
                 title: "Known Seeds"
                 value: String(root.summary.seeds || 0)
-                delta: ""
-                subtext: root.runData.hasRun ? "Typed values in current search" : "Built from the form at run time"
-                iconSource: "../../assets/icons/search.svg"
+                detail: root.runData.hasRun ? "current search" : "ready"
                 accentColor: Theme.accent
-                chartType: "none"
             }
-            StatCard {
+            CompactMetric {
                 Layout.fillWidth: true
                 title: "Results"
                 value: String(root.summary.results || 0)
-                delta: ""
-                subtext: String(root.summary.possible || 0) + " possible · " + String(root.summary.evidenceCreated || 0) + " evidence saved"
-                iconSource: "../../assets/icons/document_blue.svg"
+                detail: String(root.summary.evidenceCreated || 0) + " saved"
                 accentColor: Theme.success
-                chartType: "none"
             }
-            StatCard {
+            CompactMetric {
                 Layout.fillWidth: true
                 title: "Identity Leads"
                 value: String(root.summary.identityCandidates || 0)
-                delta: ""
-                subtext: String(Number(root.summary.identityStrong || 0) + Number(root.summary.identitySupported || 0))
-                    + " supported · "
-                    + String(Number(root.summary.identityPossible || 0) + Number(root.summary.identityInsufficient || 0))
-                    + " review · "
-                    + String(root.summary.identityConflicting || 0) + " conflicts"
-                iconSource: "../../assets/icons/users_cyan.svg"
-                accentColor: (Number(root.summary.identityStrong || 0) + Number(root.summary.identitySupported || 0)) > 0 ? Theme.success : Theme.warning
-                chartType: "none"
+                detail: String(Number(root.summary.identityStrong || 0) + Number(root.summary.identitySupported || 0)) + " supported"
+                accentColor: (Number(root.summary.identityStrong || 0) + Number(root.summary.identitySupported || 0)) > 0
+                    ? Theme.success
+                    : Theme.warning
             }
-            StatCard {
+            CompactMetric {
                 Layout.fillWidth: true
                 title: "New Pivots"
                 value: String(root.summary.pivots || 0)
-                delta: ""
-                subtext: pivotCheck.checked ? "Exact identifiers may be followed" : "Automatic pivoting disabled"
-                iconSource: "../../assets/icons/graph_blue.svg"
+                detail: pivotCheck.checked ? "auto follow on" : "auto follow off"
                 accentColor: Theme.warning
-                chartType: "none"
             }
         }
 
@@ -654,6 +744,45 @@ Item {
                             AppTextArea { id: repositories; Layout.fillWidth: true; height: 66; placeholderText: "Repositories · owner/repo" }
                         }
 
+                        Rectangle {
+                            width: parent.width
+                            height: 42
+                            radius: 7
+                            color: advancedFieldsMouse.containsMouse ? Theme.surfaceHover : "transparent"
+                            border.width: 1
+                            border.color: Theme.divider
+
+                            Text {
+                                x: 12
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: "ADDITIONAL IDENTIFIERS"
+                                color: Theme.textSecondary
+                                font.pixelSize: 9
+                                font.weight: Font.DemiBold
+                                font.letterSpacing: 1.0
+                            }
+                            Text {
+                                anchors.right: parent.right
+                                anchors.rightMargin: 12
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: root.advancedFieldsOpen ? "Hide  ▲" : "Location · organizations · technical  ▼"
+                                color: Theme.textMuted
+                                font.pixelSize: 9
+                            }
+                            MouseArea {
+                                id: advancedFieldsMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.advancedFieldsOpen = !root.advancedFieldsOpen
+                            }
+                        }
+
+                        Column {
+                            width: parent.width
+                            visible: root.advancedFieldsOpen
+                            spacing: 8
+
                         Rectangle { width: parent.width; height: 1; color: Theme.divider }
                         Text { text: "LOCATION"; color: Theme.textMuted; font.pixelSize: 9; font.weight: Font.DemiBold; font.letterSpacing: 1.2 }
                         GridLayout {
@@ -702,8 +831,50 @@ Item {
                             AppTextArea { id: keywords; Layout.fillWidth: true; height: 66; placeholderText: "Keywords / context terms" }
                         }
 
+
+                        }
+
                         Rectangle { width: parent.width; height: 1; color: Theme.divider }
-                        Text { text: "SEARCH POLICY"; color: Theme.textMuted; font.pixelSize: 9; font.weight: Font.DemiBold; font.letterSpacing: 1.2 }
+
+                        Rectangle {
+                            width: parent.width
+                            height: 42
+                            radius: 7
+                            color: searchPolicyMouse.containsMouse ? Theme.surfaceHover : "transparent"
+                            border.width: 1
+                            border.color: Theme.divider
+
+                            Text {
+                                x: 12
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: "SEARCH POLICY"
+                                color: Theme.textSecondary
+                                font.pixelSize: 9
+                                font.weight: Font.DemiBold
+                                font.letterSpacing: 1.0
+                            }
+                            Text {
+                                anchors.right: parent.right
+                                anchors.rightMargin: 12
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: root.searchPolicyOpen ? "Hide options  ▲" : "Automatic · all standard layers  ▼"
+                                color: Theme.textMuted
+                                font.pixelSize: 9
+                            }
+                            MouseArea {
+                                id: searchPolicyMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.searchPolicyOpen = !root.searchPolicyOpen
+                            }
+                        }
+
+                        Column {
+                            width: parent.width
+                            visible: root.searchPolicyOpen
+                            spacing: 2
+
                         GridLayout {
                             width: parent.width
                             columns: 2
@@ -723,6 +894,9 @@ Item {
                             color: Theme.textMuted
                             font.pixelSize: 9
                         }
+
+                        }
+
                         AppTextArea { id: notes; width: parent.width; height: 68; placeholderText: "Analyst notes / context (not automatically treated as identifiers)" }
 
                         Item { width: 1; height: 10 }
@@ -774,64 +948,107 @@ Item {
                         anchors.left: parent.left
                         anchors.right: parent.right
                         anchors.top: progressStrip.bottom
-                        height: 44
+                        height: 78
 
                         Row {
-                            id: resultTabsRow
+                            id: resultSectionRow
                             anchors.left: parent.left
                             anchors.leftMargin: 12
-                            anchors.right: resultModeRow.visible ? resultModeRow.left : parent.right
-                            anchors.rightMargin: 10
-                            anchors.verticalCenter: parent.verticalCenter
-                            spacing: 5
-                            clip: true
+                            anchors.top: parent.top
+                            anchors.topMargin: 6
+                            height: 30
+                            spacing: 6
+
                             Repeater {
                                 model: [
                                     { key: "results", label: "Results" },
-                                    { key: "possible", label: "Possible" },
-                                    { key: "identity", label: "Identity" },
-                                    { key: "candidates", label: "Candidates" },
-                                    { key: "accounts", label: "Accounts" },
-                                    { key: "quality", label: "Quality" },
-                                    { key: "exploration", label: "Explore" },
-                                    { key: "schedule", label: "Schedule" },
-                                    { key: "mentions", label: "Mentions" },
-                                    { key: "providers", label: "Providers" },
-                                    { key: "pivots", label: "Pivots" },
-                                    { key: "errors", label: "Errors" }
+                                    { key: "review", label: "Review" },
+                                    { key: "activity", label: "Activity" }
                                 ]
                                 delegate: Rectangle {
-                                    id: tabButton
+                                    id: sectionButton
                                     required property var modelData
-                                    property bool selected: root.activeTab === String(modelData.key)
-                                    width: tabText.implicitWidth + 22
-                                    height: 28
-                                    radius: 6
-                                    color: selected ? Theme.accentSoft : (tabMouse.containsMouse ? Theme.surfaceHover : "transparent")
+                                    property bool selected: root.resultSectionForTab(root.activeTab) === String(modelData.key)
+                                    width: Math.max(88, sectionText.implicitWidth + 26)
+                                    height: 30
+                                    radius: 7
+                                    color: selected ? Theme.accentSoft : (sectionMouse.containsMouse ? Theme.surfaceHover : "transparent")
+                                    border.width: 1
+                                    border.color: selected ? Theme.accent : "transparent"
+
                                     Text {
-                                        id: tabText
+                                        id: sectionText
                                         anchors.centerIn: parent
-                                        text: String(tabButton.modelData.label) + "  " + root.itemCount(String(tabButton.modelData.key))
-                                        color: tabButton.selected ? Theme.textPrimary : Theme.textSecondary
+                                        text: String(sectionButton.modelData.label)
+                                            + "  " + root.sectionCount(String(sectionButton.modelData.key))
+                                        color: sectionButton.selected ? Theme.textPrimary : Theme.textSecondary
                                         font.pixelSize: 10
-                                        font.weight: tabButton.selected ? Font.DemiBold : Font.Normal
+                                        font.weight: sectionButton.selected ? Font.DemiBold : Font.Medium
                                     }
+
                                     MouseArea {
-                                        id: tabMouse
+                                        id: sectionMouse
                                         anchors.fill: parent
                                         hoverEnabled: true
                                         cursorShape: Qt.PointingHandCursor
-                                        onClicked: root.activeTab = String(tabButton.modelData.key)
+                                        onClicked: root.activeTab = root.sectionDefaultTab(String(sectionButton.modelData.key))
                                     }
                                 }
                             }
                         }
+
+                        Row {
+                            id: resultSubTabsRow
+                            anchors.left: parent.left
+                            anchors.leftMargin: 12
+                            anchors.right: resultModeRow.visible ? resultModeRow.left : parent.right
+                            anchors.rightMargin: 10
+                            anchors.top: resultSectionRow.bottom
+                            anchors.topMargin: 5
+                            height: 28
+                            spacing: 5
+                            clip: true
+
+                            Repeater {
+                                model: root.sectionTabs(root.resultSectionForTab(root.activeTab))
+                                delegate: Rectangle {
+                                    id: subTabButton
+                                    required property var modelData
+                                    property bool selected: root.activeTab === String(modelData.key)
+                                    width: subTabText.implicitWidth + 20
+                                    height: 26
+                                    radius: 6
+                                    color: selected ? Theme.surfaceRaised : (subTabMouse.containsMouse ? Theme.surfaceHover : "transparent")
+
+                                    Text {
+                                        id: subTabText
+                                        anchors.centerIn: parent
+                                        text: String(subTabButton.modelData.label)
+                                            + "  " + root.itemCount(String(subTabButton.modelData.key))
+                                        color: subTabButton.selected ? Theme.textPrimary : Theme.textMuted
+                                        font.pixelSize: 9
+                                        font.weight: subTabButton.selected ? Font.DemiBold : Font.Normal
+                                    }
+
+                                    MouseArea {
+                                        id: subTabMouse
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: root.activeTab = String(subTabButton.modelData.key)
+                                    }
+                                }
+                            }
+                        }
+
                         Row {
                             id: resultModeRow
                             visible: root.activeTab === "results" && root.runData.hasRun
                             anchors.right: parent.right
                             anchors.rightMargin: 12
-                            anchors.verticalCenter: parent.verticalCenter
+                            anchors.top: resultSectionRow.bottom
+                            anchors.topMargin: 5
+                            height: 28
                             spacing: 5
 
                             Repeater {
@@ -868,7 +1085,13 @@ Item {
                             }
                         }
 
-                        Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; height: 1; color: Theme.divider }
+                        Rectangle {
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.bottom: parent.bottom
+                            height: 1
+                            color: Theme.divider
+                        }
                     }
 
                     ListView {
