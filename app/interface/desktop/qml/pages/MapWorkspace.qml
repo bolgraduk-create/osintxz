@@ -14,10 +14,14 @@ Item {
     property bool showLocations: true
     property bool showPhotoGps: true
     property bool showNearbyPois: true
-    property string baseMapMode: mapWebEngineAvailable ? "streets" : "schematic"
+    property bool webEngineRuntimeAvailable: (
+        typeof mapWebEngineAvailable !== "undefined"
+        && root.webEngineRuntimeAvailable
+    )
+    property string baseMapMode: webEngineRuntimeAvailable ? "streets" : "schematic"
     property bool interactiveMapFailed: false
     property bool useInteractiveMap: baseMapMode === "streets"
-        && Boolean(mapWebEngineAvailable)
+        && webEngineRuntimeAvailable
         && !interactiveMapFailed
     property var geoRun: geoBridge.runData || ({})
     property var nearbyPlaces: geoRun.nearbyPlaces || []
@@ -358,7 +362,7 @@ Item {
 
                     MouseArea {
                         anchors.fill: parent
-                        enabled: Boolean(mapWebEngineAvailable)
+                        enabled: root.webEngineRuntimeAvailable
                         cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                         onClicked: {
                             root.interactiveMapFailed = false
@@ -366,12 +370,12 @@ Item {
                         }
                     }
 
-                    ToolTip.visible: !Boolean(mapWebEngineAvailable) && streetsHover.containsMouse
+                    ToolTip.visible: !root.webEngineRuntimeAvailable && streetsHover.containsMouse
                     ToolTip.text: "Qt WebEngine is unavailable; using the local schematic."
                     MouseArea {
                         id: streetsHover
                         anchors.fill: parent
-                        enabled: !Boolean(mapWebEngineAvailable)
+                        enabled: !root.webEngineRuntimeAvailable
                         hoverEnabled: true
                         acceptedButtons: Qt.NoButton
                     }
