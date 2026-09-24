@@ -151,8 +151,8 @@ def test_ui_r4_bridge_understands_supported_image_gps_metadata_layouts():
     assert fallback["longitude"] == 30.5234
 
 
-def test_ui_r4_bridge_rejects_invalid_coordinates_in_presentation_layer():
-    from app.interface.desktop.bridges.desktop_bridge import DesktopBridge
+def test_ui_r4_payload_rejects_invalid_coordinates_in_presentation_layer():
+    from app.interface.desktop.analysis_workspace_payloads import extract_gps
 
     gps = extract_gps(
         {
