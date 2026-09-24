@@ -83,6 +83,7 @@ html,body,#map{width:100%;height:100%;margin:0;overflow:hidden;background:#08172
   let popup = null;
   let firstState = true;
   let renderQueued = false;
+  const tileNodes = new Map();
 
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const worldSize = z => TILE_SIZE * Math.pow(2, z);
@@ -136,26 +137,39 @@ html,body,#map{width:100%;height:100%;margin:0;overflow:hidden;background:#08172
     const minY = Math.floor(origin.y / TILE_SIZE);
     const maxX = Math.floor((origin.x + mapEl.clientWidth) / TILE_SIZE);
     const maxY = Math.floor((origin.y + mapEl.clientHeight) / TILE_SIZE);
-
-    tileEl.replaceChildren();
+    const needed = new Set();
 
     for (let ty = minY; ty <= maxY; ty++) {
       if (ty < 0 || ty >= count) continue;
       for (let tx = minX; tx <= maxX; tx++) {
         const wrappedX = ((tx % count) + count) % count;
-        const img = document.createElement("img");
-        img.className = "tile";
-        img.draggable = false;
-        img.decoding = "async";
-        img.loading = "eager";
-        img.src = tileUrl(zoom, wrappedX, ty);
+        const key = zoom + ":" + wrappedX + ":" + ty + ":" + tx;
+        needed.add(key);
+
+        let img = tileNodes.get(key);
+        if (!img) {
+          img = document.createElement("img");
+          img.className = "tile";
+          img.draggable = false;
+          img.decoding = "async";
+          img.loading = "eager";
+          img.src = tileUrl(zoom, wrappedX, ty);
+          img.onerror = () => {
+            statusEl.textContent = "STREETS · TILE UNAVAILABLE";
+          };
+          tileNodes.set(key, img);
+          tileEl.appendChild(img);
+        }
+
         img.style.left = (tx * TILE_SIZE - origin.x) + "px";
         img.style.top = (ty * TILE_SIZE - origin.y) + "px";
-        img.onerror = () => {
-          statusEl.textContent = "STREETS · TILE UNAVAILABLE";
-        };
-        tileEl.appendChild(img);
       }
+    }
+
+    for (const [key, img] of tileNodes) {
+      if (needed.has(key)) continue;
+      img.remove();
+      tileNodes.delete(key);
     }
   }
 
