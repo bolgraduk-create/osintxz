@@ -305,50 +305,62 @@ Item {
                         border.color: Theme.border
                     }
 
-                    Image {
-                        anchors.fill: parent
-                        anchors.margins: 10
-                        source: "../../assets/images/world_map_dots.svg"
-                        fillMode: Image.PreserveAspectFit
-                        opacity: 0.54
-                        smooth: true
-                    }
+                    Item {
+                        id: projection
+                        anchors.centerIn: parent
+                        width: Math.max(120, parent.width - 20)
+                        height: Math.max(
+                            60,
+                            Math.min(
+                                parent.height - 20,
+                                width / 2
+                            )
+                        )
 
-                    Repeater {
-                        model: root.visibleMarkers()
+                        Image {
+                            anchors.fill: parent
+                            source: "../../assets/images/world_map_dots.svg"
+                            fillMode: Image.Stretch
+                            opacity: 0.54
+                            smooth: true
+                        }
 
-                        delegate: Rectangle {
-                            id: geoMarker
-                            required property var modelData
-                            width: markerMouse.containsMouse || selected ? 18 : 14
-                            height: width
-                            radius: width / 2
-                            property bool selected: root.selectedMarkerId === String(modelData.id || "")
-                                && root.selectedMarkerKind === String(modelData.kind || "")
-                            x: root.markerX(modelData, mapCanvas.width) - width / 2
-                            y: root.markerY(modelData, mapCanvas.height) - height / 2
-                            color: String(modelData.kind || "") === "photo"
-                                ? "#e5a84b"
-                                : "#c78cf4"
-                            border.width: 2
-                            border.color: selected ? Theme.textPrimary : "#d7e3ec"
-                            z: selected ? 5 : 2
+                        Repeater {
+                            model: root.visibleMarkers()
 
-                            Behavior on width { NumberAnimation { duration: 90 } }
+                            delegate: Rectangle {
+                                id: geoMarker
+                                required property var modelData
+                                width: markerMouse.containsMouse || selected ? 18 : 14
+                                height: width
+                                radius: width / 2
+                                property bool selected: root.selectedMarkerId === String(modelData.id || "")
+                                    && root.selectedMarkerKind === String(modelData.kind || "")
+                                x: root.markerX(modelData, projection.width) - width / 2
+                                y: root.markerY(modelData, projection.height) - height / 2
+                                color: String(modelData.kind || "") === "photo"
+                                    ? "#e5a84b"
+                                    : "#c78cf4"
+                                border.width: 2
+                                border.color: selected ? Theme.textPrimary : "#d7e3ec"
+                                z: selected ? 5 : 2
 
-                            MouseArea {
-                                id: markerMouse
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: root.selectMarker(geoMarker.modelData)
+                                Behavior on width { NumberAnimation { duration: 90 } }
+
+                                MouseArea {
+                                    id: markerMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: root.selectMarker(geoMarker.modelData)
+                                }
+
+                                ToolTip.visible: markerMouse.containsMouse
+                                ToolTip.delay: 300
+                                ToolTip.text: String(modelData.title || "Location")
+                                    + "\n"
+                                    + root.coordinateText(modelData)
                             }
-
-                            ToolTip.visible: markerMouse.containsMouse
-                            ToolTip.delay: 300
-                            ToolTip.text: String(modelData.title || "Location")
-                                + "\n"
-                                + root.coordinateText(modelData)
                         }
                     }
 
