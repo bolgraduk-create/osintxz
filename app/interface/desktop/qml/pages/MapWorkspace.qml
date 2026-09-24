@@ -117,6 +117,13 @@ Item {
         )
     }
 
+    function weatherValue(key) {
+        var value = root.weatherSummary[key]
+        if (value === undefined || value === null || String(value).length === 0)
+            return "—"
+        return String(value)
+    }
+
     function coordinateText(item) {
         if (item.latitude === undefined || item.latitude === null
                 || item.longitude === undefined || item.longitude === null)
@@ -808,11 +815,11 @@ Item {
                                 Text {
                                     width: parent.width
                                     text: "Temperature "
-                                        + String(root.weatherSummary.temperature_2m_min ?? "—")
+                                        + root.weatherValue("temperature_2m_min")
                                         + " → "
-                                        + String(root.weatherSummary.temperature_2m_max ?? "—")
+                                        + root.weatherValue("temperature_2m_max")
                                         + " °C · precipitation "
-                                        + String(root.weatherSummary.precipitation_sum ?? "—")
+                                        + root.weatherValue("precipitation_sum")
                                         + " mm"
                                     color: Theme.textSecondary
                                     font.pixelSize: 9
