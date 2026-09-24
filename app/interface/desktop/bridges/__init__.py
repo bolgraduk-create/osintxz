@@ -2,6 +2,7 @@
 
 from app.interface.desktop.bridges.analysis_bridge import AnalysisBridge
 from app.interface.desktop.bridges.desktop_bridge import DesktopBridge
+from app.interface.desktop.bridges.geo_bridge import GeoBridge
 from app.interface.desktop.bridges.investigation_search_bridge import InvestigationSearchBridge
 from app.interface.desktop.bridges.registry_center_bridge import RegistryCenterBridge
 from app.interface.desktop.bridges.source_center_bridge import SourceCenterBridge
@@ -9,6 +10,7 @@ from app.interface.desktop.bridges.source_center_bridge import SourceCenterBridg
 __all__ = [
     "AnalysisBridge",
     "DesktopBridge",
+    "GeoBridge",
     "InvestigationSearchBridge",
     "RegistryCenterBridge",
     "SourceCenterBridge",
