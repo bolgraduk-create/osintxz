@@ -68,8 +68,10 @@ Item {
         url: Qt.resolvedUrl("../map/map_engine.html")
 
         settings.javascriptEnabled: true
+        settings.javascriptCanOpenWindows: false
         settings.localContentCanAccessRemoteUrls: true
         settings.localContentCanAccessFileUrls: true
+        settings.webRTCPublicInterfacesOnly: true
 
         onLoadingChanged: function(loadRequest) {
             if (loadRequest.status === WebEngineView.LoadSucceededStatus) {
@@ -83,6 +85,20 @@ Item {
 
         onNavigationRequested: function(request) {
             var target = String(request.url || "")
+            if (target.indexOf("osintxz://external?") === 0) {
+                request.reject()
+                var externalQuery = target.substring(target.indexOf("?") + 1).split("&")
+                for (var e = 0; e < externalQuery.length; ++e) {
+                    var externalPair = externalQuery[e].split("=")
+                    if (decodeURIComponent(externalPair[0] || "") === "url") {
+                        desktopBridge.openExternalUrl(
+                            decodeURIComponent(externalPair.slice(1).join("=") || "")
+                        )
+                        return
+                    }
+                }
+                return
+            }
             if (target.indexOf("osintxz://select?") === 0) {
                 request.reject()
                 var query = target.substring(target.indexOf("?") + 1).split("&")
