@@ -324,7 +324,8 @@ def test_geo_c1_desktop_bridge_is_exposed_and_map_is_wired():
         'placeholderText: "Latitude"',
         'placeholderText: "Longitude"',
         'placeholderText: "YYYY-MM-DD (optional)"',
-        '"OpenStreetMap / Overpass"',
+        "root.nearbyPlaces",
+        'text: "NEARBY OSM OBJECTS"',
         '"HISTORICAL WEATHER · "',
         '"TRANSIENT"',
     ):
