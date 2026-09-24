@@ -104,7 +104,7 @@ ApplicationWindow {
         anchors.left: parent.left
         anchors.top: titleStrip.bottom
         anchors.bottom: parent.bottom
-        width: collapsed
+        width: sidebar.collapsed
             ? 76
             : Math.max(228, Math.min(276, window.width * 0.166))
         currentPage: window.currentPage
