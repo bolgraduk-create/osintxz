@@ -56,6 +56,10 @@ class GeoIntelligenceService:
 
         overpass_result = provider_results[0]
         weather_result = provider_results[1]
+        weather_available = (
+            weather_result.usable
+            and bool(weather_result.summary)
+        )
 
         usable_count = sum(1 for item in provider_results if item.usable)
         failed_count = sum(
@@ -94,7 +98,7 @@ class GeoIntelligenceService:
                 for item in overpass_result.records
             ],
             "weather": {
-                "available": weather_result.usable,
+                "available": weather_available,
                 "summary": dict(weather_result.summary),
                 "hourly": [
                     dict(item)
@@ -107,7 +111,7 @@ class GeoIntelligenceService:
             ],
             "summary": {
                 "nearbyPlaces": len(overpass_result.records),
-                "weatherAvailable": weather_result.usable,
+                "weatherAvailable": weather_available,
                 "providerFailures": failed_count,
                 "providerPartials": partial_count,
             },
