@@ -34,10 +34,11 @@ def test_geo_ui2_map_workspace_defaults_to_streets_with_schematic_fallback():
 
     assert "property bool webEngineRuntimeAvailable" in qml
     assert 'property string baseMapMode: webEngineRuntimeAvailable ? "streets" : "schematic"' in qml
-    assert 'property bool useInteractiveMap: baseMapMode === "streets"' in qml
+    assert 'baseMapMode === "streets"' in qml
+    assert 'baseMapMode === "satellite"' in qml
     assert 'text: "Streets"' in qml
     assert 'text: "Schematic"' in qml
-    assert 'text: "Satellite · next"' in qml
+    assert 'text: "Satellite"' in qml
     assert 'source: active ? "../components/InteractiveMapView.qml" : ""' in qml
     assert 'root.baseMapMode = "schematic"' in qml
     assert "Interactive basemap unavailable · schematic fallback" in qml
@@ -140,9 +141,16 @@ def test_geo_ui2_osm_attribution_is_visible_and_delegates_external_opening():
     assert "desktopBridge.openExternalUrl(" in qml
 
 
-def test_geo_ui2_satellite_is_still_explicitly_not_connected():
+def test_geo_ui2_satellite_mode_extends_interactive_map_without_removing_fallback():
     qml = _read(MAP_QML)
+    web_qml = _read(WEB_QML)
+    html = _read(MAP_HTML)
 
-    assert 'text: "Satellite · next"' in qml
-    assert "Satellite imagery is not connected yet." in qml
-    assert "Copernicus/Sentinel" in qml
+    assert 'text: "Satellite"' in qml
+    assert "root.selectedSatelliteScene.quicklookUrl" in qml
+    assert "item.satelliteScene = Qt.binding" in qml
+    assert "property var satelliteScene" in web_qml
+    assert "satelliteScene: root.satelliteScene" in web_qml
+    assert 'id="satellite"' in html
+    assert "function renderSatellite()" in html
+    assert "function fitSatellite()" in html
