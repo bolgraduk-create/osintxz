@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 
@@ -301,7 +302,7 @@ class CopernicusSentinel2CatalogProvider:
                     f"Assets({asset_id})/$value"
                 )
 
-            if download:
+            if download and CopernicusSentinel2CatalogProvider._safe_asset_url(download):
                 candidates.append(
                     (
                         score,
@@ -360,6 +361,22 @@ class CopernicusSentinel2CatalogProvider:
             return float(value)
         except (TypeError, ValueError):
             return None
+
+    @staticmethod
+    def _safe_asset_url(value: str) -> bool:
+        try:
+            parsed = urlparse(str(value or "").strip())
+        except ValueError:
+            return False
+
+        host = str(parsed.hostname or "").lower()
+        return (
+            parsed.scheme == "https"
+            and (
+                host == "dataspace.copernicus.eu"
+                or host.endswith(".dataspace.copernicus.eu")
+            )
+        )
 
     @staticmethod
     def _int_or_none(value: Any) -> int | None:
