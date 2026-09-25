@@ -23,6 +23,7 @@ Item {
     property bool useInteractiveMap: (
         baseMapMode === "streets"
         || baseMapMode === "satellite"
+        || baseMapMode === "hybrid"
     )
         && webEngineRuntimeAvailable
         && !interactiveMapFailed
@@ -171,9 +172,15 @@ Item {
 
     function sceneCanOverlay(scene) {
         var value = scene || ({})
-        var bbox = value.bbox || []
-        return String(value.quicklookUrl || "").length > 0
+        var bbox = (value.renderBbox || []).length === 4
+            ? value.renderBbox
+            : (value.bbox || [])
+        return String(value.renderUrl || value.quicklookUrl || "").length > 0
             && bbox.length === 4
+    }
+
+    function sceneHasTrueColor(scene) {
+        return String((scene || {}).renderUrl || "").length > 0
     }
 
     function activateSatelliteScene(scene) {
@@ -187,6 +194,22 @@ Item {
             root.interactiveMapFailed = false
             root.baseMapMode = "satellite"
         }
+    }
+
+    function renderSelectedSatellite() {
+        var sceneId = String(root.selectedSatelliteScene.id || "")
+        if (sceneId.length === 0)
+            return
+
+        var radius = parseInt(geoRadiusInput.text)
+        if (!isFinite(radius))
+            radius = 750
+        radius = Math.max(500, Math.min(20000, radius * 4))
+
+        geoBridge.renderSatelliteScene(
+            sceneId,
+            radius
+        )
     }
 
     function sceneCloudText(scene) {
@@ -495,6 +518,37 @@ Item {
                         }
                     }
                 }
+                Rectangle {
+                    width: 82
+                    height: 26
+                    radius: 6
+                    property bool available: root.webEngineRuntimeAvailable
+                        && root.sceneCanOverlay(root.selectedSatelliteScene)
+                    color: root.baseMapMode === "hybrid" ? Theme.accentSoft : Theme.surface
+                    border.width: 1
+                    border.color: root.baseMapMode === "hybrid" ? Theme.accent : Theme.border
+                    opacity: available ? 1.0 : 0.58
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "Hybrid"
+                        color: root.baseMapMode === "hybrid"
+                            ? Theme.textPrimary
+                            : (parent.available ? Theme.textSecondary : Theme.textMuted)
+                        font.pixelSize: 8
+                        font.weight: Font.DemiBold
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        enabled: parent.available
+                        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                        onClicked: {
+                            root.interactiveMapFailed = false
+                            root.baseMapMode = "hybrid"
+                        }
+                    }
+                }
             }
 
         }
@@ -509,10 +563,14 @@ Item {
                 Layout.fillHeight: true
                 title: "Geographic Canvas"
                 subtitle: root.baseMapMode === "satellite"
-                    ? "Copernicus Sentinel-2 preview · investigation layers remain interactive"
-                    : (root.useInteractiveMap
+                    ? (root.sceneHasTrueColor(root.selectedSatelliteScene)
+                        ? "Copernicus Sentinel-2 True Color · investigation layers remain interactive"
+                        : "Copernicus Sentinel-2 quicklook preview · investigation layers remain interactive")
+                    : (root.baseMapMode === "hybrid"
+                        ? "Sentinel-2 imagery + dark street context + investigation layers"
+                        : (root.useInteractiveMap
                         ? "Interactive streets · pan · zoom · clusters · live investigation layers"
-                        : "Offline-safe schematic fallback")
+                        : "Offline-safe schematic fallback"))
                 iconSource: "../../assets/icons/pin_purple.svg"
 
                 Item {
@@ -1152,7 +1210,7 @@ Item {
 
                         Text {
                             width: parent.width
-                            text: "No-key Copernicus catalogue search. Uses the GEO coordinates and optional date above; quicklooks are transient previews and full products are never downloaded automatically."
+                            text: "Public CDSE STAC scene discovery works without credentials. True Color rendering uses the optional Copernicus OAuth client; full SAFE/ZIP products are never downloaded automatically."
                             color: Theme.textSecondary
                             font.pixelSize: 9
                             wrapMode: Text.Wrap
@@ -1229,7 +1287,7 @@ Item {
 
                                     Image {
                                         anchors.fill: parent
-                                        source: String(root.selectedSatelliteScene.quicklookUrl || "")
+                                        source: String(root.selectedSatelliteScene.renderUrl || root.selectedSatelliteScene.quicklookUrl || "")
                                         fillMode: Image.PreserveAspectCrop
                                         asynchronous: true
                                         cache: true
@@ -1248,7 +1306,9 @@ Item {
                                         Text {
                                             id: satellitePreviewBadge
                                             anchors.centerIn: parent
-                                            text: "SENTINEL-2 PREVIEW"
+                                            text: root.sceneHasTrueColor(root.selectedSatelliteScene)
+                                                ? "SENTINEL-2 TRUE COLOR"
+                                                : "SENTINEL-2 PREVIEW"
                                             color: Theme.textPrimary
                                             font.pixelSize: 7
                                             font.weight: Font.DemiBold
@@ -1270,13 +1330,49 @@ Item {
                                     text: root.sceneDateText(root.selectedSatelliteScene)
                                         + " · "
                                         + root.sceneCloudText(root.selectedSatelliteScene)
-                                        + " · quicklook"
+                                        + (root.sceneHasTrueColor(root.selectedSatelliteScene)
+                                            ? " · true color"
+                                            : " · metadata/preview")
                                     color: Theme.textMuted
                                     font.pixelSize: 8
                                     elide: Text.ElideRight
                                 }
                             }
                         }
+
+                        AppButton {
+                            width: parent.width
+                            visible: String(root.selectedSatelliteScene.id || "").length > 0
+                            text: geoBridge.satelliteRenderBusy
+                                ? "Rendering True Color…"
+                                : (root.sceneHasTrueColor(root.selectedSatelliteScene)
+                                    ? "Re-render True Color"
+                                    : "Render True Color")
+                            primary: true
+                            enabled: !geoBridge.satelliteRenderBusy
+                                && geoBridge.satelliteRenderingAvailable
+                            onClicked: root.renderSelectedSatellite()
+                        }
+
+                        Text {
+                            width: parent.width
+                            visible: String(root.selectedSatelliteScene.id || "").length > 0
+                                && !geoBridge.satelliteRenderingAvailable
+                            text: "True Color rendering is optional: set CDSE_CLIENT_ID and CDSE_CLIENT_SECRET in .env. Scene discovery remains available without them."
+                            color: Theme.warning
+                            font.pixelSize: 8
+                            wrapMode: Text.Wrap
+                        }
+
+                        Text {
+                            width: parent.width
+                            visible: String(root.selectedSatelliteScene.renderError || "").length > 0
+                            text: "Render error · " + String(root.selectedSatelliteScene.renderError || "")
+                            color: Theme.danger
+                            font.pixelSize: 8
+                            wrapMode: Text.Wrap
+                        }
+
 
                         Column {
                             width: parent.width
@@ -1363,7 +1459,11 @@ Item {
                                         anchors.fill: parent
                                         hoverEnabled: true
                                         cursorShape: Qt.PointingHandCursor
-                                        onClicked: root.activateSatelliteScene(satelliteSceneRow.modelData)
+                                        onClicked: {
+                                            root.activateSatelliteScene(satelliteSceneRow.modelData)
+                                            if (root.sceneCanOverlay(satelliteSceneRow.modelData))
+                                                root.baseMapMode = "satellite"
+                                        }
                                     }
                                 }
                             }
