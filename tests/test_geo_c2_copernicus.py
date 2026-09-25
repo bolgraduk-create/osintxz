@@ -479,6 +479,12 @@ def test_geo_c2_secret_values_are_not_exposed_to_qml():
         "app/interface/desktop/workers/satellite_scene_render_worker.py"
     ).read_text(encoding="utf-8")
 
-    assert "cdse_client_secret" not in qml.lower()
+    # The UI may name the environment variable so the analyst knows what to
+    # configure, but it must never read or receive the underlying secret value.
+    assert "CDSE_CLIENT_SECRET" in qml
+    assert "settings.cdse_client_secret" not in qml
+    assert "get_secret_value()" not in qml
+    assert "client_secret =" not in qml.lower()
+
     assert "get_secret_value()" in worker
     assert "settings.cdse_client_secret" in worker
