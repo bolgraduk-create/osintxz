@@ -230,6 +230,16 @@ class Settings(BaseSettings):
     brave_search_api_key: SecretStr | None = None
 
     # ======================================================
+    # Copernicus Data Space / Sentinel Hub
+    # ======================================================
+
+    # Optional OAuth client for rendered Sentinel-2 imagery. Public STAC
+    # scene discovery works without these values. Secrets are never exposed
+    # through desktop payloads.
+    cdse_client_id: str | None = None
+    cdse_client_secret: SecretStr | None = None
+
+    # ======================================================
     # Redis
     # ======================================================
 
