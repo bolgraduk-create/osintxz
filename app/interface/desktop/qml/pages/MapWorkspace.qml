@@ -1196,8 +1196,8 @@ Item {
 
                         Rectangle {
                             width: parent.width
-                            height: selectedSatellitePreview.visible ? 176 : 0
-                            visible: selectedSatellitePreview.visible
+                            height: visible ? 176 : 0
+                            visible: String(root.selectedSatelliteScene.id || "").length > 0
                             radius: 8
                             color: Theme.surface
                             border.width: 1
@@ -1209,7 +1209,7 @@ Item {
                                 x: 8
                                 y: 8
                                 width: parent.width - 16
-                                visible: String(root.selectedSatelliteScene.id || "").length > 0
+                                visible: true
                                 spacing: 6
 
                                 Rectangle {
