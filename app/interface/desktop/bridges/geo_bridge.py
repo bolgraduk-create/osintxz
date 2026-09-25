@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from PySide6.QtCore import QObject, Property, QThread, Signal, Slot
+from PySide6.QtCore import QObject, Property, QThread, QUrl, Signal, Slot
 
+from app.core.config import settings
 from app.geo_intelligence.contracts import GeoEnrichmentRequest, GeoPoint
 from app.geo_intelligence.service import GeoIntelligenceService
 from app.interface.desktop.workers.geo_enrichment_worker import (
@@ -11,6 +12,9 @@ from app.interface.desktop.workers.geo_enrichment_worker import (
 )
 from app.interface.desktop.workers.satellite_scene_search_worker import (
     SatelliteSceneSearchWorker,
+)
+from app.interface.desktop.workers.satellite_scene_render_worker import (
+    SatelliteSceneRenderWorker,
 )
 
 
@@ -35,6 +39,9 @@ class GeoBridge(QObject):
         self._satellite_message = ""
         self._satellite_thread: QThread | None = None
         self._satellite_worker: SatelliteSceneSearchWorker | None = None
+        self._satellite_render_busy = False
+        self._satellite_render_thread: QThread | None = None
+        self._satellite_render_worker: SatelliteSceneRenderWorker | None = None
 
     @Property("QVariantMap", notify=changed)
     def runData(self) -> dict[str, Any]:
@@ -59,6 +66,18 @@ class GeoBridge(QObject):
     @Property(str, notify=messageChanged)
     def satelliteMessage(self) -> str:
         return self._satellite_message
+
+    @Property(bool, notify=changed)
+    def satelliteRenderBusy(self) -> bool:
+        return self._satellite_render_busy
+
+    @Property(bool, notify=changed)
+    def satelliteRenderingAvailable(self) -> bool:
+        return bool(
+            str(settings.cdse_client_id or "").strip()
+            and settings.cdse_client_secret is not None
+            and settings.cdse_client_secret.get_secret_value().strip()
+        )
 
     @Slot(float, float, str, int, result=bool)
     def runEnrichment(
@@ -275,9 +294,92 @@ class GeoBridge(QObject):
 
         return False
 
+    @Slot(str, int, result=bool)
+    def renderSatelliteScene(
+        self,
+        scene_id: str,
+        radius_m: int,
+    ) -> bool:
+        if self._satellite_render_busy:
+            self._set_satellite_message("Satellite image rendering is already running.")
+            return False
+
+        wanted = str(scene_id or "").strip()
+        scenes = self._satellite.get("scenes")
+        query = self._satellite.get("query")
+        if not wanted or not isinstance(scenes, list) or not isinstance(query, dict):
+            self._set_satellite_message("Search Sentinel-2 scenes before rendering.")
+            return False
+
+        selected: dict[str, Any] | None = None
+        for scene in scenes:
+            if isinstance(scene, dict) and str(scene.get("id") or "") == wanted:
+                selected = dict(scene)
+                break
+        if selected is None:
+            self._set_satellite_message("Selected Sentinel-2 scene is unavailable.")
+            return False
+
+        try:
+            latitude = float(query.get("latitude"))
+            longitude = float(query.get("longitude"))
+            radius = max(500, min(20_000, int(radius_m)))
+        except (TypeError, ValueError):
+            self._set_satellite_message("Satellite rendering coordinates are invalid.")
+            return False
+
+        if not self.satelliteRenderingAvailable:
+            self._set_satellite_message(
+                "True Color rendering needs CDSE_CLIENT_ID and CDSE_CLIENT_SECRET."
+            )
+            return False
+
+        selected["renderStatus"] = "running"
+        selected["renderError"] = ""
+        self._satellite["selectedScene"] = selected
+        self._satellite_render_busy = True
+        self._set_satellite_message("Rendering Sentinel-2 True Color image…")
+        self.changed.emit()
+
+        try:
+            thread = QThread(self)
+            worker = SatelliteSceneRenderWorker(
+                scene=selected,
+                latitude=latitude,
+                longitude=longitude,
+                radius_m=radius,
+            )
+            worker.moveToThread(thread)
+            thread.started.connect(worker.run)
+            worker.succeeded.connect(self._on_satellite_render_succeeded)
+            worker.failed.connect(self._on_satellite_render_failed)
+            worker.succeeded.connect(thread.quit)
+            worker.failed.connect(thread.quit)
+            worker.succeeded.connect(worker.deleteLater)
+            worker.failed.connect(worker.deleteLater)
+            thread.finished.connect(self._on_satellite_render_thread_finished)
+            thread.finished.connect(thread.deleteLater)
+
+            self._satellite_render_thread = thread
+            self._satellite_render_worker = worker
+            thread.start()
+            return True
+        except Exception as exc:
+            self._satellite_render_busy = False
+            self._satellite_render_thread = None
+            self._satellite_render_worker = None
+            selected["renderStatus"] = "failed"
+            selected["renderError"] = str(exc)
+            self._satellite["selectedScene"] = selected
+            self._set_satellite_message(
+                "Unable to start satellite rendering: " + str(exc)
+            )
+            self.changed.emit()
+            return False
+
     @Slot()
     def clearSatellite(self) -> None:
-        if self._satellite_busy:
+        if self._satellite_busy or self._satellite_render_busy:
             return
         self._satellite = {}
         self._set_satellite_message("")
@@ -425,6 +527,56 @@ class GeoBridge(QObject):
             "persisted": False,
         }
         self._set_satellite_message("Satellite scene search failed: " + error)
+        self.changed.emit()
+
+    @Slot(object)
+    def _on_satellite_render_succeeded(self, payload: object) -> None:
+        self._satellite_render_busy = False
+        data = dict(payload) if isinstance(payload, dict) else {}
+        selected = self._satellite.get("selectedScene")
+        if not isinstance(selected, dict):
+            selected = {}
+
+        render_path = str(data.get("renderPath") or "").strip()
+        selected["renderStatus"] = str(data.get("status") or "completed")
+        selected["renderError"] = str(data.get("error") or "")
+        selected["renderMode"] = str(data.get("renderMode") or "true_color")
+        selected["renderBbox"] = data.get("renderBbox") or []
+        selected["renderUrl"] = (
+            QUrl.fromLocalFile(render_path).toString()
+            if render_path
+            else ""
+        )
+        selected["renderedBytes"] = int(data.get("imageBytes") or 0)
+        self._satellite["selectedScene"] = selected
+
+        if selected["renderUrl"]:
+            self._set_satellite_message("Sentinel-2 True Color image ready.")
+        else:
+            self._set_satellite_message(
+                str(data.get("error") or "Sentinel-2 rendering returned no image.")
+            )
+        self.changed.emit()
+
+    @Slot(object)
+    def _on_satellite_render_failed(self, payload: object) -> None:
+        self._satellite_render_busy = False
+        data = dict(payload) if isinstance(payload, dict) else {}
+        selected = self._satellite.get("selectedScene")
+        if not isinstance(selected, dict):
+            selected = {}
+        error = str(data.get("error") or "Unknown Sentinel-2 rendering failure.")
+        selected["renderStatus"] = "failed"
+        selected["renderError"] = error
+        self._satellite["selectedScene"] = selected
+        self._set_satellite_message("Satellite rendering failed: " + error)
+        self.changed.emit()
+
+    @Slot()
+    def _on_satellite_render_thread_finished(self) -> None:
+        self._satellite_render_busy = False
+        self._satellite_render_thread = None
+        self._satellite_render_worker = None
         self.changed.emit()
 
     @Slot()
