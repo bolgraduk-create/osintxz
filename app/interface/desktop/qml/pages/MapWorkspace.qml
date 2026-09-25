@@ -20,10 +20,16 @@ Item {
     )
     property string baseMapMode: webEngineRuntimeAvailable ? "streets" : "schematic"
     property bool interactiveMapFailed: false
-    property bool useInteractiveMap: baseMapMode === "streets"
+    property bool useInteractiveMap: (
+        baseMapMode === "streets"
+        || baseMapMode === "satellite"
+    )
         && webEngineRuntimeAvailable
         && !interactiveMapFailed
     property var geoRun: geoBridge.runData || ({})
+    property var satelliteData: geoBridge.satelliteData || ({})
+    property var satelliteScenes: satelliteData.scenes || []
+    property var selectedSatelliteScene: satelliteData.selectedScene || ({})
     property var nearbyPlaces: geoRun.nearbyPlaces || []
     property var weatherData: geoRun.weather || ({})
     property var weatherSummary: weatherData.summary || ({})
@@ -141,6 +147,52 @@ Item {
             geoDateInput.text,
             radius
         )
+    }
+
+    function runSatelliteSearch() {
+        var latitude = Number(geoLatitudeInput.text)
+        var longitude = Number(geoLongitudeInput.text)
+        var windowDays = parseInt(satelliteWindowInput.text)
+        var cloudCover = parseInt(satelliteCloudInput.text)
+
+        if (!isFinite(windowDays))
+            windowDays = 5
+        if (!isFinite(cloudCover))
+            cloudCover = 40
+
+        geoBridge.runSatelliteSearch(
+            latitude,
+            longitude,
+            geoDateInput.text,
+            windowDays,
+            cloudCover
+        )
+    }
+
+    function activateSatelliteScene(scene) {
+        if (!scene)
+            return
+        var sceneId = String(scene.id || "")
+        if (sceneId.length === 0)
+            return
+        if (geoBridge.selectSatelliteScene(sceneId)) {
+            root.interactiveMapFailed = false
+            root.baseMapMode = "satellite"
+        }
+    }
+
+    function sceneCloudText(scene) {
+        var value = (scene || {}).cloudCover
+        if (value === undefined || value === null || String(value).length === 0)
+            return "cloud —"
+        return "cloud " + Number(value).toFixed(1) + "%"
+    }
+
+    function sceneDateText(scene) {
+        var value = String((scene || {}).acquiredAt || "")
+        if (value.length >= 16)
+            return value.substring(0, 16).replace("T", " ")
+        return value || "date unavailable"
     }
 
     function weatherValue(key) {
@@ -405,19 +457,34 @@ Item {
                 }
 
                 Rectangle {
-                    width: 104
+                    width: 92
                     height: 26
                     radius: 6
-                    color: Theme.surface
+                    property bool available: root.webEngineRuntimeAvailable
+                        && String(root.selectedSatelliteScene.quicklookUrl || "").length > 0
+                    color: root.baseMapMode === "satellite" ? Theme.accentSoft : Theme.surface
                     border.width: 1
-                    border.color: Theme.border
-                    opacity: 0.58
+                    border.color: root.baseMapMode === "satellite" ? Theme.accent : Theme.border
+                    opacity: available ? 1.0 : 0.58
 
                     Text {
                         anchors.centerIn: parent
-                        text: "Satellite · next"
-                        color: Theme.textMuted
+                        text: "Satellite"
+                        color: root.baseMapMode === "satellite"
+                            ? Theme.textPrimary
+                            : (parent.available ? Theme.textSecondary : Theme.textMuted)
                         font.pixelSize: 8
+                        font.weight: Font.DemiBold
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        enabled: parent.available
+                        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                        onClicked: {
+                            root.interactiveMapFailed = false
+                            root.baseMapMode = "satellite"
+                        }
                     }
                 }
             }
@@ -433,9 +500,11 @@ Item {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 title: "Geographic Canvas"
-                subtitle: root.useInteractiveMap
-                    ? "Interactive streets · pan · zoom · clusters · live investigation layers"
-                    : "Offline-safe schematic fallback"
+                subtitle: root.baseMapMode === "satellite"
+                    ? "Copernicus Sentinel-2 preview · investigation layers remain interactive"
+                    : (root.useInteractiveMap
+                        ? "Interactive streets · pan · zoom · clusters · live investigation layers"
+                        : "Offline-safe schematic fallback")
                 iconSource: "../../assets/icons/pin_purple.svg"
 
                 Item {
@@ -467,6 +536,12 @@ Item {
                             })
                             item.selectedMarkerKind = Qt.binding(function() {
                                 return root.selectedMarkerKind
+                            })
+                            item.baseMode = Qt.binding(function() {
+                                return root.baseMapMode
+                            })
+                            item.satelliteScene = Qt.binding(function() {
+                                return root.selectedSatelliteScene
                             })
                         }
                     }
@@ -1060,30 +1135,239 @@ Item {
                         Rectangle { width: parent.width; height: 1; color: Theme.divider }
 
                         Text {
-                            text: "SATELLITE"
+                            text: "SATELLITE · SENTINEL-2"
                             color: Theme.textMuted
                             font.pixelSize: 8
                             font.weight: Font.DemiBold
                             font.letterSpacing: 1.0
                         }
 
+                        Text {
+                            width: parent.width
+                            text: "No-key Copernicus catalogue search. Uses the GEO coordinates and optional date above; quicklooks are transient previews and full products are never downloaded automatically."
+                            color: Theme.textSecondary
+                            font.pixelSize: 9
+                            wrapMode: Text.Wrap
+                        }
+
+                        Row {
+                            width: parent.width
+                            spacing: 8
+
+                            AppTextField {
+                                id: satelliteWindowInput
+                                width: (parent.width - 8) / 2
+                                placeholderText: "± days"
+                                text: "5"
+                                inputMethodHints: Qt.ImhDigitsOnly
+                            }
+
+                            AppTextField {
+                                id: satelliteCloudInput
+                                width: (parent.width - 8) / 2
+                                placeholderText: "Cloud ≤ %"
+                                text: "40"
+                                inputMethodHints: Qt.ImhDigitsOnly
+                            }
+                        }
+
+                        AppButton {
+                            width: parent.width
+                            text: geoBridge.satelliteBusy
+                                ? "Searching Sentinel-2…"
+                                : "Find Sentinel-2 scenes"
+                            primary: true
+                            enabled: !geoBridge.satelliteBusy
+                                && geoLatitudeInput.text.trim().length > 0
+                                && geoLongitudeInput.text.trim().length > 0
+                            onClicked: root.runSatelliteSearch()
+                        }
+
+                        Text {
+                            width: parent.width
+                            visible: String(geoBridge.satelliteMessage || "").length > 0
+                            text: String(geoBridge.satelliteMessage || "")
+                            color: String(root.satelliteData.status || "") === "failed"
+                                ? Theme.danger
+                                : Theme.textSecondary
+                            font.pixelSize: 9
+                            wrapMode: Text.Wrap
+                        }
+
                         Rectangle {
                             width: parent.width
-                            height: 76
+                            height: selectedSatellitePreview.visible ? 176 : 0
+                            visible: selectedSatellitePreview.visible
                             radius: 8
                             color: Theme.surface
                             border.width: 1
                             border.color: Theme.border
+                            clip: true
+
+                            Column {
+                                id: selectedSatellitePreview
+                                x: 8
+                                y: 8
+                                width: parent.width - 16
+                                visible: String(root.selectedSatelliteScene.id || "").length > 0
+                                spacing: 6
+
+                                Rectangle {
+                                    width: parent.width
+                                    height: 104
+                                    radius: 6
+                                    color: "#081722"
+                                    clip: true
+
+                                    Image {
+                                        anchors.fill: parent
+                                        source: String(root.selectedSatelliteScene.quicklookUrl || "")
+                                        fillMode: Image.PreserveAspectCrop
+                                        asynchronous: true
+                                        cache: true
+                                    }
+
+                                    Rectangle {
+                                        anchors.left: parent.left
+                                        anchors.leftMargin: 7
+                                        anchors.top: parent.top
+                                        anchors.topMargin: 7
+                                        width: satellitePreviewBadge.implicitWidth + 14
+                                        height: 21
+                                        radius: 5
+                                        color: "#d0081722"
+
+                                        Text {
+                                            id: satellitePreviewBadge
+                                            anchors.centerIn: parent
+                                            text: "SENTINEL-2 PREVIEW"
+                                            color: Theme.textPrimary
+                                            font.pixelSize: 7
+                                            font.weight: Font.DemiBold
+                                        }
+                                    }
+                                }
+
+                                Text {
+                                    width: parent.width
+                                    text: String(root.selectedSatelliteScene.name || "Sentinel-2 scene")
+                                    color: Theme.textPrimary
+                                    font.pixelSize: 9
+                                    font.weight: Font.DemiBold
+                                    elide: Text.ElideMiddle
+                                }
+
+                                Text {
+                                    width: parent.width
+                                    text: root.sceneDateText(root.selectedSatelliteScene)
+                                        + " · "
+                                        + root.sceneCloudText(root.selectedSatelliteScene)
+                                        + " · quicklook"
+                                    color: Theme.textMuted
+                                    font.pixelSize: 8
+                                    elide: Text.ElideRight
+                                }
+                            }
+                        }
+
+                        Column {
+                            width: parent.width
+                            visible: root.satelliteScenes.length > 0
+                            spacing: 5
 
                             Text {
-                                anchors.fill: parent
-                                anchors.margins: 12
-                                text: "Satellite imagery is not connected yet. Copernicus/Sentinel will become a base layer here instead of a separate application page."
-                                color: Theme.textSecondary
-                                font.pixelSize: 9
-                                wrapMode: Text.Wrap
-                                verticalAlignment: Text.AlignVCenter
+                                text: "AVAILABLE SCENES"
+                                color: Theme.textMuted
+                                font.pixelSize: 8
+                                font.weight: Font.DemiBold
+                                font.letterSpacing: 1.0
                             }
+
+                            Repeater {
+                                model: root.satelliteScenes
+
+                                delegate: Rectangle {
+                                    id: satelliteSceneRow
+                                    required property var modelData
+                                    width: parent.width
+                                    height: 58
+                                    radius: 7
+                                    property bool selected: String(root.selectedSatelliteScene.id || "")
+                                        === String(modelData.id || "")
+                                    color: selected
+                                        ? Theme.accentSoft
+                                        : (satelliteSceneMouse.containsMouse ? Theme.surfaceHover : Theme.surface)
+                                    border.width: 1
+                                    border.color: selected ? Theme.accent : Theme.border
+
+                                    Rectangle {
+                                        x: 6
+                                        y: 6
+                                        width: 66
+                                        height: 46
+                                        radius: 5
+                                        color: "#081722"
+                                        clip: true
+
+                                        Image {
+                                            anchors.fill: parent
+                                            source: String(satelliteSceneRow.modelData.quicklookUrl || "")
+                                            fillMode: Image.PreserveAspectCrop
+                                            asynchronous: true
+                                            cache: true
+                                        }
+
+                                        Text {
+                                            anchors.centerIn: parent
+                                            visible: String(satelliteSceneRow.modelData.quicklookUrl || "").length === 0
+                                            text: "NO\nPREVIEW"
+                                            horizontalAlignment: Text.AlignHCenter
+                                            color: Theme.textMuted
+                                            font.pixelSize: 7
+                                        }
+                                    }
+
+                                    Text {
+                                        x: 80
+                                        y: 9
+                                        width: parent.width - 88
+                                        text: String(satelliteSceneRow.modelData.name || "Sentinel-2")
+                                        color: Theme.textPrimary
+                                        font.pixelSize: 8
+                                        font.weight: Font.Medium
+                                        elide: Text.ElideMiddle
+                                    }
+
+                                    Text {
+                                        x: 80
+                                        y: 29
+                                        width: parent.width - 88
+                                        text: root.sceneDateText(satelliteSceneRow.modelData)
+                                            + " · "
+                                            + root.sceneCloudText(satelliteSceneRow.modelData)
+                                        color: Theme.textMuted
+                                        font.pixelSize: 8
+                                        elide: Text.ElideRight
+                                    }
+
+                                    MouseArea {
+                                        id: satelliteSceneMouse
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: root.activateSatelliteScene(satelliteSceneRow.modelData)
+                                    }
+                                }
+                            }
+                        }
+
+                        AppButton {
+                            width: parent.width
+                            visible: String(root.selectedSatelliteScene.sourceUrl || "").length > 0
+                            text: "Open Copernicus product metadata"
+                            onClicked: desktopBridge.openExternalUrl(
+                                String(root.selectedSatelliteScene.sourceUrl || "")
+                            )
                         }
 
                         Text {
