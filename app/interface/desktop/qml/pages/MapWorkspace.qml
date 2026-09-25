@@ -31,6 +31,7 @@ Item {
     property var satelliteData: geoBridge.satelliteData || ({})
     property var satelliteScenes: satelliteData.scenes || []
     property var selectedSatelliteScene: satelliteData.selectedScene || ({})
+    property string lastSatelliteRenderUrl: ""
     property var nearbyPlaces: geoRun.nearbyPlaces || []
     property var weatherData: geoRun.weather || ({})
     property var weatherSummary: weatherData.summary || ({})
@@ -276,6 +277,14 @@ Item {
         target: geoBridge
         function onChanged() {
             Qt.callLater(root.ensureMarkerSelection)
+
+            var renderedUrl = String(root.selectedSatelliteScene.renderUrl || "")
+            if (renderedUrl.length > 0
+                    && renderedUrl !== root.lastSatelliteRenderUrl) {
+                root.lastSatelliteRenderUrl = renderedUrl
+                root.interactiveMapFailed = false
+                root.baseMapMode = "satellite"
+            }
         }
     }
 
@@ -1293,6 +1302,17 @@ Item {
                                         cache: true
                                     }
 
+                                    Text {
+                                        anchors.centerIn: parent
+                                        visible: String(root.selectedSatelliteScene.renderUrl
+                                            || root.selectedSatelliteScene.quicklookUrl
+                                            || "").length === 0
+                                        text: "METADATA ONLY"
+                                        color: Theme.textMuted
+                                        font.pixelSize: 8
+                                        font.weight: Font.DemiBold
+                                    }
+
                                     Rectangle {
                                         anchors.left: parent.left
                                         anchors.leftMargin: 7
@@ -1308,7 +1328,9 @@ Item {
                                             anchors.centerIn: parent
                                             text: root.sceneHasTrueColor(root.selectedSatelliteScene)
                                                 ? "SENTINEL-2 TRUE COLOR"
-                                                : "SENTINEL-2 PREVIEW"
+                                                : (String(root.selectedSatelliteScene.quicklookUrl || "").length > 0
+                                                    ? "SENTINEL-2 PREVIEW"
+                                                    : "SENTINEL-2 METADATA")
                                             color: Theme.textPrimary
                                             font.pixelSize: 7
                                             font.weight: Font.DemiBold
