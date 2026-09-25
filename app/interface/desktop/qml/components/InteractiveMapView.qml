@@ -8,6 +8,8 @@ Item {
     property var markers: []
     property string selectedMarkerId: ""
     property string selectedMarkerKind: ""
+    property string baseMode: "streets"
+    property var satelliteScene: ({})
     property bool pageReady: false
     signal markerSelected(string kind, string markerId)
     signal mapUnavailable(string message)
@@ -21,7 +23,9 @@ Item {
             return
         var payload = {
             markers: root.markers || [],
-            selectedKey: root.selectedKey()
+            selectedKey: root.selectedKey(),
+            baseMode: root.baseMode,
+            satelliteScene: root.satelliteScene || ({})
         }
         webView.runJavaScript(
             "window.osintxzMap && window.osintxzMap.setState("
@@ -50,6 +54,8 @@ Item {
     onMarkersChanged: Qt.callLater(root.syncState)
     onSelectedMarkerIdChanged: Qt.callLater(root.syncState)
     onSelectedMarkerKindChanged: Qt.callLater(root.syncState)
+    onBaseModeChanged: Qt.callLater(root.syncState)
+    onSatelliteSceneChanged: Qt.callLater(root.syncState)
 
     WebEngineProfile {
         id: mapProfile
