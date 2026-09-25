@@ -147,6 +147,7 @@ def test_geo_ui2_satellite_mode_extends_interactive_map_without_removing_fallbac
     html = _read(MAP_HTML)
 
     assert 'text: "Satellite"' in qml
+    assert "root.selectedSatelliteScene.renderUrl" in qml
     assert "root.selectedSatelliteScene.quicklookUrl" in qml
     assert "item.satelliteScene = Qt.binding" in qml
     assert "property var satelliteScene" in web_qml
@@ -154,3 +155,5 @@ def test_geo_ui2_satellite_mode_extends_interactive_map_without_removing_fallbac
     assert 'id="satellite"' in html
     assert "function renderSatellite()" in html
     assert "function fitSatellite()" in html
+    assert 'baseMode === "hybrid"' in html
+    assert "satelliteDisplayUrl(scene)" in html
