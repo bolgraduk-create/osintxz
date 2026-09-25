@@ -473,13 +473,11 @@ class GeoBridge(QObject):
             scenes = []
             data["scenes"] = scenes
 
-        selected = {}
-        for scene in scenes:
-            if isinstance(scene, dict) and str(scene.get("quicklookUrl") or ""):
-                selected = dict(scene)
-                break
-        if not selected and scenes and isinstance(scenes[0], dict):
-            selected = dict(scenes[0])
+        selected = (
+            dict(scenes[0])
+            if scenes and isinstance(scenes[0], dict)
+            else {}
+        )
 
         data["selectedScene"] = selected
         self._satellite = data
