@@ -152,6 +152,9 @@ MASSIVE_REMOTE_SOURCES: tuple[Source, ...] = (
     # GEO Connector Pack 1 — transient, no-key, low-footprint enrichment.
     _source("overpass_osm", "OpenStreetMap Overpass API", categories={Category.OPEN_DATA, Category.WEB_OSINT}, capabilities={"coordinates", "location", "nearby_poi", "osm_object", "geolocation"}, transport=Transport.REST, access=Access.NO_AUTH, origin=Origin.COMMUNITY_INDEX, global_scope=True, default_enabled=True, documentation_url="https://wiki.openstreetmap.org/wiki/Overpass_API", notes="GEO-C1 bounded read-only nearby-object query. Shared public endpoint, radius and response size are capped; results stay transient until an analyst explicitly persists them."),
     _source("open_meteo_historical", "Open-Meteo Historical Weather", categories={Category.OPEN_DATA}, capabilities={"coordinates", "location", "historical_weather", "weather_verification"}, transport=Transport.REST, access=Access.NO_AUTH, origin=Origin.AGGREGATOR, global_scope=True, default_enabled=True, documentation_url="https://open-meteo.com/en/docs/historical-weather-api", notes="GEO-C1 no-key historical weather context. Queries one explicit date in UTC; returned weather is contextual analysis data and is not automatically persisted as Evidence."),
+
+    # GEO Connector Pack 2 — public Copernicus catalogue and bounded quicklooks.
+    _source("copernicus_sentinel2_catalog", "Copernicus Data Space — Sentinel-2 Catalogue", categories={Category.OPEN_DATA}, capabilities={"coordinates", "location", "satellite_scene", "sentinel_2", "satellite_quicklook", "cloud_cover"}, transport=Transport.REST, access=Access.NO_AUTH, origin=Origin.OFFICIAL_OPEN_DATA, global_scope=True, default_enabled=True, documentation_url="https://documentation.dataspace.copernicus.eu/APIs/OData.html", notes="GEO-C2 no-auth OData scene discovery for Sentinel-2 L2A. Only metadata and bounded quicklook assets are used automatically; full SAFE/ZIP products are never downloaded by this connector."),
 )
 
 
@@ -235,6 +238,7 @@ COVERAGE_ENTRIES: tuple[SourceCoverageEntry, ...] = (
     SourceCoverageEntry("un_sc_sanctions", Status.ACTIVE, "UnSecurityCouncilSanctionsAdapter", "R13.17 explicit transient sanctions search"),
     SourceCoverageEntry("overpass_osm", Status.ACTIVE, "OverpassNearbyProvider", "GEO-C1 bounded transient nearby POI"),
     SourceCoverageEntry("open_meteo_historical", Status.ACTIVE, "OpenMeteoHistoricalProvider", "GEO-C1 one-day historical weather"),
+    SourceCoverageEntry("copernicus_sentinel2_catalog", Status.ACTIVE, "CopernicusSentinel2CatalogProvider", "GEO-C2 no-auth Sentinel-2 metadata + quicklook"),
 )
 
 
