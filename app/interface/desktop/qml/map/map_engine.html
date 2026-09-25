@@ -85,6 +85,8 @@ html,body,#map{width:100%;height:100%;margin:0;overflow:hidden;background:#08172
   let baseMode = "streets";
   let satelliteScene = null;
   let lastSatelliteKey = "";
+  let satelliteImg = null;
+  let satelliteImgUrl = "";
   let dragging = false;
   let dragStart = null;
   let centerStart = null;
@@ -252,32 +254,42 @@ html,body,#map{width:100%;height:100%;margin:0;overflow:hidden;background:#08172
   }
 
   function renderSatellite() {
-    satelliteEl.replaceChildren();
     tileEl.style.opacity = baseMode === "satellite" ? "0.16" : "1";
-    if (baseMode !== "satellite" || !hasSatelliteScene(satelliteScene)) return;
 
+    if (baseMode !== "satellite" || !hasSatelliteScene(satelliteScene)) {
+      satelliteEl.style.display = "none";
+      return;
+    }
+
+    satelliteEl.style.display = "block";
     const bbox = satelliteScene.bbox.map(Number);
     if (bbox.some(value => !Number.isFinite(value))) return;
+
+    const url = String(satelliteScene.quicklookUrl || "");
+    if (!satelliteImg || satelliteImgUrl !== url) {
+      satelliteEl.replaceChildren();
+      satelliteImg = document.createElement("img");
+      satelliteImgUrl = url;
+      satelliteImg.src = url;
+      satelliteImg.alt = String(satelliteScene.name || "Sentinel-2 quicklook");
+      satelliteImg.referrerPolicy = "no-referrer";
+      satelliteImg.onload = () => {
+        statusEl.textContent = "SATELLITE PREVIEW · SENTINEL-2";
+      };
+      satelliteImg.onerror = () => {
+        statusEl.textContent = "SATELLITE PREVIEW · UNAVAILABLE";
+      };
+      satelliteEl.appendChild(satelliteImg);
+    }
 
     const minLon = bbox[0], minLat = bbox[1], maxLon = bbox[2], maxLat = bbox[3];
     const topLeft = screenPoint({longitude:minLon, latitude:maxLat});
     const bottomRight = screenPoint({longitude:maxLon, latitude:minLat});
 
-    const img = document.createElement("img");
-    img.src = String(satelliteScene.quicklookUrl || "");
-    img.alt = String(satelliteScene.name || "Sentinel-2 quicklook");
-    img.referrerPolicy = "no-referrer";
-    img.style.left = Math.min(topLeft.x, bottomRight.x) + "px";
-    img.style.top = Math.min(topLeft.y, bottomRight.y) + "px";
-    img.style.width = Math.max(1, Math.abs(bottomRight.x - topLeft.x)) + "px";
-    img.style.height = Math.max(1, Math.abs(bottomRight.y - topLeft.y)) + "px";
-    img.onload = () => {
-      statusEl.textContent = "SATELLITE PREVIEW · SENTINEL-2";
-    };
-    img.onerror = () => {
-      statusEl.textContent = "SATELLITE PREVIEW · UNAVAILABLE";
-    };
-    satelliteEl.appendChild(img);
+    satelliteImg.style.left = Math.min(topLeft.x, bottomRight.x) + "px";
+    satelliteImg.style.top = Math.min(topLeft.y, bottomRight.y) + "px";
+    satelliteImg.style.width = Math.max(1, Math.abs(bottomRight.x - topLeft.x)) + "px";
+    satelliteImg.style.height = Math.max(1, Math.abs(bottomRight.y - topLeft.y)) + "px";
   }
 
   function fitSatellite() {
