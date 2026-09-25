@@ -9,6 +9,9 @@ from app.geo_intelligence.service import GeoIntelligenceService
 from app.interface.desktop.workers.geo_enrichment_worker import (
     GeoEnrichmentWorker,
 )
+from app.interface.desktop.workers.satellite_scene_search_worker import (
+    SatelliteSceneSearchWorker,
+)
 
 
 class GeoBridge(QObject):
@@ -27,6 +30,11 @@ class GeoBridge(QObject):
         self._message = ""
         self._thread: QThread | None = None
         self._worker: GeoEnrichmentWorker | None = None
+        self._satellite: dict[str, Any] = {}
+        self._satellite_busy = False
+        self._satellite_message = ""
+        self._satellite_thread: QThread | None = None
+        self._satellite_worker: SatelliteSceneSearchWorker | None = None
 
     @Property("QVariantMap", notify=changed)
     def runData(self) -> dict[str, Any]:
@@ -39,6 +47,18 @@ class GeoBridge(QObject):
     @Property(str, notify=messageChanged)
     def message(self) -> str:
         return self._message
+
+    @Property("QVariantMap", notify=changed)
+    def satelliteData(self) -> dict[str, Any]:
+        return dict(self._satellite)
+
+    @Property(bool, notify=changed)
+    def satelliteBusy(self) -> bool:
+        return self._satellite_busy
+
+    @Property(str, notify=messageChanged)
+    def satelliteMessage(self) -> str:
+        return self._satellite_message
 
     @Slot(float, float, str, int, result=bool)
     def runEnrichment(
@@ -135,6 +155,134 @@ class GeoBridge(QObject):
             self.changed.emit()
             return False
 
+    @Slot(float, float, str, int, int, result=bool)
+    def runSatelliteSearch(
+        self,
+        latitude: float,
+        longitude: float,
+        target_date: str,
+        window_days: int,
+        max_cloud_cover: int,
+    ) -> bool:
+        if self._satellite_busy:
+            self._set_satellite_message("Satellite scene search is already running.")
+            return False
+
+        normalized_date = str(target_date or "").strip()
+
+        try:
+            from datetime import date
+
+            if normalized_date:
+                parsed_date = date.fromisoformat(normalized_date)
+                if parsed_date > date.today():
+                    raise ValueError("Satellite target date cannot be in the future.")
+
+            latitude_value = float(latitude)
+            longitude_value = float(longitude)
+            if not -90.0 <= latitude_value <= 90.0:
+                raise ValueError("latitude must be between -90 and 90.")
+            if not -180.0 <= longitude_value <= 180.0:
+                raise ValueError("longitude must be between -180 and 180.")
+
+            window_value = int(window_days)
+            cloud_value = int(max_cloud_cover)
+            if not 0 <= window_value <= 30:
+                raise ValueError("Satellite date window must be 0..30 days.")
+            if not 0 <= cloud_value <= 100:
+                raise ValueError("Maximum cloud cover must be 0..100.")
+        except (TypeError, ValueError) as exc:
+            self._set_satellite_message(str(exc))
+            return False
+
+        self._satellite = {
+            "hasRun": True,
+            "status": "running",
+            "query": {
+                "latitude": latitude_value,
+                "longitude": longitude_value,
+                "targetDate": normalized_date,
+                "windowDays": window_value,
+                "maxCloudCover": cloud_value,
+            },
+            "scenes": [],
+            "selectedScene": {},
+            "summary": {
+                "sceneCount": 0,
+                "quicklookCount": 0,
+            },
+            "transient": True,
+            "persisted": False,
+        }
+        self._satellite_busy = True
+        self._set_satellite_message("Searching Copernicus Sentinel-2 scenes…")
+        self.changed.emit()
+
+        try:
+            thread = QThread(self)
+            worker = SatelliteSceneSearchWorker(
+                latitude=latitude_value,
+                longitude=longitude_value,
+                target_date=normalized_date,
+                window_days=window_value,
+                max_cloud_cover=cloud_value,
+            )
+            worker.moveToThread(thread)
+            thread.started.connect(worker.run)
+            worker.succeeded.connect(self._on_satellite_succeeded)
+            worker.failed.connect(self._on_satellite_failed)
+            worker.succeeded.connect(thread.quit)
+            worker.failed.connect(thread.quit)
+            worker.succeeded.connect(worker.deleteLater)
+            worker.failed.connect(worker.deleteLater)
+            thread.finished.connect(self._on_satellite_thread_finished)
+            thread.finished.connect(thread.deleteLater)
+
+            self._satellite_thread = thread
+            self._satellite_worker = worker
+            thread.start()
+            return True
+        except Exception as exc:
+            self._satellite_busy = False
+            self._satellite_thread = None
+            self._satellite_worker = None
+            self._satellite.update(
+                {
+                    "status": "failed",
+                    "error": str(exc),
+                }
+            )
+            self._set_satellite_message(
+                "Unable to start satellite scene search: " + str(exc)
+            )
+            self.changed.emit()
+            return False
+
+    @Slot(str, result=bool)
+    def selectSatelliteScene(self, scene_id: str) -> bool:
+        wanted = str(scene_id or "").strip()
+        scenes = self._satellite.get("scenes")
+        if not wanted or not isinstance(scenes, list):
+            return False
+
+        for scene in scenes:
+            if not isinstance(scene, dict):
+                continue
+            if str(scene.get("id") or "") == wanted:
+                self._satellite["selectedScene"] = dict(scene)
+                self.changed.emit()
+                return True
+
+        return False
+
+    @Slot()
+    def clearSatellite(self) -> None:
+        if self._satellite_busy:
+            return
+        self._satellite = {}
+        self._set_satellite_message("")
+        self.changed.emit()
+
     @Slot()
     def clear(self) -> None:
         if self._busy:
@@ -209,12 +357,96 @@ class GeoBridge(QObject):
         self._set_message("GEO enrichment failed: " + error)
         self.changed.emit()
 
+    @Slot(object)
+    def _on_satellite_succeeded(self, payload: object) -> None:
+        self._satellite_busy = False
+        data = dict(payload) if isinstance(payload, dict) else {
+            "status": "failed",
+            "error": "Copernicus provider returned an invalid result.",
+            "scenes": [],
+        }
+
+        scenes = data.get("scenes")
+        if not isinstance(scenes, list):
+            scenes = []
+            data["scenes"] = scenes
+
+        selected = {}
+        for scene in scenes:
+            if isinstance(scene, dict) and str(scene.get("quicklookUrl") or ""):
+                selected = dict(scene)
+                break
+        if not selected and scenes and isinstance(scenes[0], dict):
+            selected = dict(scenes[0])
+
+        data["selectedScene"] = selected
+        self._satellite = data
+
+        status = str(data.get("status") or "")
+        if status == "failed":
+            self._set_satellite_message(
+                "Copernicus Sentinel-2 scene search failed."
+            )
+        elif status == "partial":
+            self._set_satellite_message(
+                "Copernicus scene search completed with a provider warning."
+            )
+        else:
+            self._set_satellite_message(
+                "Copernicus scene search complete: "
+                + str(len(scenes))
+                + " scene(s)."
+            )
+        self.changed.emit()
+
+    @Slot(object)
+    def _on_satellite_failed(self, payload: object) -> None:
+        self._satellite_busy = False
+        data = dict(payload) if isinstance(payload, dict) else {}
+        error = str(data.get("error") or "Unknown satellite scene search failure.")
+        self._satellite = {
+            "hasRun": True,
+            "status": "failed",
+            "error": error,
+            "query": {
+                "latitude": data.get("latitude"),
+                "longitude": data.get("longitude"),
+                "targetDate": data.get("targetDate") or "",
+                "windowDays": data.get("windowDays") or 0,
+                "maxCloudCover": data.get("maxCloudCover") or 0,
+            },
+            "scenes": [],
+            "selectedScene": {},
+            "summary": {
+                "sceneCount": 0,
+                "quicklookCount": 0,
+            },
+            "transient": True,
+            "persisted": False,
+        }
+        self._set_satellite_message("Satellite scene search failed: " + error)
+        self.changed.emit()
+
+    @Slot()
+    def _on_satellite_thread_finished(self) -> None:
+        self._satellite_busy = False
+        self._satellite_thread = None
+        self._satellite_worker = None
+        self.changed.emit()
+
     @Slot()
     def _on_thread_finished(self) -> None:
         self._busy = False
         self._thread = None
         self._worker = None
         self.changed.emit()
+
+    def _set_satellite_message(self, value: str) -> None:
+        normalized = str(value or "")
+        if normalized == self._satellite_message:
+            return
+        self._satellite_message = normalized
+        self.messageChanged.emit()
 
     def _set_message(self, value: str) -> None:
         normalized = str(value or "")
