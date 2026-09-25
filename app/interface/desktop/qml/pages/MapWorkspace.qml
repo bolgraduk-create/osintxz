@@ -169,13 +169,21 @@ Item {
         )
     }
 
+    function sceneCanOverlay(scene) {
+        var value = scene || ({})
+        var bbox = value.bbox || []
+        return String(value.quicklookUrl || "").length > 0
+            && bbox.length === 4
+    }
+
     function activateSatelliteScene(scene) {
         if (!scene)
             return
         var sceneId = String(scene.id || "")
         if (sceneId.length === 0)
             return
-        if (geoBridge.selectSatelliteScene(sceneId)) {
+        if (geoBridge.selectSatelliteScene(sceneId)
+                && root.sceneCanOverlay(scene)) {
             root.interactiveMapFailed = false
             root.baseMapMode = "satellite"
         }
@@ -461,7 +469,7 @@ Item {
                     height: 26
                     radius: 6
                     property bool available: root.webEngineRuntimeAvailable
-                        && String(root.selectedSatelliteScene.quicklookUrl || "").length > 0
+                        && root.sceneCanOverlay(root.selectedSatelliteScene)
                     color: root.baseMapMode === "satellite" ? Theme.accentSoft : Theme.surface
                     border.width: 1
                     border.color: root.baseMapMode === "satellite" ? Theme.accent : Theme.border
