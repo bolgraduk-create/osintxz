@@ -117,7 +117,7 @@ class CopernicusSentinel2CatalogProvider:
                     params={
                         "$filter": " and ".join(filters),
                         "$orderby": "ContentDate/Start desc",
-                        "$top": str(request.limit),
+                        "$top": str(min(max(request.limit * 3, 12), 24)),
                         "$expand": "Assets,Attributes",
                     },
                 )
@@ -158,8 +158,16 @@ class CopernicusSentinel2CatalogProvider:
             scene = self._scene(row)
             if scene:
                 scenes.append(scene)
-            if len(scenes) >= request.limit:
-                break
+
+        if request.target_date is not None:
+            scenes.sort(
+                key=lambda scene: self._scene_rank(
+                    scene,
+                    request.target_date,
+                )
+            )
+
+        scenes = scenes[: request.limit]
 
         return {
             "status": "completed",
@@ -191,13 +199,40 @@ class CopernicusSentinel2CatalogProvider:
         }
 
     @staticmethod
+    def _scene_rank(
+        scene: dict[str, Any],
+        target_date: date,
+    ) -> tuple[int, float, str]:
+        acquired = str(scene.get("acquiredAt") or "")
+        try:
+            acquired_date = date.fromisoformat(acquired[:10])
+            distance = abs((acquired_date - target_date).days)
+        except ValueError:
+            distance = 10_000
+
+        cloud = scene.get("cloudCover")
+        try:
+            cloud_value = float(cloud)
+        except (TypeError, ValueError):
+            cloud_value = 101.0
+
+        return (
+            distance,
+            cloud_value,
+            acquired,
+        )
+
+    @staticmethod
     def _date_window(
         request: Sentinel2SceneSearchRequest,
     ) -> tuple[date, date]:
         if request.target_date is not None:
             return (
                 request.target_date - timedelta(days=request.window_days),
-                request.target_date + timedelta(days=request.window_days),
+                min(
+                    request.target_date + timedelta(days=request.window_days),
+                    date.today(),
+                ),
             )
 
         end = date.today()
