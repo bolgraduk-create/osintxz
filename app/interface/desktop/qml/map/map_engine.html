@@ -8,7 +8,10 @@
 html,body,#map{width:100%;height:100%;margin:0;overflow:hidden;background:#081722;font-family:"Segoe UI",Arial,sans-serif;color:#dbe8f2}
 #map{position:relative;touch-action:none;cursor:grab;user-select:none}
 #map.dragging{cursor:grabbing}
-#tiles,#markers{position:absolute;inset:0;overflow:hidden}
+#tiles,#satellite,#markers{position:absolute;inset:0;overflow:hidden}
+#satellite{pointer-events:none;z-index:2}
+#satellite img{position:absolute;object-fit:fill;box-shadow:0 0 0 1px rgba(190,220,236,.35),0 10px 28px rgba(0,0,0,.42)}
+#tiles{z-index:1}#markers{z-index:4}
 .tile{position:absolute;width:256px;height:256px;user-select:none;pointer-events:none;
   filter:invert(92%) hue-rotate(180deg) brightness(72%) contrast(112%) saturate(62%);
 }
@@ -42,6 +45,7 @@ html,body,#map{width:100%;height:100%;margin:0;overflow:hidden;background:#08172
 <body>
 <div id="map">
   <div id="tiles"></div>
+  <div id="satellite"></div>
   <div id="shade"></div>
   <div id="markers"></div>
   <div id="zoomctl" class="control">
@@ -70,6 +74,7 @@ html,body,#map{width:100%;height:100%;margin:0;overflow:hidden;background:#08172
 
   const mapEl = document.getElementById("map");
   const tileEl = document.getElementById("tiles");
+  const satelliteEl = document.getElementById("satellite");
   const markerEl = document.getElementById("markers");
   const statusEl = document.getElementById("status");
 
@@ -77,6 +82,9 @@ html,body,#map{width:100%;height:100%;margin:0;overflow:hidden;background:#08172
   let zoom = 2;
   let markers = [];
   let selectedKey = "";
+  let baseMode = "streets";
+  let satelliteScene = null;
+  let lastSatelliteKey = "";
   let dragging = false;
   let dragStart = null;
   let centerStart = null;
@@ -229,6 +237,69 @@ html,body,#map{width:100%;height:100%;margin:0;overflow:hidden;background:#08172
     window.location.href = "osintxz://select?kind=" + kind + "&id=" + id;
   }
 
+  function satelliteKey(scene) {
+    if (!scene) return "";
+    return String(scene.id || "") + ":" + String(scene.quicklookUrl || "");
+  }
+
+  function hasSatelliteScene(scene) {
+    return Boolean(
+      scene &&
+      scene.quicklookUrl &&
+      Array.isArray(scene.bbox) &&
+      scene.bbox.length === 4
+    );
+  }
+
+  function renderSatellite() {
+    satelliteEl.replaceChildren();
+    tileEl.style.opacity = baseMode === "satellite" ? "0.16" : "1";
+    if (baseMode !== "satellite" || !hasSatelliteScene(satelliteScene)) return;
+
+    const bbox = satelliteScene.bbox.map(Number);
+    if (bbox.some(value => !Number.isFinite(value))) return;
+
+    const minLon = bbox[0], minLat = bbox[1], maxLon = bbox[2], maxLat = bbox[3];
+    const topLeft = screenPoint({longitude:minLon, latitude:maxLat});
+    const bottomRight = screenPoint({longitude:maxLon, latitude:minLat});
+
+    const img = document.createElement("img");
+    img.src = String(satelliteScene.quicklookUrl || "");
+    img.alt = String(satelliteScene.name || "Sentinel-2 quicklook");
+    img.referrerPolicy = "no-referrer";
+    img.style.left = Math.min(topLeft.x, bottomRight.x) + "px";
+    img.style.top = Math.min(topLeft.y, bottomRight.y) + "px";
+    img.style.width = Math.max(1, Math.abs(bottomRight.x - topLeft.x)) + "px";
+    img.style.height = Math.max(1, Math.abs(bottomRight.y - topLeft.y)) + "px";
+    img.onload = () => {
+      statusEl.textContent = "SATELLITE PREVIEW · SENTINEL-2";
+    };
+    img.onerror = () => {
+      statusEl.textContent = "SATELLITE PREVIEW · UNAVAILABLE";
+    };
+    satelliteEl.appendChild(img);
+  }
+
+  function fitSatellite() {
+    if (!hasSatelliteScene(satelliteScene)) return false;
+    const bbox = satelliteScene.bbox.map(Number);
+    if (bbox.some(value => !Number.isFinite(value))) return false;
+
+    const minLon=bbox[0], minLat=bbox[1], maxLon=bbox[2], maxLat=bbox[3];
+    center={lat:(minLat+maxLat)/2,lon:(minLon+maxLon)/2};
+
+    for (let z=16; z>=2; z--) {
+      const dx=Math.abs(lonToX(maxLon,z)-lonToX(minLon,z));
+      const dy=Math.abs(latToY(minLat,z)-latToY(maxLat,z));
+      if (dx <= mapEl.clientWidth*0.82 && dy <= mapEl.clientHeight*0.82) {
+        zoom=z;
+        break;
+      }
+    }
+    scheduleRender();
+    return true;
+  }
+
   function renderMarkers() {
     markerEl.replaceChildren();
     if (popup) { popup.remove(); popup = null; }
@@ -282,8 +353,10 @@ html,body,#map{width:100%;height:100%;margin:0;overflow:hidden;background:#08172
     while (center.lon < -180) center.lon += 360;
     while (center.lon > 180) center.lon -= 360;
     renderTiles();
+    renderSatellite();
     renderMarkers();
-    statusEl.textContent = "STREETS · Z" + zoom;
+    if (baseMode !== "satellite")
+      statusEl.textContent = "STREETS · Z" + zoom;
   }
 
   function zoomAt(delta, clientX, clientY) {
@@ -389,7 +462,16 @@ html,body,#map{width:100%;height:100%;margin:0;overflow:hidden;background:#08172
         Number.isFinite(Number(m.latitude)) && Number.isFinite(Number(m.longitude))
       ) : [];
       selectedKey = String(next.selectedKey || "");
-      if (firstState && markers.length) {
+      baseMode = String(next.baseMode || "streets");
+      satelliteScene = next.satelliteScene || null;
+      const nextSatelliteKey = satelliteKey(satelliteScene);
+      const satelliteChanged = nextSatelliteKey !== lastSatelliteKey;
+      lastSatelliteKey = nextSatelliteKey;
+
+      if (baseMode === "satellite" && satelliteChanged && hasSatelliteScene(satelliteScene)) {
+        firstState=false;
+        fitSatellite();
+      } else if (firstState && markers.length) {
         firstState=false;
         fitMarkers();
       } else {
@@ -398,6 +480,7 @@ html,body,#map{width:100%;height:100%;margin:0;overflow:hidden;background:#08172
       }
     },
     fitMarkers,
+    fitSatellite,
     focusMarker(kind,id) {
       const key=String(kind||"")+":"+String(id||"");
       const item=markers.find(m => String(m.kind||"")+":"+String(m.id||"")===key);
