@@ -15,7 +15,7 @@ html,body,#map{width:100%;height:100%;margin:0;overflow:hidden;background:#08172
 .tile{position:absolute;width:256px;height:256px;user-select:none;pointer-events:none;
   filter:invert(92%) hue-rotate(180deg) brightness(72%) contrast(112%) saturate(62%);
 }
-#shade{position:absolute;inset:0;pointer-events:none;background:rgba(4,19,29,.18)}
+#shade{position:absolute;inset:0;pointer-events:none;z-index:3;background:rgba(4,19,29,.18)}
 .marker,.cluster{position:absolute;transform:translate(-50%,-50%);display:flex;align-items:center;justify-content:center;
   border:2px solid rgba(235,245,252,.92);box-shadow:0 0 0 3px rgba(7,22,33,.72),0 4px 16px rgba(0,0,0,.38);
   cursor:pointer;z-index:5;transition:width .1s,height .1s,box-shadow .1s}
@@ -267,10 +267,13 @@ html,body,#map{width:100%;height:100%;margin:0;overflow:hidden;background:#08172
 
   function renderSatellite() {
     const satelliteMode = baseMode === "satellite" || baseMode === "hybrid";
+    const hybridMode = baseMode === "hybrid";
     tileEl.style.opacity = baseMode === "satellite"
       ? "0.10"
-      : (baseMode === "hybrid" ? "0.42" : "1");
-    tileEl.style.mixBlendMode = baseMode === "hybrid" ? "screen" : "normal";
+      : (hybridMode ? "0.42" : "1");
+    tileEl.style.mixBlendMode = hybridMode ? "screen" : "normal";
+    tileEl.style.zIndex = hybridMode ? "2" : "1";
+    satelliteEl.style.zIndex = hybridMode ? "1" : "2";
 
     if (!satelliteMode || !hasSatelliteScene(satelliteScene)) {
       satelliteEl.style.display = "none";
