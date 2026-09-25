@@ -77,15 +77,15 @@ def test_ui_r4_map_workspace_uses_real_markers_and_local_projection():
     assert 'source: "../../assets/images/world_map_dots.svg"' in qml
 
 
-def test_ui_r4_map_layers_distinguish_locations_photo_gps_and_future_satellite():
+def test_ui_r4_map_layers_distinguish_locations_photo_gps_and_satellite():
     qml = _qml("MapWorkspace.qml")
 
     assert 'text: "Locations"' in qml
     assert 'text: "Photo GPS"' in qml
-    assert 'text: "Satellite · next"' in qml
-    assert "Satellite imagery is not connected yet." in qml
-    assert "Copernicus/Sentinel" in qml
-    assert "satelliteImageUrl" not in qml
+    assert 'text: "Satellite"' in qml
+    assert "geoBridge.satelliteData" in qml
+    assert 'text: "SATELLITE · SENTINEL-2"' in qml
+    assert "Satellite imagery is not connected yet." not in qml
 
 
 def test_ui_r4_bridge_stays_thin_and_payload_module_is_read_only():
