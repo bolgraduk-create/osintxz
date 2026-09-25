@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, timedelta
+import hashlib
 import math
 from pathlib import Path
 from typing import Any
@@ -632,7 +633,26 @@ function evaluatePixel(sample) {
             }
 
         self.cache_dir.mkdir(parents=True, exist_ok=True)
-        output_path = (self.cache_dir / "sentinel2_true_color_current.png").resolve()
+        cache_key = hashlib.sha256(
+            (
+                str(request.scene.get("id") or "")
+                + "|"
+                + ",".join(f"{value:.7f}" for value in bbox)
+            ).encode("utf-8")
+        ).hexdigest()[:16]
+        output_path = (
+            self.cache_dir
+            / f"sentinel2_true_color_{cache_key}.png"
+        ).resolve()
+
+        for stale in self.cache_dir.glob("sentinel2_true_color_*.png"):
+            if stale.resolve() == output_path:
+                continue
+            try:
+                stale.unlink()
+            except OSError:
+                pass
+
         temporary = output_path.with_suffix(".tmp")
         temporary.write_bytes(image_bytes)
         temporary.replace(output_path)
