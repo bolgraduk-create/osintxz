@@ -54,6 +54,9 @@ class MapSourceDescriptor:
     name: str
     kind: str
     category: str = "base"
+    region: str = "World"
+    provider: str = ""
+    tags: tuple[str, ...] = ()
     url: str = ""
     attribution: str = ""
     terms_url: str = ""
@@ -64,6 +67,9 @@ class MapSourceDescriptor:
     enabled: bool = True
     compare_supported: bool = True
     overlay_supported: bool = True
+    primary_supported: bool = True
+    requires_api_key: bool = False
+    requires_opt_in: bool = False
     wms_layers: str = ""
     wms_styles: str = ""
     wms_format: str = "image/png"
@@ -125,6 +131,19 @@ class MapSourceDescriptor:
         object.__setattr__(self, "name", name)
         object.__setattr__(self, "kind", kind)
         object.__setattr__(self, "category", str(self.category or "base").strip().lower())
+        object.__setattr__(self, "region", str(self.region or "World").strip() or "World")
+        object.__setattr__(self, "provider", str(self.provider or "").strip())
+        object.__setattr__(
+            self,
+            "tags",
+            tuple(
+                dict.fromkeys(
+                    str(tag or "").strip().lower()
+                    for tag in self.tags
+                    if str(tag or "").strip()
+                )
+            ),
+        )
         object.__setattr__(self, "url", url)
         object.__setattr__(self, "terms_url", terms_url)
         object.__setattr__(self, "min_zoom", min_zoom)
@@ -146,6 +165,9 @@ class MapSourceDescriptor:
             "name": self.name,
             "kind": self.kind,
             "category": self.category,
+            "region": self.region,
+            "provider": self.provider,
+            "tags": list(self.tags),
             "url": self.url,
             "attribution": self.attribution,
             "termsUrl": self.terms_url,
@@ -156,6 +178,9 @@ class MapSourceDescriptor:
             "enabled": self.enabled,
             "compareSupported": self.compare_supported,
             "overlaySupported": self.overlay_supported,
+            "primarySupported": self.primary_supported,
+            "requiresApiKey": self.requires_api_key,
+            "requiresOptIn": self.requires_opt_in,
             "wmsLayers": self.wms_layers,
             "wmsStyles": self.wms_styles,
             "wmsFormat": self.wms_format,
@@ -176,6 +201,9 @@ BUILTIN_MAP_SOURCES: tuple[MapSourceDescriptor, ...] = (
         name="OpenStreetMap",
         kind="xyz",
         category="streets",
+        region="World",
+        provider="OpenStreetMap Foundation",
+        tags=("street", "roads", "osm", "world"),
         url="https://tile.openstreetmap.org/{z}/{x}/{y}.png",
         attribution="© OpenStreetMap contributors",
         terms_url="https://www.openstreetmap.org/copyright",
@@ -189,10 +217,78 @@ BUILTIN_MAP_SOURCES: tuple[MapSourceDescriptor, ...] = (
         },
     ),
     MapSourceDescriptor(
+        id="opentopomap",
+        name="OpenTopoMap",
+        kind="xyz",
+        category="terrain",
+        region="World",
+        provider="OpenTopoMap",
+        tags=("topographic", "terrain", "contours", "hiking", "osm"),
+        url="https://a.tile.opentopomap.org/{z}/{x}/{y}.png",
+        attribution="Map data: © OpenStreetMap contributors, SRTM | Map style: © OpenTopoMap (CC-BY-SA)",
+        terms_url="https://wiki.opentopomap.org/about",
+        min_zoom=0,
+        max_zoom=17,
+        metadata={
+            "cachePolicy": "http_headers",
+            "prefetchAllowed": False,
+            "darkFilter": False,
+            "catalogPack": "world",
+        },
+    ),
+    MapSourceDescriptor(
+        id="openseamap_seamarks",
+        name="OpenSeaMap · Seamarks",
+        kind="xyz",
+        category="marine",
+        region="World",
+        provider="OpenSeaMap",
+        tags=("marine", "nautical", "seamarks", "ports", "navigation"),
+        url="https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png",
+        attribution="© OpenSeaMap contributors · © OpenStreetMap contributors",
+        terms_url="https://www.openseamap.org/",
+        min_zoom=0,
+        max_zoom=18,
+        primary_supported=False,
+        metadata={
+            "overlayOnly": True,
+            "transparentTiles": True,
+            "cachePolicy": "http_headers",
+            "prefetchAllowed": False,
+            "catalogPack": "world",
+        },
+    ),
+    MapSourceDescriptor(
+        id="openrailwaymap_standard",
+        name="OpenRailwayMap · Standard",
+        kind="xyz",
+        category="transport",
+        region="World",
+        provider="OpenRailwayMap",
+        tags=("railway", "rail", "transport", "infrastructure", "osm"),
+        url="https://tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png",
+        attribution="© OpenStreetMap contributors · OpenRailwayMap style CC-BY-SA 2.0",
+        terms_url="https://wiki.openstreetmap.org/wiki/OpenRailwayMap/API",
+        min_zoom=2,
+        max_zoom=19,
+        primary_supported=False,
+        metadata={
+            "overlayOnly": True,
+            "transparentTiles": True,
+            "tilePixelRatio": 2,
+            "cachePolicy": "http_headers",
+            "prefetchAllowed": False,
+            "catalogPack": "world",
+        },
+    ),
+    MapSourceDescriptor(
         id="local_schematic",
         name="Local Schematic",
         kind="schematic",
         category="offline",
+        region="Local",
+        provider="OSINTXZ",
+        tags=("offline", "fallback", "schematic"),
         attribution="OSINTXZ local schematic",
         min_zoom=0,
         max_zoom=4,
@@ -208,6 +304,9 @@ BUILTIN_MAP_SOURCES: tuple[MapSourceDescriptor, ...] = (
         name="Sentinel-2 Selected Scene",
         kind="satellite_dynamic",
         category="satellite",
+        region="World",
+        provider="Copernicus Data Space Ecosystem",
+        tags=("satellite", "sentinel", "imagery", "earth observation"),
         attribution="Copernicus Data Space Ecosystem",
         terms_url="https://dataspace.copernicus.eu/",
         min_zoom=0,
@@ -359,6 +458,9 @@ class MapSourceRegistry:
                     name=str(row.get("name") or ""),
                     kind=str(row.get("kind") or ""),
                     category="custom",
+                    region=str(row.get("region") or "Custom"),
+                    provider=str(row.get("provider") or "Analyst"),
+                    tags=tuple(row.get("tags") or ()),
                     url=str(row.get("url") or ""),
                     attribution=str(row.get("attribution") or ""),
                     terms_url=str(row.get("termsUrl") or ""),
@@ -369,6 +471,9 @@ class MapSourceRegistry:
                     enabled=bool(row.get("enabled", True)),
                     compare_supported=bool(row.get("compareSupported", True)),
                     overlay_supported=bool(row.get("overlaySupported", True)),
+                    primary_supported=bool(row.get("primarySupported", True)),
+                    requires_api_key=bool(row.get("requiresApiKey", False)),
+                    requires_opt_in=bool(row.get("requiresOptIn", False)),
                     wms_layers=str(row.get("wmsLayers") or ""),
                     wms_styles=str(row.get("wmsStyles") or ""),
                     wms_format=str(row.get("wmsFormat") or "image/png"),
