@@ -936,10 +936,7 @@ class UnifiedInvestigationSearchWorker(QObject):
                 "explorationGraph": exploration_graph.to_dict(
                     executed_keys=exploration_executed_keys
                 ),
-                "queryPlanner": {
-                    **smart_query_plan.to_dict(),
-                    "laneExecution": planner_lane_execution,
-                },
+                "queryPlanner": smart_query_plan.to_dict(),
                 "explorationValidationSummary": exploration_validation_summary,
                 "explorationBrowserSummary": exploration_browser_summary,
                 "retrievalSchedule": retrieval_schedule.to_dict(),
@@ -1066,6 +1063,7 @@ class UnifiedInvestigationSearchWorker(QObject):
                 },
                 "rawSecretValuesStored": False,
             }
+            snapshot["queryPlanner"]["laneExecution"] = planner_lane_execution
             self.succeeded.emit({"snapshot": snapshot, "duration": duration})
         except Exception as exc:
             try:
