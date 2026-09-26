@@ -6,6 +6,7 @@ from PySide6.QtCore import QObject, Property, QThread, QUrl, Signal, Slot
 
 from app.core.config import settings
 from app.geo_intelligence.contracts import GeoEnrichmentRequest, GeoPoint
+from app.geo_intelligence.map_sources import MapSourceRegistry
 from app.geo_intelligence.service import GeoIntelligenceService
 from app.interface.desktop.workers.geo_enrichment_worker import (
     GeoEnrichmentWorker,
@@ -42,6 +43,8 @@ class GeoBridge(QObject):
         self._satellite_render_busy = False
         self._satellite_render_thread: QThread | None = None
         self._satellite_render_worker: SatelliteSceneRenderWorker | None = None
+        self._map_source_registry = MapSourceRegistry()
+        self._map_source_message = ""
 
     @Property("QVariantMap", notify=changed)
     def runData(self) -> dict[str, Any]:
@@ -78,6 +81,67 @@ class GeoBridge(QObject):
             and settings.cdse_client_secret is not None
             and settings.cdse_client_secret.get_secret_value().strip()
         )
+
+    @Property("QVariantList", notify=changed)
+    def mapSources(self) -> list[dict[str, Any]]:
+        return self._map_source_registry.payload()
+
+    @Property(str, notify=messageChanged)
+    def mapSourceMessage(self) -> str:
+        return self._map_source_message
+
+    @Slot("QVariantMap", result=bool)
+    def addMapSource(
+        self,
+        payload: object,
+    ) -> bool:
+        data = dict(payload) if isinstance(payload, dict) else {}
+        try:
+            source = self._map_source_registry.add_custom(
+                name=str(data.get("name") or ""),
+                kind=str(data.get("kind") or ""),
+                url=str(data.get("url") or ""),
+                attribution=str(data.get("attribution") or ""),
+                terms_url=str(data.get("termsUrl") or ""),
+                min_zoom=int(data.get("minZoom", 0)),
+                max_zoom=int(data.get("maxZoom", 19)),
+                wms_layers=str(data.get("wmsLayers") or ""),
+                wms_styles=str(data.get("wmsStyles") or ""),
+                wms_format=str(data.get("wmsFormat") or "image/png"),
+                wms_version=str(data.get("wmsVersion") or "1.3.0"),
+                wms_transparent=bool(data.get("wmsTransparent", True)),
+            )
+        except (TypeError, ValueError, OSError) as exc:
+            self._set_map_source_message(str(exc))
+            return False
+
+        self._set_map_source_message(
+            "Map source added: " + source.name
+        )
+        self.changed.emit()
+        return True
+
+    @Slot(str, result=bool)
+    def removeMapSource(
+        self,
+        source_id: str,
+    ) -> bool:
+        normalized = str(source_id or "").strip()
+        try:
+            removed = self._map_source_registry.remove_custom(normalized)
+        except OSError as exc:
+            self._set_map_source_message(str(exc))
+            return False
+
+        if not removed:
+            self._set_map_source_message(
+                "Only analyst-added map sources can be removed."
+            )
+            return False
+
+        self._set_map_source_message("Map source removed.")
+        self.changed.emit()
+        return True
 
     @Slot(float, float, str, int, result=bool)
     def runEnrichment(
@@ -596,6 +660,13 @@ class GeoBridge(QObject):
         if normalized == self._satellite_message:
             return
         self._satellite_message = normalized
+        self.messageChanged.emit()
+
+    def _set_map_source_message(self, value: str) -> None:
+        normalized = str(value or "")
+        if normalized == self._map_source_message:
+            return
+        self._map_source_message = normalized
         self.messageChanged.emit()
 
     def _set_message(self, value: str) -> None:
