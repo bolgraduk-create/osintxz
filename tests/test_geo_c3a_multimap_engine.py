@@ -298,3 +298,21 @@ def test_geo_c3a_map_webview_uses_default_webengine_profile():
     assert "WebEngineProfilePrototype {" not in qml
     assert "WebEngineProfile {" not in qml
     assert "profile:" not in qml
+
+
+def test_geo_c3a_rapid_zoom_hardening_cancels_stale_tiles_and_debounces():
+    html = _read(MAP_HTML)
+
+    for expected in (
+        "const ZOOM_RENDER_DEBOUNCE_MS = 80",
+        "function scheduleZoomRender()",
+        "function disposeTile(node)",
+        'node.removeAttribute("src")',
+        "function sourceSupportsZoom(source,z)",
+        "if(!sourceSupportsZoom(source,zoom))",
+        "if(state.tiles.get(cacheKey)!==img) return",
+        "scheduleZoomRender();",
+        "Number(primarySource.minZoom)",
+        "Number(primarySource.maxZoom)",
+    ):
+        assert expected in html
