@@ -156,25 +156,11 @@ Rectangle {
 
             AppButton {
                 Layout.preferredHeight: 34
-                text: root.compareEnabled ? "Compare on" : "Compare"
+                text: root.compareEnabled ? "Exit compare" : "Compare"
                 primary: root.compareEnabled
                 onClicked: root.compareEnabledRequested(!root.compareEnabled)
             }
 
-            AppButton {
-                Layout.preferredHeight: 34
-                text: "+ Source"
-                quiet: true
-                onClicked: root.addSourceRequested()
-            }
-
-            AppButton {
-                Layout.preferredHeight: 34
-                text: "Remove"
-                destructive: true
-                visible: Boolean(root.sourceForId(root.primarySourceId).userDefined)
-                onClicked: root.removeSourceRequested(root.primarySourceId)
-            }
         }
 
         Rectangle {
