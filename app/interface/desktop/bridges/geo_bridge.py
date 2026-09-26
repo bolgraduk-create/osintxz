@@ -101,10 +101,11 @@ class GeoBridge(QObject):
     def mapLayerMessage(self) -> str:
         return self._map_layer_message
 
-    @Slot(str, result=bool)
+    @Slot(str, str, result=bool)
     def importMapLayer(
         self,
         file_url: str,
+        scope_id: str,
     ) -> bool:
         normalized = str(file_url or "").strip()
         if not normalized:
@@ -119,7 +120,10 @@ class GeoBridge(QObject):
         )
 
         try:
-            layer = self._map_layer_registry.import_file(local_path)
+            layer = self._map_layer_registry.import_file(
+                local_path,
+                scope_id=str(scope_id or "global").strip() or "global",
+            )
         except (OSError, TypeError, ValueError) as exc:
             self._set_map_layer_message(str(exc))
             return False
