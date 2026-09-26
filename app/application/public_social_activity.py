@@ -482,7 +482,16 @@ class PublicSocialActivityCollector:
             return "gitlab"
         if "bsky.app" in text or "bluesky" in text:
             return "bluesky"
-        if "mastodon" in text or "/@" in str(account.get("url") or ""):
+        identifiers = account.get("identifiers")
+        identifiers = identifiers if isinstance(identifiers, dict) else {}
+        if (
+            "mastodon" in text
+            or "fediverse" in text
+            or bool(
+                identifiers.get("MASTODON_USERNAME")
+                or identifiers.get("mastodon_username")
+            )
+        ):
             return "mastodon"
         return ""
 
