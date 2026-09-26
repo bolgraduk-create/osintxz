@@ -82,7 +82,7 @@ def test_ui_r4_map_layers_distinguish_locations_photo_gps_and_satellite():
 
     assert 'text: "Locations"' in qml
     assert 'text: "Photo GPS"' in qml
-    assert 'text: "Satellite"' in qml
+    assert '"sentinel_selected"' in qml
     assert "geoBridge.satelliteData" in qml
     assert 'text: "SATELLITE · SENTINEL-2"' in qml
     assert "Satellite imagery is not connected yet." not in qml
