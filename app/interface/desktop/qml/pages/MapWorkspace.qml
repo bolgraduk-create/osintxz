@@ -20,10 +20,18 @@ Item {
     )
     property string baseMapMode: webEngineRuntimeAvailable ? "streets" : "schematic"
     property bool interactiveMapFailed: false
+    property var mapSources: geoBridge.mapSources || []
+    property string primaryMapSourceId: webEngineRuntimeAvailable
+        ? "osm_standard"
+        : "local_schematic"
+    property string secondaryMapSourceId: "sentinel_selected"
+    property bool compareEnabled: false
+    property string compareMode: "overlay"
+    property real comparePosition: 0.5
+    property real secondaryOpacity: 0.75
+    property var primaryMapSource: root.mapSourceById(root.primaryMapSourceId)
     property bool useInteractiveMap: (
-        baseMapMode === "streets"
-        || baseMapMode === "satellite"
-        || baseMapMode === "hybrid"
+        String((primaryMapSource || {}).kind || "") !== "schematic"
     )
         && webEngineRuntimeAvailable
         && !interactiveMapFailed
@@ -38,6 +46,138 @@ Item {
     property string selectedMarkerId: ""
     property string selectedMarkerKind: ""
     property var selectedMarker: root.findSelectedMarker()
+
+    function mapSourceById(sourceId) {
+        var wanted = String(sourceId || "")
+        for (var i = 0; i < root.mapSources.length; ++i) {
+            if (String(root.mapSources[i].id || "") === wanted)
+                return root.mapSources[i]
+        }
+        return ({})
+    }
+
+    function materializeMapSource(sourceId) {
+        var source = root.mapSourceById(sourceId)
+        if (!source || String(source.id || "").length === 0)
+            return null
+
+        var value = ({})
+        for (var key in source)
+            value[key] = source[key]
+
+        if (String(value.id || "") === "sentinel_selected") {
+            var scene = root.selectedSatelliteScene || ({})
+            var bbox = (scene.renderBbox || []).length === 4
+                ? scene.renderBbox
+                : (scene.bbox || [])
+            value.imageUrl = String(scene.renderUrl || scene.quicklookUrl || "")
+            value.bbox = bbox
+            value.name = root.sceneHasTrueColor(scene)
+                ? "Sentinel-2 True Color"
+                : "Sentinel-2 Selected Scene"
+        }
+
+        return value
+    }
+
+    function mapSourceName(sourceId) {
+        var source = root.mapSourceById(sourceId)
+        return String(source.name || sourceId || "Map")
+    }
+
+    function mapStatePayload() {
+        return {
+            primarySource: root.materializeMapSource(root.primaryMapSourceId),
+            secondarySource: root.compareEnabled
+                ? root.materializeMapSource(root.secondaryMapSourceId)
+                : null,
+            compareMode: root.compareEnabled ? root.compareMode : "none",
+            comparePosition: root.comparePosition,
+            secondaryOpacity: root.secondaryOpacity
+        }
+    }
+
+    function selectPrimaryMapSource(sourceId) {
+        var source = root.mapSourceById(sourceId)
+        if (!source || String(source.id || "").length === 0)
+            return
+
+        if (String(source.id || "") === "sentinel_selected"
+                && !root.sceneCanOverlay(root.selectedSatelliteScene))
+            return
+
+        root.primaryMapSourceId = String(source.id || "")
+        root.interactiveMapFailed = false
+
+        if (String(source.kind || "") === "schematic") {
+            root.baseMapMode = "schematic"
+            root.compareEnabled = false
+        } else if (String(source.id || "") === "sentinel_selected") {
+            root.baseMapMode = "satellite"
+        } else {
+            root.baseMapMode = "streets"
+        }
+    }
+
+    function selectSecondaryMapSource(sourceId) {
+        var source = root.mapSourceById(sourceId)
+        if (!source || String(source.id || "").length === 0)
+            return
+        if (String(source.kind || "") === "schematic")
+            return
+        if (String(source.id || "") === "sentinel_selected"
+                && !root.sceneCanOverlay(root.selectedSatelliteScene))
+            return
+        root.secondaryMapSourceId = String(source.id || "")
+    }
+
+    function applyMapPreset(mode) {
+        var requested = String(mode || "streets")
+        if (requested === "schematic") {
+            root.primaryMapSourceId = "local_schematic"
+            root.compareEnabled = false
+            root.baseMapMode = "schematic"
+            return
+        }
+
+        if (requested === "satellite") {
+            if (!root.sceneCanOverlay(root.selectedSatelliteScene))
+                return
+            root.primaryMapSourceId = "sentinel_selected"
+            root.compareEnabled = false
+            root.baseMapMode = "satellite"
+            root.interactiveMapFailed = false
+            return
+        }
+
+        if (requested === "hybrid") {
+            if (!root.sceneCanOverlay(root.selectedSatelliteScene))
+                return
+            root.primaryMapSourceId = "sentinel_selected"
+            root.secondaryMapSourceId = "osm_standard"
+            root.compareEnabled = true
+            root.compareMode = "overlay"
+            root.secondaryOpacity = 0.42
+            root.baseMapMode = "hybrid"
+            root.interactiveMapFailed = false
+            return
+        }
+
+        root.primaryMapSourceId = "osm_standard"
+        root.compareEnabled = false
+        root.baseMapMode = "streets"
+        root.interactiveMapFailed = false
+    }
+
+    function removeCurrentMapSource(sourceId) {
+        var wanted = String(sourceId || "")
+        if (!geoBridge.removeMapSource(wanted))
+            return
+        if (root.primaryMapSourceId === wanted)
+            root.applyMapPreset("streets")
+        if (root.secondaryMapSourceId === wanted)
+            root.secondaryMapSourceId = "osm_standard"
+    }
 
     function visibleMarkers() {
         var result = []
@@ -192,8 +332,7 @@ Item {
             return
         if (geoBridge.selectSatelliteScene(sceneId)
                 && root.sceneCanOverlay(scene)) {
-            root.interactiveMapFailed = false
-            root.baseMapMode = "satellite"
+            root.applyMapPreset("satellite")
         }
     }
 
@@ -282,8 +421,8 @@ Item {
             if (renderedUrl.length > 0
                     && renderedUrl !== root.lastSatelliteRenderUrl) {
                 root.lastSatelliteRenderUrl = renderedUrl
-                root.interactiveMapFailed = false
-                root.baseMapMode = "satellite"
+                if (!root.compareEnabled)
+                    root.applyMapPreset("satellite")
             }
         }
     }
