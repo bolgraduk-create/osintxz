@@ -34,6 +34,7 @@ from app.application.browser_account_verification import (
 )
 from app.application.identity_triage import build_identity_triage
 from app.application.social_content_correlation import (
+    build_social_intelligence,
     correlate_social_content,
     normalize_social_content,
 )
@@ -755,7 +756,10 @@ class UnifiedInvestigationSearchWorker(QObject):
             )
 
             social_content = normalize_social_content(raw_results)
-            social_correlations = correlate_social_content(social_content)
+            social_intelligence = build_social_intelligence(social_content)
+            social_correlations = list(
+                social_intelligence.get("correlations") or []
+            )
 
             errors = self._group_error_rows(errors)
             providers, health_summary = annotate_provider_health(providers)
@@ -773,6 +777,7 @@ class UnifiedInvestigationSearchWorker(QObject):
                 "triageSummary": triage_summary.to_dict(),
                 "identityCorrelations": identity_correlations,
                 "socialContent": social_content[:250],
+                "socialIntelligence": social_intelligence,
                 "socialCorrelations": social_correlations[:200],
                 "candidates": [
                     self._public_result_row(row)
