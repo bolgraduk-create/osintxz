@@ -9,13 +9,18 @@ AppDialog {
 
     width: 620
     title: "Add Map Source"
-    description: "Add an analyst-controlled XYZ or WMS source. Credentials in URLs are blocked."
+    description: "Add an analyst-controlled XYZ, WMS, or WMTS source. Credentials in URLs are blocked."
     primaryText: "Add source"
-    bodyHeight: sourceType.currentIndex === 1 ? 430 : 338
+    bodyHeight: sourceType.currentIndex === 0
+        ? 338
+        : (sourceType.currentIndex === 1 ? 430 : 470)
     primaryEnabled: sourceName.text.trim().length > 0
         && sourceUrl.text.trim().length > 0
-        && (sourceType.currentIndex === 0
+        && (sourceType.currentIndex !== 1
             || wmsLayers.text.trim().length > 0)
+        && (sourceType.currentIndex !== 2
+            || (wmtsLayer.text.trim().length > 0
+                && wmtsMatrixSet.text.trim().length > 0))
 
     signal sourceSubmitted(var payload)
 
@@ -30,12 +35,18 @@ AppDialog {
         wmsLayers.text = ""
         wmsStyles.text = ""
         wmsVersion.currentIndex = 0
+        wmtsLayer.text = ""
+        wmtsStyle.text = "default"
+        wmtsMatrixSet.text = ""
+        wmtsMatrixPrefix.text = ""
     }
 
     onAccepted: {
         root.sourceSubmitted({
             name: sourceName.text.trim(),
-            kind: sourceType.currentIndex === 1 ? "wms" : "xyz",
+            kind: sourceType.currentIndex === 1
+                ? "wms"
+                : (sourceType.currentIndex === 2 ? "wmts" : "xyz"),
             url: sourceUrl.text.trim(),
             attribution: attribution.text.trim(),
             termsUrl: termsUrl.text.trim(),
@@ -45,7 +56,12 @@ AppDialog {
             wmsStyles: wmsStyles.text.trim(),
             wmsFormat: "image/png",
             wmsVersion: wmsVersion.currentText,
-            wmsTransparent: true
+            wmsTransparent: true,
+            wmtsLayer: wmtsLayer.text.trim(),
+            wmtsStyle: wmtsStyle.text.trim(),
+            wmtsFormat: "image/png",
+            wmtsMatrixSet: wmtsMatrixSet.text.trim(),
+            wmtsMatrixPrefix: wmtsMatrixPrefix.text.trim()
         })
     }
 
@@ -70,7 +86,7 @@ AppDialog {
             AppComboBox {
                 id: sourceType
                 Layout.preferredWidth: 120
-                model: ["XYZ", "WMS"]
+                model: ["XYZ", "WMS", "WMTS"]
             }
         }
 
@@ -79,7 +95,9 @@ AppDialog {
             Layout.fillWidth: true
             placeholderText: sourceType.currentIndex === 1
                 ? "https://example.org/wms"
-                : "https://example.org/{z}/{x}/{y}.png"
+                : (sourceType.currentIndex === 2
+                    ? "https://example.org/wmts"
+                    : "https://example.org/{z}/{x}/{y}.png")
         }
 
         AppTextField {
@@ -143,11 +161,46 @@ AppDialog {
             model: ["1.3.0", "1.1.1"]
         }
 
+        AppTextField {
+            id: wmtsLayer
+            visible: sourceType.currentIndex === 2
+            Layout.fillWidth: true
+            placeholderText: "WMTS layer"
+        }
+
+        RowLayout {
+            visible: sourceType.currentIndex === 2
+            Layout.fillWidth: true
+            spacing: 8
+
+            AppTextField {
+                id: wmtsStyle
+                Layout.fillWidth: true
+                placeholderText: "WMTS style"
+                text: "default"
+            }
+
+            AppTextField {
+                id: wmtsMatrixSet
+                Layout.fillWidth: true
+                placeholderText: "Tile matrix set"
+            }
+        }
+
+        AppTextField {
+            id: wmtsMatrixPrefix
+            visible: sourceType.currentIndex === 2
+            Layout.fillWidth: true
+            placeholderText: "Tile matrix prefix, optional (example: EPSG:3857:)"
+        }
+
         Text {
             Layout.fillWidth: true
             text: sourceType.currentIndex === 1
                 ? "WMS is requested as 256×256 EPSG:3857 GetMap tiles."
-                : "XYZ must contain {z}, {x}, and {y}. Only the visible viewport is requested."
+                : (sourceType.currentIndex === 2
+                    ? "WMTS uses KVP GetTile with the selected matrix set. Prefix is prepended to zoom when the service uses identifiers such as EPSG:3857:0."
+                    : "XYZ must contain {z}, {x}, and {y}. Only the visible viewport is requested.")
             color: Theme.textMuted
             font.pixelSize: 9
             wrapMode: Text.Wrap
