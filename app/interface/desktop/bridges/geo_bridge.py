@@ -44,7 +44,15 @@ class GeoBridge(QObject):
         self._satellite_render_busy = False
         self._satellite_render_thread: QThread | None = None
         self._satellite_render_worker: SatelliteSceneRenderWorker | None = None
-        self._map_source_registry = MapSourceRegistry()
+        self._map_source_registry = MapSourceRegistry(
+            credentials={
+                "os_maps_api_key": (
+                    settings.os_maps_api_key.get_secret_value()
+                    if settings.os_maps_api_key is not None
+                    else ""
+                ),
+            }
+        )
         self._map_source_message = ""
         self._map_layer_registry = MapLayerRegistry()
         self._map_layer_message = ""
