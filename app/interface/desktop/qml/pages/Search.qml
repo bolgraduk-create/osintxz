@@ -101,9 +101,9 @@ Item {
     }
 
     function resultSectionForTab(tab) {
-        if (tab === "results" || tab === "accounts" || tab === "mentions")
+        if (tab === "results" || tab === "accounts" || tab === "mentions" || tab === "correlation")
             return "results"
-        if (tab === "possible" || tab === "identity" || tab === "candidates")
+        if (tab === "possible" || tab === "identity" || tab === "candidates" || tab === "triage")
             return "review"
         return "activity"
     }
@@ -119,12 +119,14 @@ Item {
             return [
                 { key: "results", label: "Results" },
                 { key: "accounts", label: "Accounts" },
-                { key: "mentions", label: "Mentions" }
+                { key: "mentions", label: "Mentions" },
+                { key: "correlation", label: "Correlation" }
             ]
         }
         if (section === "review") {
             return [
                 { key: "possible", label: "Possible" },
+                { key: "triage", label: "Triage" },
                 { key: "identity", label: "Identity" },
                 { key: "candidates", label: "Candidates" }
             ]
@@ -157,6 +159,8 @@ Item {
         if (tab === "exploration") return (((runData.explorationGraph || {}).nodes) || []).length
         if (tab === "schedule") return retrievalScheduleRows().length
         if (tab === "mentions") return (runData.mentions || []).length
+        if (tab === "triage") return (runData.triageRows || []).length
+        if (tab === "correlation") return (runData.identityCorrelations || []).length + (runData.socialCorrelations || []).length
         if (tab === "providers") return (runData.providers || []).length
         if (tab === "pivots") return (runData.pivots || []).length
         if (tab === "errors") return (runData.errors || []).length
@@ -173,6 +177,8 @@ Item {
         if (activeTab === "exploration") return ((runData.explorationGraph || {}).nodes) || []
         if (activeTab === "schedule") return retrievalScheduleRows()
         if (activeTab === "mentions") return runData.mentions || []
+        if (activeTab === "triage") return runData.triageRows || []
+        if (activeTab === "correlation") return (runData.identityCorrelations || []).concat(runData.socialCorrelations || [])
         if (activeTab === "providers") return runData.providers || []
         if (activeTab === "pivots") return runData.pivots || []
         if (activeTab === "errors") return runData.errors || []
@@ -197,6 +203,8 @@ Item {
         if (activeTab === "exploration") return String(row.kind || "pivot").toUpperCase() + ": " + String(row.value || "")
         if (activeTab === "schedule") return String(row.seedKind || "seed").replace(/_/g, " ").toUpperCase() + ": " + String(row.seedValue || "")
         if (activeTab === "mentions") return String(row.title || "Corroborating mention")
+        if (activeTab === "triage") return String(row.title || row.value || "Identity candidate")
+        if (activeTab === "correlation") return String(row.clusterValue || row.leftAuthor || "Correlation signal")
         if (activeTab === "providers") return String(row.source || "Provider")
         if (activeTab === "pivots") return String(row.value || "Pivot")
         if (activeTab === "errors") return String(row.source || row.lane || "Error")
@@ -212,6 +220,8 @@ Item {
         if (activeTab === "exploration") return String(row.reason || "Quality-approved ephemeral pivot")
         if (activeTab === "schedule") return String(row.reason || "Retrieval scheduling decision")
         if (activeTab === "mentions") return String(row.mentionSummary || row.detail || "Multiple known-person signals occur in this source")
+        if (activeTab === "triage") return String(row.triageSummary || row.detail || "Identity candidate awaiting analyst review")
+        if (activeTab === "correlation") return String(row.correlationSummary || "Cross-source context overlap; supporting evidence only")
         if (activeTab === "providers") return String(row.lane || "") + " · " + String(row.detail || "") + (row.healthAction ? " · " + String(row.healthAction) : "")
         if (activeTab === "pivots") return String(row.kind || "pivot").replace(/_/g, " ").toUpperCase() + " · " + String(row.origin || "discovered")
         if (activeTab === "errors") return String(row.error || "Unknown error")
@@ -229,6 +239,8 @@ Item {
             ? (Boolean(row.deprioritized) ? "SELECTED · DEPRIORITIZED" : "SELECTED")
             : (Boolean(row.timeBudgetSkip) ? "TIME BUDGET SKIP" : "BUDGET SKIP")
         if (activeTab === "mentions") return String(row.mentionLabel || "CORROBORATING MENTION").toUpperCase()
+        if (activeTab === "triage") return String(row.triageLabel || row.triageStatus || "UNREVIEWED").replace(/_/g, " ").toUpperCase()
+        if (activeTab === "correlation") return String(row.correlationLabel || "CORRELATION").toUpperCase()
         if (activeTab === "providers") return String(row.healthLabel || row.status || "provider").replace(/_/g, " ").toUpperCase()
         if (activeTab === "pivots") return Boolean(row.queued) ? "QUEUED" : "REVIEW"
         if (activeTab === "errors") return "ERROR"
@@ -281,6 +293,18 @@ Item {
             const mentionScore = Number(row.mentionScore || 0).toFixed(0)
             const sources = Number(row.corroborationCount || 0)
             return String(row.source || "") + " · mention " + mentionScore + (sources > 1 ? " · " + sources + " sources" : "")
+        }
+        if (activeTab === "triage") {
+            return String(row.source || row.service || "")
+                + " · score " + Number(row.triageScore || 0).toFixed(0)
+                + (row.accountVerificationStatus ? " · " + String(row.accountVerificationStatus).toUpperCase() : "")
+        }
+        if (activeTab === "correlation") {
+            const score = Number(row.correlationScore || 0).toFixed(0)
+            const platforms = row.platforms || []
+            return "Correlation " + score
+                + (platforms.length > 0 ? " · " + platforms.join(" ↔ ") : "")
+                + (row.leftPlatform ? " · " + String(row.leftPlatform) + " ↔ " + String(row.rightPlatform || "") : "")
         }
         if (activeTab === "providers") return String(row.records || 0) + " record(s) · D" + Number(row.depth || 0) + (row.healthState ? " · " + String(row.healthState).replace(/_/g, " ") : "")
         if (activeTab === "pivots") return (row.country ? String(row.country) + " · " : "") + "D" + Number(row.depth || 0)
