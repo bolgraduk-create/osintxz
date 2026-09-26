@@ -548,6 +548,20 @@ def _normalize_candidate(kind: UnifiedSeedKind, value: str) -> str:
             compact,
         ) else ""
 
+    if kind is UnifiedSeedKind.LEI:
+        compact = re.sub(r"\s+", "", raw).upper()
+        return compact if re.fullmatch(r"[A-Z0-9]{20}", compact) else ""
+
+    if kind in {
+        UnifiedSeedKind.REGISTRATION_ID,
+        UnifiedSeedKind.VAT_ID,
+        UnifiedSeedKind.CASE_NUMBER,
+    }:
+        compact = " ".join(raw.split())
+        if not 2 <= len(compact) <= 128:
+            return ""
+        return compact
+
     return ""
 
 
