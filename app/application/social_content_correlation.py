@@ -267,16 +267,22 @@ def _entities(row: dict[str, Any], text: str) -> list[str]:
     if isinstance(raw, list):
         output.extend(str(item).strip().casefold() for item in raw if str(item).strip())
 
-    output.extend("hashtag:" + match.casefold() for match in _HASHTAG_RE.findall(text))
-    output.extend("mention:" + match.casefold() for match in _MENTION_RE.findall(text))
-    output.extend("email:" + match.casefold() for match in _EMAIL_RE.findall(text))
+    for match in _HASHTAG_RE.findall(text):
+        value = match.casefold()
+        output.extend((value, "hashtag:" + value))
+    for match in _MENTION_RE.findall(text):
+        value = match.casefold()
+        output.extend((value, "mention:" + value))
+    for match in _EMAIL_RE.findall(text):
+        value = match.casefold()
+        output.extend((value, "email:" + value))
 
     for raw_url in _URL_RE.findall(text):
-        clean = raw_url.rstrip(".,!?;:")
-        output.append("url:" + clean.casefold())
+        clean = raw_url.rstrip(".,!?;:").casefold()
+        output.extend((clean, "url:" + clean))
         host = str(urlsplit(clean).hostname or "").casefold()
         if host:
-            output.append("domain:" + host)
+            output.extend((host, "domain:" + host))
 
     return list(dict.fromkeys(output))[:48]
 
