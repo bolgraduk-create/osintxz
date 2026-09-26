@@ -71,25 +71,9 @@ Item {
     onSatelliteSceneChanged: Qt.callLater(root.syncState)
     onMapStateChanged: Qt.callLater(root.syncState)
 
-    WebEngineProfilePrototype {
-        id: mapProfilePrototype
-        storageName: "osintxz-map"
-        httpCacheType: WebEngineProfile.DiskHttpCache
-        httpCacheMaximumSize: 268435456
-        persistentCookiesPolicy: WebEngineProfile.NoPersistentCookies
-    }
-
-    property var mapProfile: mapProfilePrototype.instance()
-
-    Component.onCompleted: {
-        if (root.mapProfile)
-            root.mapProfile.httpUserAgent = "OSINTXZ/0.1 InteractiveMap"
-    }
-
     WebEngineView {
         id: webView
         anchors.fill: parent
-        profile: root.mapProfile
         url: Qt.resolvedUrl("../map/map_engine.html")
 
         settings.javascriptEnabled: true
