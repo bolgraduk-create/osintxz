@@ -85,3 +85,40 @@ def test_geo_c3a3_browser_searches_catalog_metadata():
         '"XYZ · WMS · WMTS · Sentinel"',
     ):
         assert expected in qml
+
+
+def test_geo_c3a3_nasa_and_usgs_catalog_pack():
+    sources = {source.id: source for source in BUILTIN_MAP_SOURCES}
+
+    assert set(sources) >= {
+        "nasa_blue_marble",
+        "nasa_blue_marble_relief",
+        "usgs_topo",
+        "usgs_imagery",
+        "usgs_shaded_relief",
+    }
+
+    blue = sources["nasa_blue_marble"]
+    assert blue.region == "World"
+    assert blue.provider == "NASA GIBS"
+    assert blue.category == "satellite"
+    assert blue.max_zoom == 8
+    assert "BlueMarble_NextGeneration" in blue.url
+    assert blue.requires_api_key is False
+
+    relief = sources["nasa_blue_marble_relief"]
+    assert relief.category == "terrain"
+    assert "BlueMarble_ShadedRelief_Bathymetry" in relief.url
+
+    topo = sources["usgs_topo"]
+    assert topo.region == "United States"
+    assert topo.provider == "U.S. Geological Survey"
+    assert "USGSTopo/MapServer/tile/{z}/{y}/{x}" in topo.url
+
+    imagery = sources["usgs_imagery"]
+    assert imagery.category == "satellite"
+    assert "USGSImageryOnly/MapServer/tile/{z}/{y}/{x}" in imagery.url
+
+    shaded = sources["usgs_shaded_relief"]
+    assert shaded.category == "terrain"
+    assert "USGSShadedReliefOnly/MapServer/tile/{z}/{y}/{x}" in shaded.url
