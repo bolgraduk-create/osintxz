@@ -173,11 +173,11 @@ def test_geo_c3a_toolbar_exposes_primary_secondary_and_compare_modes():
     qml = _read(TOOLBAR_QML)
 
     for expected in (
-        'text: "MAP SOURCE"',
         'text: root.compareEnabled ? "Exit compare" : "Compare"',
-        'text: "SECONDARY"',
+        'text: "Tools"',
+        'text: "Compare with"',
         '{ key: "overlay", label: "Overlay" }',
-        '{ key: "side_by_side", label: "Side by side" }',
+        '{ key: "side_by_side", label: "Split" }',
         '{ key: "swipe", label: "Swipe" }',
         'text: "Browse"',
         'text: "Layers"',
