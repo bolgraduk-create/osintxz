@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from app.geo_intelligence.map_sources import BUILTIN_MAP_SOURCES
+from app.geo_intelligence.map_sources import BUILTIN_MAP_SOURCES, MapSourceRegistry
 
 
 MAP_SOURCES = Path("app/geo_intelligence/map_sources.py")
