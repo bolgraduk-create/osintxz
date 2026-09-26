@@ -764,7 +764,13 @@ html,body,#map{width:100%;height:100%;margin:0;overflow:hidden;background:#08172
   }
 
   function zoomAt(delta,clientX,clientY){
-    const nextZoom=clamp(zoom+delta,MIN_ZOOM,MAX_ZOOM);
+    const primaryMin=primarySource && Number.isFinite(Number(primarySource.minZoom))
+      ? Math.max(MIN_ZOOM,Number(primarySource.minZoom))
+      : MIN_ZOOM;
+    const primaryMax=primarySource && Number.isFinite(Number(primarySource.maxZoom))
+      ? Math.min(MAX_ZOOM,Number(primarySource.maxZoom))
+      : MAX_ZOOM;
+    const nextZoom=clamp(zoom+delta,primaryMin,primaryMax);
     if(nextZoom===zoom) return;
     const origin=viewportOrigin();
     const worldX=origin.x+clientX;
