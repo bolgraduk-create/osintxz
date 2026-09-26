@@ -81,7 +81,7 @@ def test_geo_c3a3_browser_searches_catalog_metadata():
         "String(source.region || \"\")",
         "String(source.provider || \"\")",
         "String((source.tags || []).join(\" \"))",
-        '"Search maps by name, region, provider, tag..."',
+        '"Search maps by name, type, category..."',
         '"WORLD CATALOG · XYZ · WMS · WMTS · Sentinel"',
     ):
         assert expected in qml
