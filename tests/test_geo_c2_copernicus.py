@@ -438,11 +438,11 @@ def test_geo_c2_bridge_and_map_ui_support_true_color_and_hybrid():
     assert "property var satelliteScene" in web_qml
     assert "satelliteScene: root.satelliteScene" in web_qml
 
-    assert 'id="satellite"' in html
     assert "function renderSatellite()" in html
     assert "function fitSatellite()" in html
-    assert 'baseMode === "satellite"' in html
-    assert 'baseMode === "hybrid"' in html
+    assert "function renderImageLayer(state,source)" in html
+    assert 'kind:"satellite_dynamic"' in html
+    assert 'compareMode:"overlay"' in html
     assert "satelliteDisplayUrl(scene)" in html
     assert "scene.renderUrl || scene.quicklookUrl" in html
 
