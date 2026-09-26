@@ -31,6 +31,9 @@ Item {
     property var accountEnrichment: investigationSearchBridge.accountEnrichment || ({})
     property bool accountEnrichmentBusy: investigationSearchBridge.accountEnrichmentBusy
     property var accountEnrichmentCapability: ({ available: false, reason: "", site: "" })
+    property var socialActivity: investigationSearchBridge.socialActivity || ({})
+    property bool socialActivityBusy: investigationSearchBridge.socialActivityBusy
+    property var socialActivityCapability: ({ available: false, reason: "", platform: "", username: "" })
 
     function suggestedPersonName() {
         var parts = [
@@ -404,7 +407,9 @@ Item {
     function openAccountDetails(row) {
         root.selectedAccount = row || ({})
         root.accountEnrichmentCapability = investigationSearchBridge.accountEnrichmentCapability(root.selectedAccount)
+        root.socialActivityCapability = investigationSearchBridge.socialActivityCapability(root.selectedAccount)
         investigationSearchBridge.clearAccountEnrichment()
+        investigationSearchBridge.clearSocialActivity()
         accountDetailsDialog.open()
     }
 
@@ -1451,7 +1456,7 @@ Item {
                 Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; height: 1; color: Theme.divider }
                 Text {
                     x: 20; y: 13
-                    width: parent.width - 180
+                    width: Math.max(150, parent.width - 510)
                     text: String(root.selectedAccount.title || root.selectedAccount.value || "Account details")
                     color: Theme.textPrimary
                     font.pixelSize: 18
@@ -1460,11 +1465,29 @@ Item {
                 }
                 Text {
                     x: 20; y: 43
-                    width: parent.width - 180
+                    width: Math.max(150, parent.width - 510)
                     text: String(root.selectedAccount.url || root.selectedAccount.meta || "")
                     color: Theme.textMuted
                     font.pixelSize: 9
                     elide: Text.ElideRight
+                }
+                AppButton {
+                    id: collectActivityButton
+                    anchors.right: deepEnrichAccountButton.left
+                    anchors.rightMargin: 8
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 126
+                    text: root.socialActivityBusy
+                        ? "Collecting…"
+                        : (root.socialActivityCapability.available ? "Collect activity" : "No activity API")
+                    primary: root.socialActivityCapability.available
+                    enabled: root.socialActivityCapability.available
+                        && !root.socialActivityBusy
+                        && !root.accountEnrichmentBusy
+                    ToolTip.visible: hovered && !root.socialActivityCapability.available
+                    ToolTip.delay: 250
+                    ToolTip.text: String(root.socialActivityCapability.reason || "Public activity collection is unavailable for this platform.")
+                    onClicked: investigationSearchBridge.collectPublicActivity(root.selectedAccount)
                 }
                 AppButton {
                     id: deepEnrichAccountButton
@@ -1476,7 +1499,7 @@ Item {
                         ? "Enriching…"
                         : (root.accountEnrichmentCapability.available ? "Deep enrich" : "Unavailable")
                     primary: root.accountEnrichmentCapability.available
-                    enabled: root.accountEnrichmentCapability.available && !root.accountEnrichmentBusy
+                    enabled: root.accountEnrichmentCapability.available && !root.accountEnrichmentBusy && !root.socialActivityBusy
                     ToolTip.visible: hovered && !root.accountEnrichmentCapability.available
                     ToolTip.delay: 250
                     ToolTip.text: String(root.accountEnrichmentCapability.reason || "Maigret deep enrichment is unavailable for this platform.")
@@ -1627,6 +1650,77 @@ Item {
                                 color: Theme.textMuted
                                 font.pixelSize: 9
                                 elide: Text.ElideRight
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        visible: Boolean(root.socialActivity.hasRun)
+                        width: parent.width
+                        height: socialActivityColumn.height + 24
+                        radius: 8
+                        color: Theme.surfaceHover
+                        border.width: 1
+                        border.color: Theme.divider
+
+                        Column {
+                            id: socialActivityColumn
+                            x: 12
+                            y: 12
+                            width: parent.width - 24
+                            spacing: 6
+
+                            Text {
+                                width: parent.width
+                                text: "PUBLIC ACTIVITY · "
+                                    + String(root.socialActivity.status || "unknown").replace(/_/g, " ").toUpperCase()
+                                color: root.statusColor(root.socialActivity.status || "reported")
+                                font.pixelSize: 9
+                                font.weight: Font.DemiBold
+                            }
+                            Text {
+                                width: parent.width
+                                text: String(root.socialActivity.platform || "")
+                                    + (root.socialActivity.username ? " · @" + String(root.socialActivity.username) : "")
+                                    + " · " + Number(root.socialActivity.count || 0) + " item(s)"
+                                    + ((root.socialActivity.persistence || {}).created !== undefined
+                                        ? " · " + Number((root.socialActivity.persistence || {}).created || 0) + " new evidence" : "")
+                                color: Theme.textSecondary
+                                font.pixelSize: 9
+                                wrapMode: Text.Wrap
+                            }
+                            Text {
+                                visible: Boolean(root.socialActivity.error)
+                                width: parent.width
+                                text: String(root.socialActivity.error || "")
+                                color: Theme.danger
+                                font.pixelSize: 9
+                                wrapMode: Text.Wrap
+                            }
+                            Repeater {
+                                model: (root.socialActivity.items || []).slice(0, 8)
+                                delegate: Rectangle {
+                                    required property var modelData
+                                    width: socialActivityColumn.width
+                                    height: activityText.contentHeight + 28
+                                    radius: 7
+                                    color: Theme.surface
+                                    border.width: 1
+                                    border.color: Theme.divider
+
+                                    Text {
+                                        id: activityText
+                                        x: 10
+                                        y: 10
+                                        width: parent.width - 20
+                                        text: String(modelData.contentType || "activity").toUpperCase()
+                                            + " · " + String(modelData.timestamp || "")
+                                            + "\n" + String(modelData.text || "")
+                                        color: Theme.textSecondary
+                                        font.pixelSize: 9
+                                        wrapMode: Text.Wrap
+                                    }
+                                }
                             }
                         }
                     }
