@@ -647,6 +647,15 @@ html,body,#map{width:100%;height:100%;margin:0;overflow:hidden;background:#08172
     };
   }
 
+  function renderSatellite(){
+    scheduleRender();
+  }
+
+  function fitSatellite(){
+    const source=legacySatelliteSource(satelliteScene);
+    return source ? fitImageSource(source) : false;
+  }
+
   function legacyState(next){
     const mode=String(next.baseMode || "streets");
     const sat=legacySatelliteSource(next.satelliteScene || null);
@@ -775,10 +784,7 @@ html,body,#map{width:100%;height:100%;margin:0;overflow:hidden;background:#08172
       }
     },
     fitMarkers,
-    fitSatellite(){
-      const source=legacySatelliteSource(satelliteScene);
-      return source ? fitImageSource(source) : false;
-    },
+    fitSatellite,
     focusMarker(kind,id){
       const key=String(kind||"")+":"+String(id||"");
       const item=markers.find(m => String(m.kind||"")+":"+String(m.id||"")===key);
