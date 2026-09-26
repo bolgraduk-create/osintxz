@@ -38,7 +38,7 @@ def test_geo_ui2_map_workspace_defaults_to_streets_with_schematic_fallback():
     assert 'baseMapMode === "satellite"' in qml
     assert 'text: "Streets"' in qml
     assert 'text: "Schematic"' in qml
-    assert 'text: "Satellite"' in qml
+    assert '"sentinel_selected"' in qml
     assert 'source: active ? "../components/InteractiveMapView.qml" : ""' in qml
     assert 'root.baseMapMode = "schematic"' in qml
     assert "Interactive basemap unavailable · schematic fallback" in qml
@@ -148,7 +148,8 @@ def test_geo_ui2_satellite_mode_extends_interactive_map_without_removing_fallbac
     web_qml = _read(WEB_QML)
     html = _read(MAP_HTML)
 
-    assert 'text: "Satellite"' in qml
+    assert '"sentinel_selected"' in qml
+    assert 'if (requested === "satellite")' in qml
     assert "root.selectedSatelliteScene.renderUrl" in qml
     assert "root.selectedSatelliteScene.quicklookUrl" in qml
     assert "item.satelliteScene = Qt.binding" in qml
