@@ -14,6 +14,7 @@ AppDialog {
 
     signal sourceChosen(string sourceId, bool asSecondary)
     signal addSourceRequested()
+    signal removeSourceRequested(string sourceId)
 
     width: 720
     title: "Map Source Browser"
@@ -230,6 +231,15 @@ AppDialog {
                                 onClicked: root.sourceChosen(
                                     String(sourceRow.modelData.id || ""),
                                     true
+                                )
+                            }
+
+                            AppButton {
+                                text: "Remove"
+                                destructive: true
+                                visible: Boolean(sourceRow.modelData.userDefined)
+                                onClicked: root.removeSourceRequested(
+                                    String(sourceRow.modelData.id || "")
                                 )
                             }
                         }
