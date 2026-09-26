@@ -68,3 +68,20 @@ def test_geo_ui4_map_canvas_uses_contextual_chrome_and_source_fit():
     assert '"viewBbox": [5.5, 47.2, 15.5, 55.1]' in sources
     assert '"viewBbox": [-5.5, 41.0, 9.8, 51.5]' in sources
     assert '"viewBbox": [-8.7, 49.8, 2.1, 60.9]' in sources
+
+
+def test_geo_ui4_source_browser_filters_by_region_without_protocol_noise():
+    qml = _read(BROWSER_QML)
+
+    assert 'property string regionFilter: "all"' in qml
+    assert "function regionOptions()" in qml
+    assert 'model: root.regionOptions()' in qml
+    assert 'var regionMatches = root.regionFilter === "all"' in qml
+    assert 'visible: false\n                text: "XYZ · WMS · WMTS · Sentinel"' in qml
+
+
+def test_geo_ui4_toolbar_removes_redundant_source_type_badge():
+    qml = _read(TOOLBAR_QML)
+
+    assert "id: sourceType" not in qml
+    assert "sourceForId(root.primarySourceId).kind" not in qml
