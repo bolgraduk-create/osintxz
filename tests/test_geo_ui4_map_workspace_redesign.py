@@ -44,3 +44,27 @@ def test_geo_ui4_source_browser_has_simple_category_filter():
     assert '{ key: "terrain", label: "Terrain" }' in qml
     assert "categoryMatches" in qml
     assert 'description: "Choose a basemap or comparison layer."' in qml
+
+
+MAP_HTML = Path("app/interface/desktop/qml/map/map_engine.html")
+MAP_SOURCES = Path("app/geo_intelligence/map_sources.py")
+
+
+def test_geo_ui4_map_canvas_uses_contextual_chrome_and_source_fit():
+    html = _read(MAP_HTML)
+    sources = _read(MAP_SOURCES)
+
+    assert '#status{position:absolute;left:12px;bottom:10px;z-index:20;display:none' in html
+    assert '#legend{position:absolute;left:12px;bottom:12px;z-index:20;display:none' in html
+    assert "function showStatus(message)" in html
+    assert 'primaryLabelEl.style.display="none"' in html
+    assert 'primaryLabelEl.style.display="block"' in html
+    assert 'legendEl.style.display=markers.length ? "flex" : "none"' in html
+    assert "const primaryChanged=nextPrimaryKey!==lastPrimarySourceKey" in html
+    assert "Array.isArray(primarySource.metadata.viewBbox)" in html
+    assert "fitBounds(sourceViewBbox)" in html
+
+    assert '"viewBbox": [14.1, 49.0, 24.2, 54.9]' in sources
+    assert '"viewBbox": [5.5, 47.2, 15.5, 55.1]' in sources
+    assert '"viewBbox": [-5.5, 41.0, 9.8, 51.5]' in sources
+    assert '"viewBbox": [-8.7, 49.8, 2.1, 60.9]' in sources
