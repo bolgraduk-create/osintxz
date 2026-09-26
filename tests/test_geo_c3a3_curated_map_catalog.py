@@ -263,3 +263,19 @@ def test_geo_c3a3_france_historical_pack():
     assert "GEOGRAPHICALGRIDSYSTEMS.ETATMAJOR40" in (
         sources["fr_ign_etat_major_40"].url
     )
+
+
+def test_geo_c3a3_regional_sources_expose_view_bounds():
+    sources = {source.id: source for source in BUILTIN_MAP_SOURCES}
+
+    expected = {
+        "pl_geoportal_ortho": [14.1, 49.0, 24.2, 54.9],
+        "de_basemap_raster_color": [5.5, 47.2, 15.5, 55.1],
+        "fr_ign_plan_v2": [-5.5, 41.0, 9.8, 51.5],
+        "fr_ign_ortho": [-5.5, 41.0, 9.8, 51.5],
+        "uk_os_outdoor": [-8.7, 49.8, 2.1, 60.9],
+        "fr_bnf_cassini": [-5.5, 41.0, 9.8, 51.5],
+    }
+
+    for source_id, bbox in expected.items():
+        assert sources[source_id].metadata["viewBbox"] == bbox
