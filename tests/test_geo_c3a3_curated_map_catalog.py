@@ -186,3 +186,45 @@ def test_geo_c3a3_all_builtin_sources_respect_engine_zoom_contract():
     for source in BUILTIN_MAP_SOURCES:
         assert 0 <= source.min_zoom <= 22, source.id
         assert source.min_zoom <= source.max_zoom <= 22, source.id
+
+
+def test_geo_c3a3_uk_os_maps_require_runtime_api_key(tmp_path):
+    source_map = {source.id: source for source in BUILTIN_MAP_SOURCES}
+
+    assert set(source_map) >= {
+        "uk_os_outdoor",
+        "uk_os_light",
+    }
+
+    outdoor = source_map["uk_os_outdoor"]
+    assert outdoor.region == "Great Britain"
+    assert outdoor.provider == "Ordnance Survey"
+    assert outdoor.requires_api_key is True
+    assert outdoor.min_zoom == 7
+    assert outdoor.max_zoom == 20
+    assert "Outdoor_3857" in outdoor.url
+    assert "{api_key}" in outdoor.url
+
+    no_key = MapSourceRegistry(
+        storage_path=tmp_path / "no_key.json",
+    )
+    no_key_payload = {
+        row["id"]: row
+        for row in no_key.payload()
+    }
+    assert no_key_payload["uk_os_outdoor"]["enabled"] is False
+    assert no_key_payload["uk_os_outdoor"]["credentialConfigured"] is False
+    assert "{api_key}" in no_key_payload["uk_os_outdoor"]["url"]
+
+    with_key = MapSourceRegistry(
+        storage_path=tmp_path / "with_key.json",
+        credentials={"os_maps_api_key": "test-key"},
+    )
+    with_key_payload = {
+        row["id"]: row
+        for row in with_key.payload()
+    }
+    assert with_key_payload["uk_os_outdoor"]["enabled"] is True
+    assert with_key_payload["uk_os_outdoor"]["credentialConfigured"] is True
+    assert "{api_key}" not in with_key_payload["uk_os_outdoor"]["url"]
+    assert "key=test-key" in with_key_payload["uk_os_outdoor"]["url"]
