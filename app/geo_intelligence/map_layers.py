@@ -28,6 +28,7 @@ class MapVectorLayer:
     source_format: str
     source_name: str
     features: list[dict[str, Any]]
+    scope_id: str = "global"
     visible: bool = True
     opacity: float = 0.9
     bounds: list[float] = field(default_factory=list)
@@ -47,6 +48,7 @@ class MapVectorLayer:
             raise ValueError("Unsupported vector layer format.")
 
         self.source_name = Path(str(self.source_name or "")).name
+        self.scope_id = str(self.scope_id or "global").strip() or "global"
         self.opacity = max(0.05, min(1.0, float(self.opacity)))
         self.visible = bool(self.visible)
         self.imported = bool(self.imported)
@@ -58,6 +60,7 @@ class MapVectorLayer:
             "kind": "vector",
             "sourceFormat": self.source_format,
             "sourceName": self.source_name,
+            "scopeId": self.scope_id,
             "visible": self.visible,
             "opacity": self.opacity,
             "bounds": list(self.bounds),
@@ -101,7 +104,12 @@ class MapLayerRegistry:
     def get(self, layer_id: str) -> MapVectorLayer | None:
         return self._layers.get(_normalize_id(layer_id))
 
-    def import_file(self, file_path: str | Path) -> MapVectorLayer:
+    def import_file(
+        self,
+        file_path: str | Path,
+        *,
+        scope_id: str = "global",
+    ) -> MapVectorLayer:
         path = Path(file_path).expanduser().resolve()
         if not path.is_file():
             raise ValueError("Selected map layer file does not exist.")
@@ -158,6 +166,7 @@ class MapLayerRegistry:
             source_format=source_format,
             source_name=path.name,
             features=features,
+            scope_id=str(scope_id or "global").strip() or "global",
             bounds=bounds,
         )
         self._layers[layer.id] = layer
@@ -250,6 +259,7 @@ class MapLayerRegistry:
                     name=str(row.get("name") or ""),
                     source_format=str(row.get("sourceFormat") or ""),
                     source_name=str(row.get("sourceName") or ""),
+                    scope_id=str(row.get("scopeId") or "global"),
                     features=[
                         dict(feature)
                         for feature in features
