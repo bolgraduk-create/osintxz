@@ -100,7 +100,7 @@ AppDialog {
             Item { Layout.fillWidth: true }
 
             Text {
-                text: "WORLD CATALOG · XYZ · WMS · WMTS · Sentinel"
+                text: "XYZ · WMS · WMTS · Sentinel"
                 color: Theme.textMuted
                 font.pixelSize: 8
             }
