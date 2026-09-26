@@ -104,7 +104,7 @@ Item {
     }
 
     function resultSectionForTab(tab) {
-        if (tab === "results" || tab === "accounts" || tab === "mentions" || tab === "correlation")
+        if (tab === "results" || tab === "accounts" || tab === "mentions" || tab === "social" || tab === "correlation")
             return "results"
         if (tab === "possible" || tab === "identity" || tab === "candidates" || tab === "triage")
             return "review"
@@ -123,6 +123,7 @@ Item {
                 { key: "results", label: "Results" },
                 { key: "accounts", label: "Accounts" },
                 { key: "mentions", label: "Mentions" },
+                { key: "social", label: "Social" },
                 { key: "correlation", label: "Correlation" }
             ]
         }
@@ -162,6 +163,7 @@ Item {
         if (tab === "exploration") return (((runData.explorationGraph || {}).nodes) || []).length
         if (tab === "schedule") return retrievalScheduleRows().length
         if (tab === "mentions") return (runData.mentions || []).length
+        if (tab === "social") return ((((runData.socialIntelligence || {}).items) || runData.socialContent || [])).length
         if (tab === "triage") return (runData.triageRows || []).length
         if (tab === "correlation") return (runData.identityCorrelations || []).length + (runData.socialCorrelations || []).length
         if (tab === "providers") return (runData.providers || []).length
@@ -180,6 +182,7 @@ Item {
         if (activeTab === "exploration") return ((runData.explorationGraph || {}).nodes) || []
         if (activeTab === "schedule") return retrievalScheduleRows()
         if (activeTab === "mentions") return runData.mentions || []
+        if (activeTab === "social") return (((runData.socialIntelligence || {}).items) || runData.socialContent || [])
         if (activeTab === "triage") return runData.triageRows || []
         if (activeTab === "correlation") return (runData.identityCorrelations || []).concat(runData.socialCorrelations || [])
         if (activeTab === "providers") return runData.providers || []
@@ -206,6 +209,7 @@ Item {
         if (activeTab === "exploration") return String(row.kind || "pivot").toUpperCase() + ": " + String(row.value || "")
         if (activeTab === "schedule") return String(row.seedKind || "seed").replace(/_/g, " ").toUpperCase() + ": " + String(row.seedValue || "")
         if (activeTab === "mentions") return String(row.title || "Corroborating mention")
+        if (activeTab === "social") return String(row.author || "Unknown author") + (row.platform ? " · " + String(row.platform) : "")
         if (activeTab === "triage") return String(row.title || row.value || "Identity candidate")
         if (activeTab === "correlation") return String(row.clusterValue || row.leftAuthor || "Correlation signal")
         if (activeTab === "providers") return String(row.source || "Provider")
@@ -223,6 +227,7 @@ Item {
         if (activeTab === "exploration") return String(row.reason || "Quality-approved ephemeral pivot")
         if (activeTab === "schedule") return String(row.reason || "Retrieval scheduling decision")
         if (activeTab === "mentions") return String(row.mentionSummary || row.detail || "Multiple known-person signals occur in this source")
+        if (activeTab === "social") return String(row.text || "Public social content")
         if (activeTab === "triage") return String(row.triageSummary || row.detail || "Identity candidate awaiting analyst review")
         if (activeTab === "correlation") return String(row.correlationSummary || "Cross-source context overlap; supporting evidence only")
         if (activeTab === "providers") return String(row.lane || "") + " · " + String(row.detail || "") + (row.healthAction ? " · " + String(row.healthAction) : "")
@@ -242,6 +247,7 @@ Item {
             ? (Boolean(row.deprioritized) ? "SELECTED · DEPRIORITIZED" : "SELECTED")
             : (Boolean(row.timeBudgetSkip) ? "TIME BUDGET SKIP" : "BUDGET SKIP")
         if (activeTab === "mentions") return String(row.mentionLabel || "CORROBORATING MENTION").toUpperCase()
+        if (activeTab === "social") return String(row.contentType || "activity").replace(/_/g, " ").toUpperCase()
         if (activeTab === "triage") return String(row.triageLabel || row.triageStatus || "UNREVIEWED").replace(/_/g, " ").toUpperCase()
         if (activeTab === "correlation") return String(row.correlationLabel || "CORRELATION").toUpperCase()
         if (activeTab === "providers") return String(row.healthLabel || row.status || "provider").replace(/_/g, " ").toUpperCase()
@@ -296,6 +302,12 @@ Item {
             const mentionScore = Number(row.mentionScore || 0).toFixed(0)
             const sources = Number(row.corroborationCount || 0)
             return String(row.source || "") + " · mention " + mentionScore + (sources > 1 ? " · " + sources + " sources" : "")
+        }
+        if (activeTab === "social") {
+            const signals = row.contextSignals || []
+            return String(row.timestamp || "No timestamp")
+                + (signals.length > 0 ? " · " + signals.slice(0, 3).join(" · ") : "")
+                + (row.url ? " · " + String(row.url) : "")
         }
         if (activeTab === "triage") {
             return String(row.source || row.service || "")
