@@ -77,7 +77,7 @@ AppDialog {
             AppTextField {
                 id: sourceSearch
                 Layout.fillWidth: true
-                placeholderText: "Search maps by name, region, provider, tag..."
+                placeholderText: "Search maps by name, type, category..."
                 text: root.query
                 onTextChanged: root.query = text
             }
