@@ -16,7 +16,8 @@ html,body,#map{width:100%;height:100%;margin:0;overflow:hidden;background:#08172
 #primaryLayer{z-index:1}
 #secondaryLayer{z-index:2}
 #shade{z-index:3;pointer-events:none;background:rgba(4,19,29,.15)}
-#markers{z-index:4}
+#vectorLayers{position:absolute;inset:0;z-index:4;overflow:hidden;pointer-events:none}
+#markers{z-index:5}
 #compareDivider{position:absolute;top:0;bottom:0;width:3px;z-index:10;background:rgba(242,248,252,.92);
  box-shadow:0 0 0 1px rgba(4,18,27,.68),0 0 18px rgba(76,164,220,.52);display:none;cursor:ew-resize}
 #compareDivider::after{content:"↔";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
@@ -56,6 +57,7 @@ html,body,#map{width:100%;height:100%;margin:0;overflow:hidden;background:#08172
   <div id="primaryLayer" class="raster-layer"></div>
   <div id="secondaryLayer" class="raster-layer"></div>
   <div id="shade"></div>
+  <svg id="vectorLayers" xmlns="http://www.w3.org/2000/svg"></svg>
   <div id="markers"></div>
   <div id="compareDivider"></div>
   <div id="primaryLabel" class="map-label">OpenStreetMap</div>
@@ -100,6 +102,7 @@ html,body,#map{width:100%;height:100%;margin:0;overflow:hidden;background:#08172
   const primaryEl = document.getElementById("primaryLayer");
   const secondaryEl = document.getElementById("secondaryLayer");
   const markerEl = document.getElementById("markers");
+  const vectorEl = document.getElementById("vectorLayers");
   const dividerEl = document.getElementById("compareDivider");
   const primaryLabelEl = document.getElementById("primaryLabel");
   const secondaryLabelEl = document.getElementById("secondaryLabel");
@@ -134,6 +137,7 @@ html,body,#map{width:100%;height:100%;margin:0;overflow:hidden;background:#08172
   let compareMode = "none";
   let comparePosition = 0.5;
   let secondaryOpacity = 1.0;
+  let vectorLayers = [];
   let lastSatelliteKey = "";
   let dragging = false;
   let dividerDragging = false;
@@ -470,6 +474,132 @@ html,body,#map{width:100%;height:100%;margin:0;overflow:hidden;background:#08172
     attributionEl.style.display=entries.length ? "block" : "none";
   }
 
+  function svgElement(name){
+    return document.createElementNS("http://www.w3.org/2000/svg",name);
+  }
+
+  function pathPoint(point){
+    if(!Array.isArray(point) || point.length<2) return null;
+    const longitude=Number(point[0]);
+    const latitude=Number(point[1]);
+    if(!Number.isFinite(longitude) || !Number.isFinite(latitude)) return null;
+    const p=screenPoint({longitude,latitude});
+    return [p.x,p.y];
+  }
+
+  function renderVectorLayers(){
+    vectorEl.replaceChildren();
+    vectorEl.setAttribute("width",String(mapEl.clientWidth));
+    vectorEl.setAttribute("height",String(mapEl.clientHeight));
+    vectorEl.setAttribute(
+      "viewBox",
+      "0 0 "+mapEl.clientWidth+" "+mapEl.clientHeight
+    );
+
+    for(const layer of vectorLayers){
+      if(!layer || layer.visible===false) continue;
+      const opacity=clamp(Number(layer.opacity===undefined ? 0.9 : layer.opacity),0.05,1);
+      const group=svgElement("g");
+      group.setAttribute("opacity",String(opacity));
+      group.setAttribute("data-layer-id",String(layer.id || ""));
+      vectorEl.appendChild(group);
+
+      const linePath=[];
+      const polygonPath=[];
+      const features=Array.isArray(layer.features) ? layer.features : [];
+
+      for(const feature of features){
+        if(!feature) continue;
+        const type=String(feature.geometryType || "");
+        const coordinates=feature.coordinates;
+
+        if(type==="Point"){
+          const p=pathPoint(coordinates);
+          if(!p) continue;
+          const circle=svgElement("circle");
+          circle.setAttribute("cx",String(p[0]));
+          circle.setAttribute("cy",String(p[1]));
+          circle.setAttribute("r","4");
+          circle.setAttribute("fill","#55b8ff");
+          circle.setAttribute("stroke","#e8f4fb");
+          circle.setAttribute("stroke-width","1.3");
+          const title=svgElement("title");
+          title.textContent=String(feature.title || layer.name || "Imported point");
+          circle.appendChild(title);
+          group.appendChild(circle);
+          continue;
+        }
+
+        if(type==="LineString" && Array.isArray(coordinates)){
+          let started=false;
+          for(const point of coordinates){
+            const p=pathPoint(point);
+            if(!p) continue;
+            linePath.push((started ? "L" : "M")+p[0].toFixed(1)+" "+p[1].toFixed(1));
+            started=true;
+          }
+          continue;
+        }
+
+        if(type==="Polygon" && Array.isArray(coordinates)){
+          for(const ring of coordinates){
+            if(!Array.isArray(ring)) continue;
+            let started=false;
+            for(const point of ring){
+              const p=pathPoint(point);
+              if(!p) continue;
+              polygonPath.push((started ? "L" : "M")+p[0].toFixed(1)+" "+p[1].toFixed(1));
+              started=true;
+            }
+            if(started) polygonPath.push("Z");
+          }
+        }
+      }
+
+      if(polygonPath.length){
+        const path=svgElement("path");
+        path.setAttribute("d",polygonPath.join(" "));
+        path.setAttribute("fill","rgba(85,184,255,0.18)");
+        path.setAttribute("fill-rule","evenodd");
+        path.setAttribute("stroke","#55b8ff");
+        path.setAttribute("stroke-width","1.4");
+        path.setAttribute("vector-effect","non-scaling-stroke");
+        group.insertBefore(path,group.firstChild);
+      }
+
+      if(linePath.length){
+        const path=svgElement("path");
+        path.setAttribute("d",linePath.join(" "));
+        path.setAttribute("fill","none");
+        path.setAttribute("stroke","#55b8ff");
+        path.setAttribute("stroke-width","2");
+        path.setAttribute("stroke-linecap","round");
+        path.setAttribute("stroke-linejoin","round");
+        path.setAttribute("vector-effect","non-scaling-stroke");
+        group.appendChild(path);
+      }
+    }
+  }
+
+  function fitBounds(bounds){
+    if(!Array.isArray(bounds) || bounds.length!==4) return false;
+    const values=bounds.map(Number);
+    if(values.some(v => !Number.isFinite(v))) return false;
+    const minLon=values[0],minLat=values[1],maxLon=values[2],maxLat=values[3];
+    center={lat:(minLat+maxLat)/2,lon:(minLon+maxLon)/2};
+
+    for(let z=17;z>=2;z--){
+      const dx=Math.abs(lonToX(maxLon,z)-lonToX(minLon,z));
+      const dy=Math.abs(latToY(minLat,z)-latToY(maxLat,z));
+      if(dx<=mapEl.clientWidth*0.78 && dy<=mapEl.clientHeight*0.78){
+        zoom=z;
+        break;
+      }
+    }
+    scheduleRender();
+    return true;
+  }
+
   function markerColorClass(kind){
     if(kind==="photo") return "kind-photo";
     if(kind==="poi") return "kind-poi";
@@ -581,6 +711,7 @@ html,body,#map{width:100%;height:100%;margin:0;overflow:hidden;background:#08172
     renderRasterLayer(layerState.primary,primarySource);
     renderRasterLayer(layerState.secondary,secondarySource);
     applyCompareLayout();
+    renderVectorLayers();
     renderMarkers();
     renderAttribution();
 
@@ -796,12 +927,16 @@ html,body,#map{width:100%;height:100%;margin:0;overflow:hidden;background:#08172
         secondaryOpacity=clamp(Number(
           multi.secondaryOpacity===undefined ? 1 : multi.secondaryOpacity
         ),0,1);
+        vectorLayers=Array.isArray(multi.vectorLayers)
+          ? multi.vectorLayers
+          : [];
       }else{
         const legacy=legacyState(next);
         primarySource=legacy.primarySource;
         secondarySource=legacy.secondarySource;
         compareMode=legacy.compareMode;
         secondaryOpacity=legacy.secondaryOpacity===undefined ? 1 : legacy.secondaryOpacity;
+        vectorLayers=[];
       }
 
       const nextSatelliteKey=String((satelliteScene||{}).id||"")+":"+satelliteDisplayUrl(satelliteScene);
@@ -827,6 +962,7 @@ html,body,#map{width:100%;height:100%;margin:0;overflow:hidden;background:#08172
       }
     },
     fitMarkers,
+    fitBounds,
     fitSatellite,
     focusMarker(kind,id){
       const key=String(kind||"")+":"+String(id||"");
