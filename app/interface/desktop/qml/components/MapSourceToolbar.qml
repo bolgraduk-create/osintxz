@@ -34,9 +34,16 @@ Rectangle {
     }
 
     function sourceAvailable(source) {
+        if (!Boolean((source || {}).enabled))
+            return false
         if (String((source || {}).id || "") === "sentinel_selected")
             return root.satelliteAvailable
-        return Boolean((source || {}).enabled)
+        return true
+    }
+
+    function primarySelectable(source) {
+        var metadata = (source || {}).metadata || ({})
+        return metadata.primarySelectable !== false
     }
 
     function selectableSources() {
@@ -44,6 +51,8 @@ Rectangle {
         for (var i = 0; i < root.sources.length; ++i) {
             var source = root.sources[i]
             if (!root.sourceAvailable(source))
+                continue
+            if (!root.primarySelectable(source))
                 continue
             result.push(source)
         }
