@@ -3,6 +3,8 @@
 Supported without private credentials:
 - GitHub public user events
 - GitLab public user events
+- Bluesky public author feed
+- Mastodon account RSS feed
 
 Collection is deliberately explicit/opt-in from the account details UI.  It
 does not log in, bypass access controls, scrape private content, or infer that
@@ -15,11 +17,14 @@ from dataclasses import dataclass
 from hashlib import sha256
 import json
 from typing import Any, Callable
-from urllib.parse import quote
+from html.parser import HTMLParser
+from urllib.parse import quote, urlencode, urlsplit
+from xml.etree import ElementTree
 
 import httpx
 
 from app.application.social_content_correlation import (
+    build_social_intelligence,
     correlate_social_content,
     normalize_social_content,
 )
@@ -37,6 +42,7 @@ class PublicActivityResult:
 
     def to_dict(self) -> dict[str, Any]:
         normalized = normalize_social_content(self.items)
+        intelligence = build_social_intelligence(normalized)
         return {
             "platform": self.platform,
             "username": self.username,
@@ -44,6 +50,7 @@ class PublicActivityResult:
             "error": self.error,
             "items": normalized,
             "correlations": correlate_social_content(normalized),
+            "intelligence": intelligence,
             "count": len(normalized),
         }
 
@@ -63,12 +70,15 @@ class PublicSocialActivityCollector:
     def capability(cls, account: dict[str, Any]) -> dict[str, Any]:
         username = cls._username(account)
         platform = cls._platform(account)
-        supported = platform in {"github", "gitlab"} and bool(username)
+        supported = platform in {"github", "gitlab", "bluesky", "mastodon"} and bool(username)
         reason = ""
         if not username:
             reason = "Unable to determine account username."
-        elif platform not in {"github", "gitlab"}:
-            reason = "Public activity collection is currently supported for GitHub and GitLab."
+        elif platform not in {"github", "gitlab", "bluesky", "mastodon"}:
+            reason = "Public activity collection is currently supported for GitHub, GitLab, Bluesky and Mastodon."
+        elif platform == "mastodon" and not cls._mastodon_profile_url(account):
+            supported = False
+            reason = "Mastodon collection requires a public profile URL on the account's instance."
         return {
             "available": supported,
             "platform": platform,
@@ -98,8 +108,17 @@ class PublicSocialActivityCollector:
         try:
             if platform == "github":
                 items = self._github(username, limit=bounded, timeout=timeout)
-            else:
+            elif platform == "gitlab":
                 items = self._gitlab(username, limit=bounded, timeout=timeout)
+            elif platform == "bluesky":
+                items = self._bluesky(username, limit=bounded, timeout=timeout)
+            else:
+                items = self._mastodon(
+                    username,
+                    profile_url=self._mastodon_profile_url(account),
+                    limit=bounded,
+                    timeout=timeout,
+                )
             return PublicActivityResult(
                 platform=platform,
                 username=username,
@@ -265,6 +284,149 @@ class PublicSocialActivityCollector:
             ))
         return output
 
+    def _bluesky(self, username: str, *, limit: int, timeout: float) -> list[dict[str, Any]]:
+        query = urlencode(
+            {
+                "actor": username,
+                "limit": min(limit, 100),
+                "filter": "posts_and_author_threads",
+            }
+        )
+        payload = self._request_json(
+            "https://public.api.bsky.app/xrpc/app.bsky.feed.getAuthorFeed?" + query,
+            timeout=timeout,
+        )
+        feed = payload.get("feed") if isinstance(payload, dict) else []
+        rows = feed if isinstance(feed, list) else []
+        output: list[dict[str, Any]] = []
+        for entry in rows:
+            if not isinstance(entry, dict):
+                continue
+            post = entry.get("post") if isinstance(entry.get("post"), dict) else {}
+            record = post.get("record") if isinstance(post.get("record"), dict) else {}
+            text = str(record.get("text") or "").strip()
+            if not text:
+                continue
+            uri = str(post.get("uri") or "")
+            rkey = uri.rsplit("/", 1)[-1] if "/" in uri else ""
+            author = post.get("author") if isinstance(post.get("author"), dict) else {}
+            handle = str(author.get("handle") or username)
+            url = (
+                f"https://bsky.app/profile/{handle}/post/{rkey}"
+                if rkey
+                else f"https://bsky.app/profile/{handle}"
+            )
+            kind = "reply" if isinstance(record.get("reply"), dict) else "post"
+            reason = entry.get("reason") if isinstance(entry.get("reason"), dict) else {}
+            reason_type = str(reason.get("$type") or "").casefold()
+            if "repost" in reason_type:
+                kind = "repost"
+            output.append(
+                self._item(
+                    platform="Bluesky",
+                    author=handle,
+                    content_type=kind,
+                    text=text,
+                    url=url,
+                    timestamp=str(record.get("createdAt") or post.get("indexedAt") or ""),
+                    source="bluesky_public_author_feed",
+                    external_id=uri or rkey,
+                    context="",
+                )
+            )
+        return output
+
+    def _mastodon(
+        self,
+        username: str,
+        *,
+        profile_url: str,
+        limit: int,
+        timeout: float,
+    ) -> list[dict[str, Any]]:
+        clean_profile = str(profile_url or "").rstrip("/")
+        if not clean_profile:
+            return []
+        feed_url = clean_profile + ".rss"
+        text = self._request_text(feed_url, timeout=timeout)
+        try:
+            root = ElementTree.fromstring(text)
+        except ElementTree.ParseError:
+            return []
+
+        output: list[dict[str, Any]] = []
+        for item in root.findall(".//item")[:limit]:
+            title = self._xml_text(item.find("title"))
+            description = self._xml_text(item.find("description"))
+            content = ""
+            for child in list(item):
+                if str(child.tag).endswith("encoded"):
+                    content = self._xml_text(child)
+                    break
+            body = self._html_to_text(content or description or title)
+            if not body:
+                continue
+            link = self._xml_text(item.find("link")) or clean_profile
+            guid = self._xml_text(item.find("guid"))
+            pub_date = self._xml_text(item.find("pubDate"))
+            output.append(
+                self._item(
+                    platform="Mastodon",
+                    author=username,
+                    content_type="post",
+                    text=body,
+                    url=link,
+                    timestamp=pub_date,
+                    source="mastodon_account_rss",
+                    external_id=guid or link,
+                    context=str(urlsplit(clean_profile).hostname or ""),
+                )
+            )
+        return output
+
+    def _request_text(self, url: str, *, timeout: float) -> str:
+        headers = {
+            "User-Agent": "OSINTXZ/1.0 PublicSocialActivity",
+            "Accept": "application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.1",
+        }
+        if self.transport is not None:
+            response = self.transport("GET", url, headers=headers, timeout=timeout)
+        else:
+            response = httpx.get(
+                url,
+                headers=headers,
+                timeout=timeout,
+                follow_redirects=True,
+            )
+        response.raise_for_status()
+        return str(response.text or "")
+
+    @staticmethod
+    def _xml_text(node: Any) -> str:
+        if node is None:
+            return ""
+        return "".join(node.itertext()).strip()
+
+    @staticmethod
+    def _html_to_text(value: str) -> str:
+        class _TextParser(HTMLParser):
+            def __init__(self) -> None:
+                super().__init__(convert_charrefs=True)
+                self.parts: list[str] = []
+
+            def handle_data(self, data: str) -> None:
+                text = " ".join(str(data or "").split())
+                if text:
+                    self.parts.append(text)
+
+        parser = _TextParser()
+        try:
+            parser.feed(str(value or ""))
+            parser.close()
+        except Exception:
+            return " ".join(str(value or "").split())
+        return " ".join(parser.parts)
+
     @staticmethod
     def _item(
         *,
@@ -296,7 +458,8 @@ class PublicSocialActivityCollector:
         if isinstance(identifiers, dict):
             for key in (
                 "username", "handle", "GITHUB_USERNAME", "GITLAB_USERNAME",
-                "github_username", "gitlab_username",
+                "github_username", "gitlab_username", "BLUESKY_HANDLE",
+                "bluesky_handle", "MASTODON_USERNAME", "mastodon_username",
             ):
                 value = str(identifiers.get(key) or "").strip().lstrip("@")
                 if value:
@@ -317,6 +480,21 @@ class PublicSocialActivityCollector:
             return "github"
         if "gitlab" in text:
             return "gitlab"
+        if "bsky.app" in text or "bluesky" in text:
+            return "bluesky"
+        if "mastodon" in text or "/@" in str(account.get("url") or ""):
+            return "mastodon"
+        return ""
+
+    @staticmethod
+    def _mastodon_profile_url(account: dict[str, Any]) -> str:
+        for key in ("url", "profileUrl", "sourceUrl"):
+            value = str(account.get(key) or "").strip()
+            if not value:
+                continue
+            parsed = urlsplit(value)
+            if parsed.scheme in {"http", "https"} and parsed.hostname and "/@" in parsed.path:
+                return value.rstrip("/")
         return ""
 
 
