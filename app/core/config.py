@@ -230,6 +230,14 @@ class Settings(BaseSettings):
     brave_search_api_key: SecretStr | None = None
 
     # ======================================================
+    # Ordnance Survey Maps API
+    # ======================================================
+
+    # Optional OS Data Hub API key for Great Britain raster basemaps.
+    # The key is read from .env and injected only into transient map payloads.
+    os_maps_api_key: SecretStr | None = None
+
+    # ======================================================
     # Copernicus Data Space / Sentinel Hub
     # ======================================================
 
