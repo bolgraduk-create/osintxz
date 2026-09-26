@@ -415,7 +415,7 @@ BUILTIN_MAP_SOURCES: tuple[MapSourceDescriptor, ...] = (
         attribution="Główny Urząd Geodezji i Kartografii · Geoportal.gov.pl",
         terms_url="https://www.geoportal.gov.pl/en/data/orthophotomap-orto/",
         min_zoom=5,
-        max_zoom=23,
+        max_zoom=22,
         metadata={
             "cachePolicy": "http_headers",
             "prefetchAllowed": False,
