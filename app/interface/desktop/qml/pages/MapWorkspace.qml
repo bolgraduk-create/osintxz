@@ -151,6 +151,8 @@ Item {
         var source = root.mapSourceById(sourceId)
         if (!source || String(source.id || "").length === 0)
             return
+        if (source.primarySupported === false)
+            return
 
         if (String(source.id || "") === "sentinel_selected"
                 && !root.sceneCanOverlay(root.selectedSatelliteScene))
