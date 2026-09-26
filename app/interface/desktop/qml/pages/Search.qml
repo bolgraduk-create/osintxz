@@ -287,8 +287,12 @@ Item {
                 + " · persist " + Number(row.qualityPersistenceScore || 0).toFixed(0)
         }
         if (activeTab === "planner") {
+            const autoLanes = row.autoLanes || []
+            const reviewLanes = row.reviewLanes || []
             return "Score " + Number(row.score || 0).toFixed(0)
                 + " · " + String(row.routeHint || "review")
+                + (autoLanes.length > 0 ? " · auto " + autoLanes.join(" + ") : "")
+                + (reviewLanes.length > 0 ? " · review " + reviewLanes.join(" + ") : "")
                 + " · risk " + String(row.risk || "normal")
                 + (row.source ? " · " + String(row.source) : "")
         }
