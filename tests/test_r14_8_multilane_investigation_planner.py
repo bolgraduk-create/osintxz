@@ -35,7 +35,7 @@ def _node(kind, value, *, quality=88.0, pivot=90.0, persistence=75.0):
     )
 
 
-def test_domain_uses_safe_auto_lanes_and_keeps_open_web_for_review():
+def test_domain_uses_safe_multilane_auto_execution():
     graph = ExplorationGraph(
         nodes=[_node(UnifiedSeedKind.DOMAIN, "example.org")]
     )
@@ -43,9 +43,13 @@ def test_domain_uses_safe_auto_lanes_and_keeps_open_web_for_review():
     decision = plan.decisions[0]
 
     assert decision.action == "auto_execute"
-    assert decision.auto_lanes == ("classic", "federation")
-    assert decision.review_lanes == ("open_web",)
-    assert "open web review" in decision.route_hint
+    assert decision.auto_lanes == (
+        "classic",
+        "federation",
+        "open_web",
+    )
+    assert decision.review_lanes == ()
+    assert decision.route_hint == "classic + open web + federation"
 
 
 def test_registry_exact_identifier_can_enter_exploration_graph():
@@ -144,9 +148,10 @@ def test_worker_executes_planner_federation_and_registry_through_existing_bounda
     ):
         assert token in worker
 
-    # Autonomous Open Web is intentionally absent until it has a no-persistence
-    # execution boundary.
-    assert 'lane="planner_open_web"' not in worker
+    # R14.9 upgrades Open Web only through the explicit no-persistence
+    # enrichment boundary. The persisted enrich(...) call is not used here.
+    assert 'lane="planner_open_web"' in worker
+    assert ".enrich_ephemeral(query)" in worker
 
 
 def test_planner_ui_explains_auto_and_review_lanes():

@@ -363,7 +363,7 @@ def _lanes(kind: UnifiedSeedKind) -> tuple[tuple[str, ...], tuple[str, ...]]:
         UnifiedSeedKind.URL,
         UnifiedSeedKind.IP,
     }:
-        return ("classic", "federation"), ("open_web",)
+        return ("classic", "federation", "open_web"), ()
     if kind in {
         UnifiedSeedKind.REGISTRATION_ID,
         UnifiedSeedKind.VAT_ID,
@@ -378,7 +378,7 @@ def _route_hint(kind: UnifiedSeedKind) -> str:
     if kind in {UnifiedSeedKind.USERNAME, UnifiedSeedKind.EMAIL, UnifiedSeedKind.PHONE}:
         return "classic + federation"
     if kind in {UnifiedSeedKind.DOMAIN, UnifiedSeedKind.URL, UnifiedSeedKind.IP}:
-        return "classic + federation · open web review"
+        return "classic + open web + federation"
     if kind is UnifiedSeedKind.HASH:
         return "classic + federation"
     if kind in {

@@ -677,6 +677,7 @@ class UnifiedInvestigationSearchWorker(QObject):
                 "classic": 0,
                 "federation": 0,
                 "registry": 0,
+                "openWeb": 0,
                 "openWebReview": 0,
             }
             exploration_executed_keys: set[tuple[str, str, str]] = set()
@@ -757,6 +758,7 @@ class UnifiedInvestigationSearchWorker(QObject):
                     "classic": len(exploration_executed_keys),
                     "federation": 0,
                     "registry": 0,
+                    "openWeb": 0,
                     "openWebReview": len(
                         [
                             item
@@ -808,6 +810,73 @@ class UnifiedInvestigationSearchWorker(QObject):
                         planner_lane_execution["federation"] = len(
                             executed_federation_keys
                         )
+
+                open_web_nodes = nodes_for_lane(
+                    smart_query_plan,
+                    "open_web",
+                )
+                if use_open_web and open_web_nodes:
+                    open_web_seed_candidates = self._open_web_seeds(
+                        container,
+                        [node.seed for node in open_web_nodes],
+                    )
+                    planner_open_web_seeds, planner_open_web_schedule = (
+                        schedule_seeds(
+                            open_web_seed_candidates,
+                            limit=4,
+                            lane="planner_open_web",
+                        )
+                    )
+                    retrieval_schedule.add(planner_open_web_schedule)
+                    executed_open_web_keys: set[tuple[str, str, str]] = set()
+                    for seed in planner_open_web_seeds:
+                        target_type = osint_target_for_seed(seed)
+                        if target_type is None:
+                            continue
+                        query = OpenWebQuery(
+                            target_type=target_type,
+                            value=seed.value,
+                            case_id=None,
+                            limit=15,
+                            timeout=self.OPEN_WEB_TIMEOUT,
+                            depth=seed.depth,
+                        )
+                        try:
+                            enrichment = (
+                                container.open_web_enrichment_service
+                                .enrich_ephemeral(query)
+                            )
+                        except Exception as exc:
+                            errors.append(
+                                self._error_row(
+                                    "Open-Web",
+                                    "planner_open_web",
+                                    f"{type(exc).__name__}: {exc}",
+                                    seed,
+                                )
+                            )
+                            continue
+
+                        snap = self._snapshot_open_web(
+                            enrichment,
+                            seed,
+                        )
+                        self._append_open_web_snapshot(
+                            snap,
+                            results,
+                            providers,
+                            errors,
+                        )
+                        executed_open_web_keys.add(
+                            seed.identity_key
+                        )
+
+                    exploration_executed_keys.update(
+                        executed_open_web_keys
+                    )
+                    planner_lane_execution["openWeb"] = len(
+                        executed_open_web_keys
+                    )
 
                 registry_nodes = nodes_for_lane(
                     smart_query_plan,
@@ -999,6 +1068,9 @@ class UnifiedInvestigationSearchWorker(QObject):
                     ),
                     "plannerRegistryExecuted": int(
                         planner_lane_execution.get("registry") or 0
+                    ),
+                    "plannerOpenWebExecuted": int(
+                        planner_lane_execution.get("openWeb") or 0
                     ),
                     "plannerOpenWebReview": int(
                         planner_lane_execution.get("openWebReview") or 0
