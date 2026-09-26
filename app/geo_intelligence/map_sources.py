@@ -13,6 +13,7 @@ from app.core.config import DATA_DIR
 SUPPORTED_MAP_SOURCE_KINDS = frozenset({
     "xyz",
     "wms",
+    "wmts",
     "schematic",
     "satellite_dynamic",
 })
@@ -68,6 +69,11 @@ class MapSourceDescriptor:
     wms_format: str = "image/png"
     wms_version: str = "1.3.0"
     wms_transparent: bool = True
+    wmts_layer: str = ""
+    wmts_style: str = "default"
+    wmts_format: str = "image/png"
+    wmts_matrix_set: str = ""
+    wmts_matrix_prefix: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -95,7 +101,7 @@ class MapSourceDescriptor:
             raise ValueError("opacity must be 0..1.")
 
         url = str(self.url or "").strip()
-        if kind in {"xyz", "wms"}:
+        if kind in {"xyz", "wms", "wmts"}:
             _validate_remote_map_url(url)
         if kind == "xyz":
             for token in ("{z}", "{x}", "{y}"):
@@ -105,6 +111,11 @@ class MapSourceDescriptor:
                     )
         if kind == "wms" and not str(self.wms_layers or "").strip():
             raise ValueError("WMS source requires at least one layer name.")
+        if kind == "wmts":
+            if not str(self.wmts_layer or "").strip():
+                raise ValueError("WMTS source requires a layer name.")
+            if not str(self.wmts_matrix_set or "").strip():
+                raise ValueError("WMTS source requires a tile matrix set.")
 
         terms_url = str(self.terms_url or "").strip()
         if terms_url:
@@ -123,6 +134,11 @@ class MapSourceDescriptor:
         object.__setattr__(self, "wms_styles", str(self.wms_styles or "").strip())
         object.__setattr__(self, "wms_format", str(self.wms_format or "image/png").strip())
         object.__setattr__(self, "wms_version", str(self.wms_version or "1.3.0").strip())
+        object.__setattr__(self, "wmts_layer", str(self.wmts_layer or "").strip())
+        object.__setattr__(self, "wmts_style", str(self.wmts_style or "default").strip())
+        object.__setattr__(self, "wmts_format", str(self.wmts_format or "image/png").strip())
+        object.__setattr__(self, "wmts_matrix_set", str(self.wmts_matrix_set or "").strip())
+        object.__setattr__(self, "wmts_matrix_prefix", str(self.wmts_matrix_prefix or "").strip())
 
     def to_payload(self) -> dict[str, Any]:
         return {
@@ -145,6 +161,11 @@ class MapSourceDescriptor:
             "wmsFormat": self.wms_format,
             "wmsVersion": self.wms_version,
             "wmsTransparent": self.wms_transparent,
+            "wmtsLayer": self.wmts_layer,
+            "wmtsStyle": self.wmts_style,
+            "wmtsFormat": self.wmts_format,
+            "wmtsMatrixSet": self.wmts_matrix_set,
+            "wmtsMatrixPrefix": self.wmts_matrix_prefix,
             "metadata": dict(self.metadata),
         }
 
@@ -258,6 +279,11 @@ class MapSourceRegistry:
         wms_format: str = "image/png",
         wms_version: str = "1.3.0",
         wms_transparent: bool = True,
+        wmts_layer: str = "",
+        wmts_style: str = "default",
+        wmts_format: str = "image/png",
+        wmts_matrix_set: str = "",
+        wmts_matrix_prefix: str = "",
     ) -> MapSourceDescriptor:
         normalized_name = str(name or "").strip()
         source_id = self._next_custom_id(normalized_name)
@@ -277,6 +303,11 @@ class MapSourceRegistry:
             wms_format=wms_format,
             wms_version=wms_version,
             wms_transparent=bool(wms_transparent),
+            wmts_layer=wmts_layer,
+            wmts_style=wmts_style,
+            wmts_format=wmts_format,
+            wmts_matrix_set=wmts_matrix_set,
+            wmts_matrix_prefix=wmts_matrix_prefix,
             metadata={
                 "persistedLocally": True,
             },
@@ -343,6 +374,11 @@ class MapSourceRegistry:
                     wms_format=str(row.get("wmsFormat") or "image/png"),
                     wms_version=str(row.get("wmsVersion") or "1.3.0"),
                     wms_transparent=bool(row.get("wmsTransparent", True)),
+                    wmts_layer=str(row.get("wmtsLayer") or ""),
+                    wmts_style=str(row.get("wmtsStyle") or "default"),
+                    wmts_format=str(row.get("wmtsFormat") or "image/png"),
+                    wmts_matrix_set=str(row.get("wmtsMatrixSet") or ""),
+                    wmts_matrix_prefix=str(row.get("wmtsMatrixPrefix") or ""),
                     metadata={
                         "persistedLocally": True,
                     },
