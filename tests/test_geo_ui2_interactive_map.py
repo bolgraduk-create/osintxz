@@ -34,10 +34,11 @@ def test_geo_ui2_map_workspace_defaults_to_streets_with_schematic_fallback():
 
     assert "property bool webEngineRuntimeAvailable" in qml
     assert 'property string baseMapMode: webEngineRuntimeAvailable ? "streets" : "schematic"' in qml
-    assert 'baseMapMode === "streets"' in qml
-    assert 'baseMapMode === "satellite"' in qml
-    assert 'text: "Streets"' in qml
-    assert 'text: "Schematic"' in qml
+    assert 'property string primaryMapSourceId: webEngineRuntimeAvailable' in qml
+    assert '? "osm_standard"' in qml
+    assert ': "local_schematic"' in qml
+    assert 'if (requested === "schematic")' in qml
+    assert 'if (requested === "satellite")' in qml
     assert '"sentinel_selected"' in qml
     assert 'source: active ? "../components/InteractiveMapView.qml" : ""' in qml
     assert 'root.baseMapMode = "schematic"' in qml
@@ -121,7 +122,8 @@ def test_geo_ui2_map_engine_supports_pan_zoom_fit_and_clusters():
 def test_geo_ui2_dark_theme_preserves_osintxz_marker_semantics():
     html = _read(MAP_HTML)
 
-    assert "invert(92%) hue-rotate(180deg)" in html
+    assert ".tile.dark-filter{filter:saturate(68%) brightness(62%) contrast(108%)}" in html
+    assert "invert(92%) hue-rotate(180deg)" not in html
     assert ".kind-location{background:#c78cf4}" in html
     assert ".kind-photo{background:#e5a84b}" in html
     assert ".kind-poi{background:#49c5d8}" in html
