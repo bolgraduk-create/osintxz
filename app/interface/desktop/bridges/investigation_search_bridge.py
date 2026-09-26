@@ -22,7 +22,10 @@ from app.interface.desktop.workers.public_social_activity_worker import (
     PublicSocialActivityWorker,
 )
 from app.application.public_social_activity import PublicSocialActivityCollector
-from app.application.social_content_correlation import correlate_social_content
+from app.application.social_content_correlation import (
+    build_social_intelligence,
+    correlate_social_content,
+)
 from app.osint.connectors.maigret_connector import MaigretConnector
 
 
@@ -426,11 +429,24 @@ class InvestigationSearchBridge(QObject):
             seen.add(key)
             combined.append(dict(item))
         if self._run:
+            intelligence = build_social_intelligence(combined)
             self._run["socialContent"] = combined[:500]
-            self._run["socialCorrelations"] = correlate_social_content(combined)[:200]
+            self._run["socialCorrelations"] = list(
+                intelligence.get("correlations") or []
+            )[:200]
+            self._run["socialIntelligence"] = intelligence
             summary = dict(self._run.get("summary") or {})
             summary["socialContent"] = len(combined)
             summary["socialCorrelations"] = len(self._run["socialCorrelations"])
+            summary["socialAuthors"] = int(
+                (intelligence.get("summary") or {}).get("authors") or 0
+            )
+            summary["socialPlatforms"] = int(
+                (intelligence.get("summary") or {}).get("platforms") or 0
+            )
+            summary["socialSignals"] = int(
+                (intelligence.get("summary") or {}).get("signals") or 0
+            )
             self._run["summary"] = summary
             self.changed.emit()
 
