@@ -227,9 +227,6 @@ AppDialog {
                                     && sourceRow.modelData.primarySupported !== false
                                     && String(sourceRow.modelData.id || "") !== root.currentPrimaryId
                                 primary: String(sourceRow.modelData.id || "") !== root.currentPrimaryId
-                                toolTip: sourceRow.modelData.primarySupported === false
-                                    ? "Overlay source — use Compare"
-                                    : ""
                                 onClicked: root.sourceChosen(
                                     String(sourceRow.modelData.id || ""),
                                     false
