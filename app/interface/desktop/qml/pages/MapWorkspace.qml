@@ -804,11 +804,18 @@ Item {
         }
 
         Text {
-            visible: String(geoBridge.mapSourceMessage || "").length > 0
+            property string sourceMessage: String(geoBridge.mapSourceMessage || "")
+            property string layerMessage: String(geoBridge.mapLayerMessage || "")
+            visible: sourceMessage.length > 0 || layerMessage.length > 0
             Layout.fillWidth: true
             Layout.preferredHeight: visible ? 16 : 0
-            text: String(geoBridge.mapSourceMessage || "")
-            color: Theme.textMuted
+            text: layerMessage.length > 0 ? layerMessage : sourceMessage
+            color: (
+                text.toLowerCase().indexOf("blocked") >= 0
+                || text.toLowerCase().indexOf("invalid") >= 0
+                || text.toLowerCase().indexOf("exceeds") >= 0
+                || text.toLowerCase().indexOf("unavailable") >= 0
+            ) ? Theme.warning : Theme.textMuted
             font.pixelSize: 8
             elide: Text.ElideRight
         }
