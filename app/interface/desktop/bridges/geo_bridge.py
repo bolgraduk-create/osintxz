@@ -6,6 +6,7 @@ from PySide6.QtCore import QObject, Property, QThread, QUrl, Signal, Slot
 
 from app.core.config import settings
 from app.geo_intelligence.contracts import GeoEnrichmentRequest, GeoPoint
+from app.geo_intelligence.map_layers import MapLayerRegistry
 from app.geo_intelligence.map_sources import MapSourceRegistry
 from app.geo_intelligence.service import GeoIntelligenceService
 from app.interface.desktop.workers.geo_enrichment_worker import (
@@ -45,6 +46,8 @@ class GeoBridge(QObject):
         self._satellite_render_worker: SatelliteSceneRenderWorker | None = None
         self._map_source_registry = MapSourceRegistry()
         self._map_source_message = ""
+        self._map_layer_registry = MapLayerRegistry()
+        self._map_layer_message = ""
 
     @Property("QVariantMap", notify=changed)
     def runData(self) -> dict[str, Any]:
@@ -89,6 +92,110 @@ class GeoBridge(QObject):
     @Property(str, notify=messageChanged)
     def mapSourceMessage(self) -> str:
         return self._map_source_message
+
+    @Property("QVariantList", notify=changed)
+    def mapLayers(self) -> list[dict[str, Any]]:
+        return self._map_layer_registry.all(include_features=True)
+
+    @Property(str, notify=messageChanged)
+    def mapLayerMessage(self) -> str:
+        return self._map_layer_message
+
+    @Slot(str, result=bool)
+    def importMapLayer(
+        self,
+        file_url: str,
+    ) -> bool:
+        normalized = str(file_url or "").strip()
+        if not normalized:
+            self._set_map_layer_message("Select a GeoJSON, KML, or GPX file.")
+            return False
+
+        qurl = QUrl(normalized)
+        local_path = (
+            qurl.toLocalFile()
+            if qurl.isLocalFile()
+            else normalized
+        )
+
+        try:
+            layer = self._map_layer_registry.import_file(local_path)
+        except (OSError, TypeError, ValueError) as exc:
+            self._set_map_layer_message(str(exc))
+            return False
+
+        self._set_map_layer_message(
+            "Map layer imported: "
+            + layer.name
+            + f" ({len(layer.features)} feature(s))."
+        )
+        self.changed.emit()
+        return True
+
+    @Slot(str, bool, result=bool)
+    def setMapLayerVisibility(
+        self,
+        layer_id: str,
+        visible: bool,
+    ) -> bool:
+        try:
+            changed = self._map_layer_registry.set_visibility(
+                layer_id,
+                visible,
+            )
+        except (OSError, TypeError, ValueError) as exc:
+            self._set_map_layer_message(str(exc))
+            return False
+
+        if not changed:
+            self._set_map_layer_message("Map layer is unavailable.")
+            return False
+
+        self._set_map_layer_message("")
+        self.changed.emit()
+        return True
+
+    @Slot(str, float, result=bool)
+    def setMapLayerOpacity(
+        self,
+        layer_id: str,
+        opacity: float,
+    ) -> bool:
+        try:
+            changed = self._map_layer_registry.set_opacity(
+                layer_id,
+                opacity,
+            )
+        except (OSError, TypeError, ValueError) as exc:
+            self._set_map_layer_message(str(exc))
+            return False
+
+        if not changed:
+            self._set_map_layer_message("Map layer is unavailable.")
+            return False
+
+        self._set_map_layer_message("")
+        self.changed.emit()
+        return True
+
+    @Slot(str, result=bool)
+    def removeMapLayer(
+        self,
+        layer_id: str,
+    ) -> bool:
+        try:
+            removed = self._map_layer_registry.remove(layer_id)
+        except OSError as exc:
+            self._set_map_layer_message(str(exc))
+            return False
+
+        if not removed:
+            self._set_map_layer_message("Map layer is unavailable.")
+            return False
+
+        self._set_map_layer_message("Map layer removed.")
+        self.changed.emit()
+        return True
 
     @Slot("QVariantMap", result=bool)
     def addMapSource(
@@ -667,6 +774,13 @@ class GeoBridge(QObject):
         if normalized == self._map_source_message:
             return
         self._map_source_message = normalized
+        self.messageChanged.emit()
+
+    def _set_map_layer_message(self, value: str) -> None:
+        normalized = str(value or "")
+        if normalized == self._map_layer_message:
+            return
+        self._map_layer_message = normalized
         self.messageChanged.emit()
 
     def _set_message(self, value: str) -> None:
