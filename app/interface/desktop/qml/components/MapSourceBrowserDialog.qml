@@ -210,6 +210,16 @@ AppDialog {
 
                                 Text {
                                     Layout.fillWidth: true
+                                    visible: Boolean(sourceRow.modelData.requiresApiKey)
+                                        && !Boolean(sourceRow.modelData.credentialConfigured)
+                                    text: "API key required · configure it in .env"
+                                    color: Theme.warning
+                                    font.pixelSize: 8
+                                    elide: Text.ElideRight
+                                }
+
+                                Text {
+                                    Layout.fillWidth: true
                                     visible: String(sourceRow.modelData.id || "") === "sentinel_selected"
                                         && !root.satelliteAvailable
                                     text: "Select a Sentinel-2 scene before using this source."
