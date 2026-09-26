@@ -135,6 +135,7 @@ BUILTIN_MAP_SOURCES: tuple[MapSourceDescriptor, ...] = (
             "provider": "OpenStreetMap Foundation",
             "cachePolicy": "http_headers",
             "prefetchAllowed": False,
+            "darkFilter": True,
         },
     ),
     MapSourceDescriptor(
