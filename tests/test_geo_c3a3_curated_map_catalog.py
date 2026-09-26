@@ -130,3 +130,30 @@ def test_geo_c3a3_nasa_and_usgs_catalog_pack():
     assert hydro.primary_supported is False
     assert hydro.metadata["overlayOnly"] is True
     assert "USGSHydroCached/MapServer/tile/{z}/{y}/{x}" in hydro.url
+
+
+def test_geo_c3a3_poland_and_germany_country_packs():
+    sources = {source.id: source for source in BUILTIN_MAP_SOURCES}
+
+    assert set(sources) >= {
+        "pl_geoportal_ortho",
+        "de_basemap_raster_color",
+    }
+
+    poland = sources["pl_geoportal_ortho"]
+    assert poland.region == "Poland"
+    assert poland.provider == "Główny Urząd Geodezji i Kartografii"
+    assert poland.category == "satellite"
+    assert "LAYER=ORTOFOTOMAPA" in poland.url
+    assert "TILEMATRIXSET=EPSG:3857" in poland.url
+    assert "TILEMATRIX=EPSG:3857:{z}" in poland.url
+    assert "TILEROW={y}" in poland.url
+    assert "TILECOL={x}" in poland.url
+    assert poland.metadata["catalogPack"] == "poland"
+
+    germany = sources["de_basemap_raster_color"]
+    assert germany.region == "Germany"
+    assert germany.provider == "BKG / GeoBasis-DE"
+    assert germany.category == "streets"
+    assert "GLOBAL_WEBMERCATOR/{z}/{y}/{x}.png" in germany.url
+    assert germany.metadata["catalogPack"] == "germany"
