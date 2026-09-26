@@ -45,9 +45,9 @@ html,body,#map{width:100%;height:100%;margin:0;overflow:hidden;background:#08172
 #attribution{position:absolute;right:9px;bottom:7px;z-index:20;padding:4px 7px;border-radius:5px;background:rgba(5,18,27,.78);
  color:#9bb1c2;font-size:9px;border:1px solid rgba(50,77,96,.72);max-width:60%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #attribution a{color:#a9bdca;text-decoration:none}#attribution a:hover{text-decoration:underline}
-#status{position:absolute;left:12px;bottom:10px;z-index:20;padding:5px 8px;border-radius:6px;background:rgba(5,18,27,.80);
+#status{position:absolute;left:12px;bottom:10px;z-index:20;display:none;padding:5px 8px;border-radius:6px;background:rgba(5,18,27,.88);
  color:#8fa9bc;font-size:9px;border:1px solid rgba(50,77,96,.72)}
-#legend{position:absolute;left:12px;bottom:44px;z-index:20;display:flex;gap:10px;padding:6px 8px;border-radius:6px;
+#legend{position:absolute;left:12px;bottom:12px;z-index:20;display:none;gap:10px;padding:6px 8px;border-radius:6px;
  background:rgba(5,18,27,.80);border:1px solid rgba(50,77,96,.72);font-size:8px;color:#9bb1c2}
 .legend-item{display:flex;align-items:center;gap:5px}.legend-dot{width:8px;height:8px;border-radius:50%;border:1px solid rgba(235,245,252,.85)}
 </style>
@@ -108,6 +108,7 @@ html,body,#map{width:100%;height:100%;margin:0;overflow:hidden;background:#08172
   const secondaryLabelEl = document.getElementById("secondaryLabel");
   const attributionEl = document.getElementById("attribution");
   const statusEl = document.getElementById("status");
+  const legendEl = document.getElementById("legend");
 
   const layerState = {
     primary:{
@@ -139,6 +140,8 @@ html,body,#map{width:100%;height:100%;margin:0;overflow:hidden;background:#08172
   let secondaryOpacity = 1.0;
   let vectorLayers = [];
   let lastSatelliteKey = "";
+  let lastPrimarySourceKey = "";
+  let statusTimer = null;
   let dragging = false;
   let dividerDragging = false;
   let dragStart = null;
@@ -313,6 +316,18 @@ html,body,#map{width:100%;height:100%;margin:0;overflow:hidden;background:#08172
     return z>=min && z<=max;
   }
 
+  function showStatus(message){
+    statusEl.textContent=String(message || "");
+    statusEl.style.display=message ? "block" : "none";
+    if(statusTimer!==null) clearTimeout(statusTimer);
+    if(message){
+      statusTimer=setTimeout(() => {
+        statusTimer=null;
+        statusEl.style.display="none";
+      },2200);
+    }
+  }
+
   function renderTileLayer(state,source){
     const key=sourceKey(source);
     if(state.sourceKey !== key){
@@ -353,7 +368,7 @@ html,body,#map{width:100%;height:100%;margin:0;overflow:hidden;background:#08172
           img.loading="eager";
           img.onerror=() => {
             if(state.tiles.get(cacheKey)!==img) return;
-            statusEl.textContent=String(source.name || "MAP").toUpperCase()+" · TILE UNAVAILABLE";
+            showStatus(String(source.name || "MAP").toUpperCase()+" · TILE UNAVAILABLE");
           };
           state.tiles.set(cacheKey,img);
           img.src=url;
@@ -406,7 +421,7 @@ html,body,#map{width:100%;height:100%;margin:0;overflow:hidden;background:#08172
       state.image.alt=String(source.name || "Raster image");
       state.image.referrerPolicy="no-referrer";
       state.image.onerror=() => {
-        statusEl.textContent=String(source.name || "IMAGE").toUpperCase()+" · IMAGE UNAVAILABLE";
+        showStatus(String(source.name || "IMAGE").toUpperCase()+" · IMAGE UNAVAILABLE");
       };
       state.root.appendChild(state.image);
     }
@@ -442,6 +457,7 @@ html,body,#map{width:100%;height:100%;margin:0;overflow:hidden;background:#08172
   function applyCompareLayout(){
     secondaryEl.style.opacity=String(clamp(secondaryOpacity,0,1));
     dividerEl.style.display="none";
+    primaryLabelEl.style.display="none";
     secondaryLabelEl.style.display="none";
 
     if(compareMode==="none" || !secondarySource){
@@ -453,6 +469,7 @@ html,body,#map{width:100%;height:100%;margin:0;overflow:hidden;background:#08172
     }
 
     secondaryEl.style.display="block";
+    primaryLabelEl.style.display="block";
 
     if(compareMode==="overlay"){
       secondaryEl.style.clipPath="none";
@@ -692,6 +709,7 @@ html,body,#map{width:100%;height:100%;margin:0;overflow:hidden;background:#08172
   }
 
   function renderMarkers(){
+    legendEl.style.display=markers.length ? "flex" : "none";
     markerEl.replaceChildren();
     if(popup){popup.remove();popup=null;}
 
@@ -760,7 +778,7 @@ html,body,#map{width:100%;height:100%;margin:0;overflow:hidden;background:#08172
 
     primaryLabelEl.textContent=String((primarySource||{}).name || "Map");
     secondaryLabelEl.textContent=String((secondarySource||{}).name || "Compare");
-    statusEl.textContent=String((primarySource||{}).name || "MAP").toUpperCase()+" · Z"+zoom;
+    if(!markers.length) legendEl.style.display="none";
   }
 
   function zoomAt(delta,clientX,clientY){
@@ -992,7 +1010,19 @@ html,body,#map{width:100%;height:100%;margin:0;overflow:hidden;background:#08172
       const satelliteChanged=nextSatelliteKey!==lastSatelliteKey;
       lastSatelliteKey=nextSatelliteKey;
 
-      if(firstState){
+      const nextPrimaryKey=sourceKey(primarySource);
+      const primaryChanged=nextPrimaryKey!==lastPrimarySourceKey;
+      lastPrimarySourceKey=nextPrimaryKey;
+      const sourceViewBbox=primarySource
+        && primarySource.metadata
+        && Array.isArray(primarySource.metadata.viewBbox)
+        ? primarySource.metadata.viewBbox
+        : null;
+
+      if(primaryChanged && sourceViewBbox && sourceViewBbox.length===4){
+        fitBounds(sourceViewBbox);
+        firstState=false;
+      }else if(firstState){
         firstState=false;
         if(primarySource && (primarySource.kind==="satellite_dynamic" || primarySource.kind==="image")){
           if(!fitImageSource(primarySource)) fitMarkers();
