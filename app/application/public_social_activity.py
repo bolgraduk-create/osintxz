@@ -75,7 +75,7 @@ class PublicSocialActivityCollector:
         if not username:
             reason = "Unable to determine account username."
         elif platform not in {"github", "gitlab", "bluesky", "mastodon"}:
-            reason = "Public activity collection is currently supported for GitHub, GitLab, Bluesky and Mastodon."
+            reason = "Public activity collection is currently supported for GitHub and GitLab, plus Bluesky and Mastodon."
         elif platform == "mastodon" and not cls._mastodon_profile_url(account):
             supported = False
             reason = "Mastodon collection requires a public profile URL on the account's instance."
