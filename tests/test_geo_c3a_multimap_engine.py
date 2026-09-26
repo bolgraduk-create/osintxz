@@ -290,3 +290,13 @@ def test_geo_c3a_hybrid_is_a_multimap_preset_not_a_separate_renderer():
     assert 'root.compareMode = "overlay"' in qml
     assert "root.secondaryOpacity = 0.42" in qml
     assert 'root.baseMapMode = "hybrid"' in qml
+
+
+def test_geo_c3a_uses_webengine_profile_prototype_for_qt_69_plus():
+    qml = _read(WEB_QML)
+
+    assert "WebEngineProfilePrototype {" in qml
+    assert 'storageName: "osintxz-map"' in qml
+    assert "property var mapProfile: mapProfilePrototype.instance()" in qml
+    assert "profile: root.mapProfile" in qml
+    assert "WebEngineProfile {" not in qml
