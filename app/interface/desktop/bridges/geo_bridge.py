@@ -217,6 +217,11 @@ class GeoBridge(QObject):
                 wms_format=str(data.get("wmsFormat") or "image/png"),
                 wms_version=str(data.get("wmsVersion") or "1.3.0"),
                 wms_transparent=bool(data.get("wmsTransparent", True)),
+                wmts_layer=str(data.get("wmtsLayer") or ""),
+                wmts_style=str(data.get("wmtsStyle") or "default"),
+                wmts_format=str(data.get("wmtsFormat") or "image/png"),
+                wmts_matrix_set=str(data.get("wmtsMatrixSet") or ""),
+                wmts_matrix_prefix=str(data.get("wmtsMatrixPrefix") or ""),
             )
         except (TypeError, ValueError, OSError) as exc:
             self._set_map_source_message(str(exc))
