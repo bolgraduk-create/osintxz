@@ -1,0 +1,295 @@
+"""R14.7 explainable smart query planner.
+
+The planner decides which already-approved ephemeral pivots are safe to execute
+automatically and which should remain analyst-review suggestions. It does not
+persist findings, bypass guarded routes, or turn weak identity evidence into an
+automatic ownership assertion.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any, Iterable
+
+from app.application.exploration_graph import ExplorationGraph, ExplorationNode
+from app.application.unified_investigation_search import UnifiedSeedKind
+
+
+_AUTO_KINDS = frozenset(
+    {
+        UnifiedSeedKind.USERNAME,
+        UnifiedSeedKind.EMAIL,
+        UnifiedSeedKind.PHONE,
+        UnifiedSeedKind.DOMAIN,
+        UnifiedSeedKind.URL,
+        UnifiedSeedKind.IP,
+        UnifiedSeedKind.HASH,
+    }
+)
+
+_HIGH_RISK_SOURCE_MARKERS = (
+    "darkweb",
+    "onion",
+    "breach",
+    "leak",
+    "stealer",
+    "secret",
+    "wanted",
+    "sanction",
+)
+
+
+@dataclass(frozen=True, slots=True)
+class SmartQueryDecision:
+    action: str
+    score: float
+    reason: str
+    node: ExplorationNode
+    route_hint: str
+    risk: str
+    signals: tuple[str, ...] = ()
+
+    def to_dict(self) -> dict[str, Any]:
+        seed = self.node.seed
+        return {
+            "action": self.action,
+            "score": round(self.score, 1),
+            "reason": self.reason,
+            "kind": seed.kind.value,
+            "value": seed.value,
+            "depth": seed.depth,
+            "origin": seed.origin,
+            "source": self.node.source,
+            "qualityScore": round(self.node.quality_score, 1),
+            "pivotScore": round(self.node.pivot_score, 1),
+            "persistenceScore": round(self.node.persistence_score, 1),
+            "routeHint": self.route_hint,
+            "risk": self.risk,
+            "signals": list(self.signals),
+            "observationId": self.node.observation_id,
+            "parentSeedKind": self.node.parent_seed_kind,
+            "parentSeedValue": self.node.parent_seed_value,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class SmartQueryPlan:
+    decisions: tuple[SmartQueryDecision, ...]
+
+    @property
+    def auto_nodes(self) -> list[ExplorationNode]:
+        return [
+            item.node
+            for item in self.decisions
+            if item.action == "auto_execute"
+        ]
+
+    @property
+    def review_nodes(self) -> list[ExplorationNode]:
+        return [
+            item.node
+            for item in self.decisions
+            if item.action == "review"
+        ]
+
+    def to_dict(self) -> dict[str, Any]:
+        counts = {
+            "autoExecute": 0,
+            "review": 0,
+            "blocked": 0,
+        }
+        for item in self.decisions:
+            if item.action == "auto_execute":
+                counts["autoExecute"] += 1
+            elif item.action == "review":
+                counts["review"] += 1
+            else:
+                counts["blocked"] += 1
+        return {
+            "summary": {
+                "candidates": len(self.decisions),
+                **counts,
+            },
+            "decisions": [item.to_dict() for item in self.decisions],
+        }
+
+
+def build_smart_query_plan(
+    graph: ExplorationGraph,
+    *,
+    max_auto: int = 6,
+) -> SmartQueryPlan:
+    decisions = [
+        _decision(node)
+        for node in list(graph.nodes)
+    ]
+
+    decisions.sort(
+        key=lambda item: (
+            0 if item.action == "auto_execute" else (
+                1 if item.action == "review" else 2
+            ),
+            -item.score,
+            item.node.seed.depth,
+            item.node.seed.kind.value,
+            item.node.seed.value.casefold(),
+        )
+    )
+
+    auto_seen = 0
+    bounded: list[SmartQueryDecision] = []
+    for item in decisions:
+        if item.action == "auto_execute":
+            auto_seen += 1
+            if auto_seen > max(0, int(max_auto)):
+                item = SmartQueryDecision(
+                    action="review",
+                    score=item.score,
+                    reason="Safe automatic pivot budget exhausted; retained for analyst review.",
+                    node=item.node,
+                    route_hint=item.route_hint,
+                    risk=item.risk,
+                    signals=item.signals,
+                )
+        bounded.append(item)
+
+    return SmartQueryPlan(tuple(bounded))
+
+
+def graph_for_auto_execution(
+    graph: ExplorationGraph,
+    plan: SmartQueryPlan,
+) -> ExplorationGraph:
+    wanted = {
+        item.node.identity_key
+        for item in plan.decisions
+        if item.action == "auto_execute"
+    }
+    return ExplorationGraph(
+        nodes=[
+            node
+            for node in graph.nodes
+            if node.identity_key in wanted
+        ],
+        edges=[
+            edge
+            for edge in graph.edges
+            if edge.child_key in wanted
+        ],
+        skipped_initial=graph.skipped_initial,
+        skipped_duplicate=graph.skipped_duplicate,
+        skipped_unsupported=graph.skipped_unsupported,
+        skipped_not_approved=graph.skipped_not_approved,
+        skipped_depth=graph.skipped_depth,
+    )
+
+
+def _decision(node: ExplorationNode) -> SmartQueryDecision:
+    seed = node.seed
+    signals: list[str] = []
+    risk = _risk(node)
+
+    if seed.kind not in _AUTO_KINDS:
+        return SmartQueryDecision(
+            action="review",
+            score=_score(node),
+            reason="Seed kind is not approved for autonomous execution.",
+            node=node,
+            route_hint=_route_hint(seed.kind),
+            risk=risk,
+            signals=("non_auto_seed_kind",),
+        )
+
+    if seed.depth > 2:
+        return SmartQueryDecision(
+            action="blocked",
+            score=_score(node),
+            reason="Pivot depth exceeds the autonomous exploration boundary.",
+            node=node,
+            route_hint=_route_hint(seed.kind),
+            risk=risk,
+            signals=("depth_limit",),
+        )
+
+    source = str(node.source or "").casefold()
+    if any(marker in source for marker in _HIGH_RISK_SOURCE_MARKERS):
+        return SmartQueryDecision(
+            action="review",
+            score=_score(node),
+            reason="Sensitive-source pivot requires analyst review.",
+            node=node,
+            route_hint=_route_hint(seed.kind),
+            risk="guarded",
+            signals=("sensitive_source",),
+        )
+
+    score = _score(node)
+
+    if node.pivot_score >= 72.0 and node.quality_score >= 65.0:
+        signals.extend(("quality_approved", "strong_pivot_score"))
+        if node.persistence_score >= 55.0:
+            signals.append("persistence_supported")
+        return SmartQueryDecision(
+            action="auto_execute",
+            score=score,
+            reason="High-quality exact pivot is safe for bounded ephemeral execution.",
+            node=node,
+            route_hint=_route_hint(seed.kind),
+            risk=risk,
+            signals=tuple(signals),
+        )
+
+    if node.pivot_score >= 55.0 and node.quality_score >= 50.0:
+        return SmartQueryDecision(
+            action="review",
+            score=score,
+            reason="Useful pivot signal, but confidence is below the autonomous threshold.",
+            node=node,
+            route_hint=_route_hint(seed.kind),
+            risk=risk,
+            signals=("moderate_pivot_signal",),
+        )
+
+    return SmartQueryDecision(
+        action="blocked",
+        score=score,
+        reason="Pivot quality is too weak for automatic or suggested execution.",
+        node=node,
+        route_hint=_route_hint(seed.kind),
+        risk=risk,
+        signals=("weak_pivot_signal",),
+    )
+
+
+def _score(node: ExplorationNode) -> float:
+    value = (
+        node.pivot_score * 0.50
+        + node.quality_score * 0.35
+        + node.persistence_score * 0.15
+    )
+    return max(0.0, min(100.0, value))
+
+
+def _risk(node: ExplorationNode) -> str:
+    if node.seed.depth >= 2:
+        return "medium"
+    if node.quality_score >= 80 and node.pivot_score >= 80:
+        return "low"
+    return "normal"
+
+
+def _route_hint(kind: UnifiedSeedKind) -> str:
+    if kind in {UnifiedSeedKind.USERNAME, UnifiedSeedKind.EMAIL, UnifiedSeedKind.PHONE}:
+        return "classic + federation"
+    if kind in {UnifiedSeedKind.DOMAIN, UnifiedSeedKind.URL, UnifiedSeedKind.IP}:
+        return "classic + open web + federation"
+    if kind is UnifiedSeedKind.HASH:
+        return "classic + federation"
+    return "review"
+
+
+__all__ = [
+    "SmartQueryDecision",
+    "SmartQueryPlan",
+    "build_smart_query_plan",
+    "graph_for_auto_execution",
+]

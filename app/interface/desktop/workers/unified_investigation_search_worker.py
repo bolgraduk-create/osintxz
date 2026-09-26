@@ -42,6 +42,10 @@ from app.application.exploration_graph import (
     ExplorationGraph,
     build_exploration_graph,
 )
+from app.application.smart_query_planner import (
+    build_smart_query_plan,
+    graph_for_auto_execution,
+)
 from app.application.search_retrieval_scheduler import (
     AdaptiveRetrievalFeedback,
     RetrievalScheduleBook,
@@ -666,6 +670,7 @@ class UnifiedInvestigationSearchWorker(QObject):
             results = preliminary_quality_rows
 
             exploration_graph = ExplorationGraph()
+            smart_query_plan = build_smart_query_plan(exploration_graph)
             exploration_executed_keys: set[tuple[str, str, str]] = set()
             exploration_rows: list[dict[str, Any]] = []
             exploration_validation_summary: dict[str, Any] = {}
@@ -679,15 +684,27 @@ class UnifiedInvestigationSearchWorker(QObject):
                     max_nodes=self.EXPLORATION_MAX_SEEDS,
                     max_depth=self.EXPLORATION_MAX_DEPTH,
                 )
-                if exploration_graph.nodes:
+                smart_query_plan = build_smart_query_plan(
+                    exploration_graph,
+                    max_auto=min(
+                        self.EXPLORATION_MAX_SEEDS,
+                        6,
+                    ),
+                )
+                auto_graph = graph_for_auto_execution(
+                    exploration_graph,
+                    smart_query_plan,
+                )
+                if auto_graph.nodes:
                     self._emit(
                         "exploration",
-                        f"Exploring {len(exploration_graph.nodes)} quality-approved ephemeral pivot(s) without persistence…",
-                        pivots=len(exploration_graph.nodes),
+                        f"Planner auto-executing {len(auto_graph.nodes)} strong ephemeral pivot(s); "
+                        f"{len(smart_query_plan.review_nodes)} retained for review.",
+                        pivots=len(auto_graph.nodes),
                     )
                     exploration_executed_keys = self._run_ephemeral_exploration(
                         container=container,
-                        graph=exploration_graph,
+                        graph=auto_graph,
                         results=exploration_rows,
                         providers=providers,
                         errors=errors,
@@ -802,6 +819,7 @@ class UnifiedInvestigationSearchWorker(QObject):
                 "explorationGraph": exploration_graph.to_dict(
                     executed_keys=exploration_executed_keys
                 ),
+                "queryPlanner": smart_query_plan.to_dict(),
                 "explorationValidationSummary": exploration_validation_summary,
                 "explorationBrowserSummary": exploration_browser_summary,
                 "retrievalSchedule": retrieval_schedule.to_dict(),
@@ -853,6 +871,9 @@ class UnifiedInvestigationSearchWorker(QObject):
                     "browserInvalid": browser_validation_summary.invalid,
                     "explorationNodes": len(exploration_graph.nodes),
                     "explorationExecuted": len(exploration_executed_keys),
+                    "plannerCandidates": len(smart_query_plan.decisions),
+                    "plannerAutoExecute": len(smart_query_plan.auto_nodes),
+                    "plannerReview": len(smart_query_plan.review_nodes),
                     "explorationResults": len(exploration_rows),
                     "retrievalCandidates": retrieval_schedule.candidates,
                     "retrievalSelected": retrieval_schedule.selected,
