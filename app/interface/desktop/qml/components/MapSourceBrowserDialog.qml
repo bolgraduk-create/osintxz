@@ -18,7 +18,7 @@ AppDialog {
 
     width: 720
     title: "Map Source Browser"
-    description: "Browse built-in and analyst-added raster map sources."
+    description: "Browse curated world maps, overlays, and analyst-added sources."
     primaryText: "Close"
     cancelText: "Close"
     bodyHeight: 500
@@ -37,6 +37,12 @@ AppDialog {
                 + String(source.kind || "")
                 + " "
                 + String(source.category || "")
+                + " "
+                + String(source.region || "")
+                + " "
+                + String(source.provider || "")
+                + " "
+                + String((source.tags || []).join(" "))
                 + " "
                 + String(source.attribution || "")
             ).toLowerCase()
@@ -71,7 +77,7 @@ AppDialog {
             AppTextField {
                 id: sourceSearch
                 Layout.fillWidth: true
-                placeholderText: "Search maps by name, type, category..."
+                placeholderText: "Search maps by name, region, provider, tag..."
                 text: root.query
                 onTextChanged: root.query = text
             }
@@ -94,7 +100,7 @@ AppDialog {
             Item { Layout.fillWidth: true }
 
             Text {
-                text: "XYZ · WMS · WMTS · Sentinel"
+                text: "WORLD CATALOG · XYZ · WMS · WMTS · Sentinel"
                 color: Theme.textMuted
                 font.pixelSize: 8
             }
@@ -190,9 +196,12 @@ AppDialog {
 
                                 Text {
                                     Layout.fillWidth: true
-                                    text: String(sourceRow.modelData.category || "map")
-                                        + (String(sourceRow.modelData.attribution || "").length > 0
-                                            ? " · " + String(sourceRow.modelData.attribution || "")
+                                    text: String(sourceRow.modelData.category || "map").toUpperCase()
+                                        + (String(sourceRow.modelData.region || "").length > 0
+                                            ? " · " + String(sourceRow.modelData.region || "")
+                                            : "")
+                                        + (String(sourceRow.modelData.provider || "").length > 0
+                                            ? " · " + String(sourceRow.modelData.provider || "")
                                             : "")
                                     color: Theme.textMuted
                                     font.pixelSize: 8
@@ -215,8 +224,12 @@ AppDialog {
                                     ? "Active"
                                     : "Use"
                                 enabled: root.sourceAvailable(sourceRow.modelData)
+                                    && sourceRow.modelData.primarySupported !== false
                                     && String(sourceRow.modelData.id || "") !== root.currentPrimaryId
                                 primary: String(sourceRow.modelData.id || "") !== root.currentPrimaryId
+                                toolTip: sourceRow.modelData.primarySupported === false
+                                    ? "Overlay source — use Compare"
+                                    : ""
                                 onClicked: root.sourceChosen(
                                     String(sourceRow.modelData.id || ""),
                                     false
