@@ -488,6 +488,50 @@ BUILTIN_MAP_SOURCES: tuple[MapSourceDescriptor, ...] = (
         },
     ),
     MapSourceDescriptor(
+        id="uk_os_outdoor",
+        name="Great Britain · OS Outdoor",
+        kind="xyz",
+        category="streets",
+        region="Great Britain",
+        provider="Ordnance Survey",
+        tags=("uk", "great britain", "ordnance survey", "outdoor", "topographic"),
+        url="https://api.os.uk/maps/raster/v1/wmts?service=WMTS&request=GetTile&version=1.0.0&style=default&layer=Outdoor_3857&tileMatrixSet=EPSG:3857&tileMatrix={z}&tileRow={y}&tileCol={x}&key={api_key}",
+        attribution="© Ordnance Survey",
+        terms_url="https://docs.os.uk/os-apis/accessing-os-apis/os-maps-api",
+        min_zoom=7,
+        max_zoom=20,
+        requires_api_key=True,
+        metadata={
+            "credentialKey": "os_maps_api_key",
+            "catalogPack": "uk",
+            "coverage": "Great Britain",
+            "darkFilter": False,
+            "prefetchAllowed": False,
+        },
+    ),
+    MapSourceDescriptor(
+        id="uk_os_light",
+        name="Great Britain · OS Light",
+        kind="xyz",
+        category="streets",
+        region="Great Britain",
+        provider="Ordnance Survey",
+        tags=("uk", "great britain", "ordnance survey", "light", "basemap"),
+        url="https://api.os.uk/maps/raster/v1/wmts?service=WMTS&request=GetTile&version=1.0.0&style=default&layer=Light_3857&tileMatrixSet=EPSG:3857&tileMatrix={z}&tileRow={y}&tileCol={x}&key={api_key}",
+        attribution="© Ordnance Survey",
+        terms_url="https://docs.os.uk/os-apis/accessing-os-apis/os-maps-api",
+        min_zoom=7,
+        max_zoom=20,
+        requires_api_key=True,
+        metadata={
+            "credentialKey": "os_maps_api_key",
+            "catalogPack": "uk",
+            "coverage": "Great Britain",
+            "darkFilter": False,
+            "prefetchAllowed": False,
+        },
+    ),
+    MapSourceDescriptor(
         id="local_schematic",
         name="Local Schematic",
         kind="schematic",
@@ -532,11 +576,17 @@ class MapSourceRegistry:
         self,
         *,
         storage_path: Path | None = None,
+        credentials: dict[str, str] | None = None,
     ) -> None:
         self.storage_path = Path(
             storage_path
             or (DATA_DIR / "map_sources.json")
         )
+        self._credentials = {
+            str(key): str(value or "").strip()
+            for key, value in (credentials or {}).items()
+            if str(value or "").strip()
+        }
         self._builtins = {
             source.id: source
             for source in BUILTIN_MAP_SOURCES
@@ -559,11 +609,31 @@ class MapSourceRegistry:
         return tuple(rows)
 
     def payload(self) -> list[dict[str, Any]]:
-        return [
-            source.to_payload()
-            for source in self.all()
-            if source.enabled
-        ]
+        rows: list[dict[str, Any]] = []
+        for source in self.all():
+            if not source.enabled:
+                continue
+
+            payload = source.to_payload()
+            credential_key = str(
+                source.metadata.get("credentialKey") or ""
+            ).strip()
+
+            if source.requires_api_key and credential_key:
+                credential = self._credentials.get(credential_key, "")
+                payload["enabled"] = bool(credential)
+                payload["credentialConfigured"] = bool(credential)
+                if credential:
+                    payload["url"] = payload["url"].replace(
+                        "{api_key}",
+                        credential,
+                    )
+            else:
+                payload["credentialConfigured"] = True
+
+            rows.append(payload)
+
+        return rows
 
     def get(self, source_id: str) -> MapSourceDescriptor | None:
         key = _normalize_source_id(source_id)
