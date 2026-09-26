@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Dialogs
 import "../components"
 import "../theme"
 
@@ -21,6 +22,7 @@ Item {
     property string baseMapMode: webEngineRuntimeAvailable ? "streets" : "schematic"
     property bool interactiveMapFailed: false
     property var mapSources: geoBridge.mapSources || []
+    property var mapLayers: geoBridge.mapLayers || []
     property string primaryMapSourceId: webEngineRuntimeAvailable
         ? "osm_standard"
         : "local_schematic"
@@ -93,7 +95,8 @@ Item {
                 : null,
             compareMode: root.compareEnabled ? root.compareMode : "none",
             comparePosition: root.comparePosition,
-            secondaryOpacity: root.secondaryOpacity
+            secondaryOpacity: root.secondaryOpacity,
+            vectorLayers: root.mapLayers
         }
     }
 
@@ -198,6 +201,30 @@ Item {
         root.compareEnabled = false
         root.baseMapMode = "streets"
         root.interactiveMapFailed = false
+    }
+
+    function mapLayerById(layerId) {
+        var wanted = String(layerId || "")
+        for (var i = 0; i < root.mapLayers.length; ++i) {
+            if (String(root.mapLayers[i].id || "") === wanted)
+                return root.mapLayers[i]
+        }
+        return ({})
+    }
+
+    function fitMapLayer(layerId) {
+        var layer = root.mapLayerById(layerId)
+        var bounds = layer.bounds || []
+        if (bounds.length !== 4)
+            return
+
+        if (!root.useInteractiveMap)
+            root.applyMapPreset("streets")
+
+        Qt.callLater(function() {
+            if (interactiveMapLoader.item)
+                interactiveMapLoader.item.fitBounds(bounds)
+        })
     }
 
     function removeCurrentMapSource(sourceId) {
@@ -767,6 +794,8 @@ Item {
                 root.secondaryOpacity = opacity
             }
 
+            onBrowseSourcesRequested: mapSourceBrowserDialog.open()
+            onLayersRequested: mapLayersDialog.open()
             onAddSourceRequested: addMapSourceDialog.open()
 
             onRemoveSourceRequested: function(sourceId) {
@@ -1750,6 +1779,87 @@ Item {
             }
         }
     }
+    MapSourceBrowserDialog {
+        id: mapSourceBrowserDialog
+        sources: root.mapSources
+        currentPrimaryId: root.primaryMapSourceId
+        satelliteAvailable: root.sceneCanOverlay(root.selectedSatelliteScene)
+
+        onSourceChosen: function(sourceId, asSecondary) {
+            if (asSecondary) {
+                root.selectSecondaryMapSource(sourceId)
+                root.compareEnabled = true
+                root.ensureSecondaryMapSource()
+            } else {
+                root.selectPrimaryMapSource(sourceId)
+            }
+            close()
+        }
+
+        onAddSourceRequested: {
+            close()
+            addMapSourceDialog.open()
+        }
+    }
+
+    MapLayersDialog {
+        id: mapLayersDialog
+        locationsVisible: root.showLocations
+        photoGpsVisible: root.showPhotoGps
+        nearbyPoiVisible: root.showNearbyPois
+        nearbyPoiAvailable: root.nearbyPlaces.length > 0
+        importedLayers: root.mapLayers
+
+        onLocationsVisibilityRequested: function(visible) {
+            root.showLocations = visible
+            root.ensureMarkerSelection()
+        }
+
+        onPhotoGpsVisibilityRequested: function(visible) {
+            root.showPhotoGps = visible
+            root.ensureMarkerSelection()
+        }
+
+        onNearbyPoiVisibilityRequested: function(visible) {
+            root.showNearbyPois = visible
+            root.ensureMarkerSelection()
+        }
+
+        onImportRequested: vectorLayerFileDialog.open()
+
+        onLayerVisibilityRequested: function(layerId, visible) {
+            geoBridge.setMapLayerVisibility(layerId, visible)
+        }
+
+        onLayerOpacityRequested: function(layerId, opacity) {
+            geoBridge.setMapLayerOpacity(layerId, opacity)
+        }
+
+        onFitLayerRequested: function(layerId) {
+            root.fitMapLayer(layerId)
+        }
+
+        onRemoveLayerRequested: function(layerId) {
+            geoBridge.removeMapLayer(layerId)
+        }
+    }
+
+    FileDialog {
+        id: vectorLayerFileDialog
+        title: "Import geographic layer"
+        fileMode: FileDialog.OpenFile
+        nameFilters: [
+            "Geographic layers (*.geojson *.json *.kml *.gpx)",
+            "GeoJSON (*.geojson *.json)",
+            "KML (*.kml)",
+            "GPX (*.gpx)"
+        ]
+
+        onAccepted: {
+            geoBridge.importMapLayer(String(selectedFile))
+        }
+    }
+
     AddMapSourceDialog {
         id: addMapSourceDialog
 
