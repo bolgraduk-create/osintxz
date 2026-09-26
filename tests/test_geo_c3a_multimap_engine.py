@@ -191,11 +191,11 @@ def test_geo_c3a_toolbar_exposes_primary_secondary_and_compare_modes():
     assert "signal secondaryOpacityRequested(real opacity)" in qml
 
 
-def test_geo_c3a_custom_source_dialog_supports_xyz_and_wms():
+def test_geo_c3a_custom_source_dialog_supports_xyz_wms_and_wmts():
     qml = _read(DIALOG_QML)
 
     assert 'title: "Add Map Source"' in qml
-    assert 'model: ["XYZ", "WMS"]' in qml
+    assert 'model: ["XYZ", "WMS", "WMTS"]' in qml
     assert 'placeholderText: "WMS layer(s), comma separated"' in qml
     assert 'model: ["1.3.0", "1.1.1"]' in qml
     assert '"{z}/{x}/{y}"' not in qml
@@ -245,7 +245,7 @@ def test_geo_c3a_engine_supports_xyz_wms_image_and_compare_in_one_viewport():
         "function renderTileLayer(state,source)",
         "function renderImageLayer(state,source)",
         "function renderRasterLayer(state,source)",
-        'if(kind==="xyz" || kind==="wms")',
+        'if(kind==="xyz" || kind==="wms" || kind==="wmts")',
         'kind==="satellite_dynamic" || kind==="image"',
         'p.set("request","GetMap")',
         'p.set("width",String(TILE_SIZE))',
