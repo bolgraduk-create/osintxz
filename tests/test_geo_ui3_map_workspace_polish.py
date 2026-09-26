@@ -22,11 +22,11 @@ def test_geo_ui3_removes_duplicate_legacy_map_control_rows():
 def test_geo_ui3_toolbar_is_single_clear_map_compare_control():
     qml = _read(TOOLBAR_QML)
 
-    assert 'text: "MAP SOURCE"' in qml
     assert 'text: "Browse"' in qml
     assert 'text: "Layers"' in qml
+    assert 'text: "Tools"' in qml
     assert 'text: root.compareEnabled ? "Exit compare" : "Compare"' in qml
-    assert 'text: "SECONDARY"' in qml
+    assert 'text: "Compare with"' in qml
     assert 'text: "Opacity"' in qml
 
     assert "CheckBox {" not in qml
@@ -55,14 +55,16 @@ def test_geo_ui3_custom_source_management_lives_in_browser():
 def test_geo_ui3_map_panel_names_active_source_and_inspector_is_contextual():
     qml = _read(MAP_QML)
 
+    assert 'property bool toolsOpen: false' in qml
+    assert 'visible: root.toolsOpen' in qml
     assert 'title: "GEO Tools"' in qml
     assert 'text: "No map point selected"' in qml
     assert 'text: "EXPLORE COORDINATES"' in qml
     assert 'text: geoBridge.busy ? "Exploring…" : "Explore area"' in qml
 
     assert 'visible: String(root.selectedMarker.previewUrl || "").length > 0' in qml
-    assert 'title: root.compareEnabled' in qml
-    assert '"Interactive map · pan · zoom · clusters · investigation layers"' in qml
+    assert 'headerHeight: 46' in qml
+    assert 'subtitle: ""' in qml
 
 
 def test_geo_ui3_osm_dark_treatment_preserves_readability():
