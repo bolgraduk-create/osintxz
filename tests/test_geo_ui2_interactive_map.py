@@ -88,12 +88,12 @@ def test_geo_ui2_web_profile_identifies_app_and_uses_disk_cache():
 def test_geo_ui2_map_engine_is_local_and_only_fetches_visible_osm_tiles():
     html = _read(MAP_HTML)
 
-    assert 'const TILE_TEMPLATE = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";' in html
-    assert "function renderTiles()" in html
-    assert "const minX = Math.floor(origin.x / TILE_SIZE);" in html
-    assert "const maxX = Math.floor((origin.x + mapEl.clientWidth) / TILE_SIZE);" in html
-    assert "const minY = Math.floor(origin.y / TILE_SIZE);" in html
-    assert "const maxY = Math.floor((origin.y + mapEl.clientHeight) / TILE_SIZE);" in html
+    assert 'url:"https://tile.openstreetmap.org/{z}/{x}/{y}.png"' in html
+    assert "function renderTileLayer(state,source)" in html
+    assert "const minX=Math.floor(origin.x/TILE_SIZE);" in html
+    assert "const maxX=Math.floor((origin.x+mapEl.clientWidth)/TILE_SIZE);" in html
+    assert "const minY=Math.floor(origin.y/TILE_SIZE);" in html
+    assert "const maxY=Math.floor((origin.y+mapEl.clientHeight)/TILE_SIZE);" in html
     assert "prefetch" not in html.lower()
     assert "<script src=" not in html
     assert "unpkg.com" not in html
@@ -152,8 +152,9 @@ def test_geo_ui2_satellite_mode_extends_interactive_map_without_removing_fallbac
     assert "item.satelliteScene = Qt.binding" in qml
     assert "property var satelliteScene" in web_qml
     assert "satelliteScene: root.satelliteScene" in web_qml
-    assert 'id="satellite"' in html
     assert "function renderSatellite()" in html
     assert "function fitSatellite()" in html
-    assert 'baseMode === "hybrid"' in html
+    assert "function renderImageLayer(state,source)" in html
+    assert 'kind:"satellite_dynamic"' in html
+    assert "legacySatelliteSource(scene)" in html
     assert "satelliteDisplayUrl(scene)" in html
