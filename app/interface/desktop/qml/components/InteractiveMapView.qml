@@ -42,6 +42,16 @@ Item {
             webView.runJavaScript("window.osintxzMap && window.osintxzMap.fitMarkers();")
     }
 
+    function fitBounds(bounds) {
+        if (!root.pageReady)
+            return
+        webView.runJavaScript(
+            "window.osintxzMap && window.osintxzMap.fitBounds("
+            + JSON.stringify(bounds || [])
+            + ");"
+        )
+    }
+
     function focusMarker(kind, markerId) {
         if (!root.pageReady)
             return
