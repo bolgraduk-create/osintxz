@@ -38,22 +38,18 @@ Rectangle {
     }
 
     function selectableSources() {
-        var result = []
-        for (var i = 0; i < root.sources.length; ++i) {
-            var source = root.sources[i]
-            if (String(source.kind || "") === "schematic")
-                continue
-            result.push(source)
-        }
-        return result
+        return root.sources
     }
 
     function compareSources() {
         var result = []
-        var rows = root.selectableSources()
+        var rows = root.sources
         for (var i = 0; i < rows.length; ++i) {
-            if (Boolean(rows[i].compareSupported))
-                result.push(rows[i])
+            if (!Boolean(rows[i].compareSupported))
+                continue
+            if (String(rows[i].kind || "") === "schematic")
+                continue
+            result.push(rows[i])
         }
         return result
     }
