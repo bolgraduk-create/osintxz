@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from email.utils import parsedate_to_datetime
 from typing import Any, Iterable
 from urllib.parse import urlsplit
 import re
@@ -384,7 +385,10 @@ def _parse_time(value: Any) -> datetime | None:
     try:
         return datetime.fromisoformat(text.replace("Z", "+00:00"))
     except ValueError:
-        return None
+        try:
+            return parsedate_to_datetime(text)
+        except (TypeError, ValueError, OverflowError):
+            return None
 
 
 def _time_sort_key(value: Any) -> float:
