@@ -10,8 +10,10 @@ Item {
     property string selectedMarkerKind: ""
     property string baseMode: "streets"
     property var satelliteScene: ({})
+    property var mapState: ({})
     property bool pageReady: false
     signal markerSelected(string kind, string markerId)
+    signal comparePositionRequested(real position)
     signal mapUnavailable(string message)
 
     function selectedKey() {
@@ -25,7 +27,8 @@ Item {
             markers: root.markers || [],
             selectedKey: root.selectedKey(),
             baseMode: root.baseMode,
-            satelliteScene: root.satelliteScene || ({})
+            satelliteScene: root.satelliteScene || ({}),
+            mapState: root.mapState || ({})
         }
         webView.runJavaScript(
             "window.osintxzMap && window.osintxzMap.setState("
@@ -56,6 +59,7 @@ Item {
     onSelectedMarkerKindChanged: Qt.callLater(root.syncState)
     onBaseModeChanged: Qt.callLater(root.syncState)
     onSatelliteSceneChanged: Qt.callLater(root.syncState)
+    onMapStateChanged: Qt.callLater(root.syncState)
 
     WebEngineProfile {
         id: mapProfile
@@ -104,6 +108,22 @@ Item {
                         desktopBridge.openExternalUrl(
                             decodeURIComponent(externalPair.slice(1).join("=") || "")
                         )
+                        return
+                    }
+                }
+                return
+            }
+            if (target.indexOf("osintxz://compare?") === 0) {
+                request.reject()
+                var compareQuery = target.substring(target.indexOf("?") + 1).split("&")
+                for (var c = 0; c < compareQuery.length; ++c) {
+                    var comparePair = compareQuery[c].split("=")
+                    if (decodeURIComponent(comparePair[0] || "") === "position") {
+                        var position = Number(
+                            decodeURIComponent(comparePair.slice(1).join("=") || "0.5")
+                        )
+                        if (isFinite(position))
+                            root.comparePositionRequested(position)
                         return
                     }
                 }
