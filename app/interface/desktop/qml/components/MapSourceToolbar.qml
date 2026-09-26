@@ -45,6 +45,8 @@ Rectangle {
             var source = root.sources[i]
             if (!root.sourceAvailable(source))
                 continue
+            if (source.primarySupported === false)
+                continue
             result.push(source)
         }
         return result
