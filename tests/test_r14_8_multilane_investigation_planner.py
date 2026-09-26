@@ -144,9 +144,10 @@ def test_worker_executes_planner_federation_and_registry_through_existing_bounda
     ):
         assert token in worker
 
-    # Autonomous Open Web is intentionally absent until it has a no-persistence
-    # execution boundary.
-    assert 'lane="planner_open_web"' not in worker
+    # R14.9 upgrades Open Web only through the explicit no-persistence
+    # enrichment boundary. The persisted enrich(...) call is not used here.
+    assert 'lane="planner_open_web"' in worker
+    assert ".enrich_ephemeral(query)" in worker
 
 
 def test_planner_ui_explains_auto_and_review_lanes():
