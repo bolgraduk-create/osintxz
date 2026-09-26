@@ -32,6 +32,11 @@ from app.application.account_profile_validation import (
 from app.application.browser_account_verification import (
     annotate_browser_account_validation,
 )
+from app.application.identity_triage import build_identity_triage
+from app.application.social_content_correlation import (
+    correlate_social_content,
+    normalize_social_content,
+)
 from app.application.exploration_graph import (
     ExplorationGraph,
     build_exploration_graph,
@@ -734,6 +739,24 @@ class UnifiedInvestigationSearchWorker(QObject):
                 self._public_result_row(row)
                 for row in (consolidation.identity_rows or [])
             ]
+
+            triage_source_rows = []
+            triage_source_rows.extend(
+                self._public_result_row(row)
+                for row in (consolidation.related_accounts or [])
+            )
+            triage_source_rows.extend(identity_rows)
+            triage_source_rows.extend(
+                self._public_result_row(row)
+                for row in (consolidation.candidate_rows or [])
+            )
+            triage_rows, identity_correlations, triage_summary = (
+                build_identity_triage(triage_source_rows)
+            )
+
+            social_content = normalize_social_content(raw_results)
+            social_correlations = correlate_social_content(social_content)
+
             errors = self._group_error_rows(errors)
             providers, health_summary = annotate_provider_health(providers)
             provider_errors = int(health_summary.get("issues") or 0)
@@ -746,6 +769,11 @@ class UnifiedInvestigationSearchWorker(QObject):
                 "results": results,
                 "rawResults": raw_results[:500],
                 "identityCandidates": identity_rows,
+                "triageRows": triage_rows,
+                "triageSummary": triage_summary.to_dict(),
+                "identityCorrelations": identity_correlations,
+                "socialContent": social_content[:250],
+                "socialCorrelations": social_correlations[:200],
                 "candidates": [
                     self._public_result_row(row)
                     for row in (consolidation.candidate_rows or [])
@@ -791,6 +819,10 @@ class UnifiedInvestigationSearchWorker(QObject):
                     "identityConflicting": consolidation.identity_conflicting,
                     "identityInsufficient": consolidation.identity_insufficient,
                     "identityCandidates": len(identity_rows),
+                    "triage": len(triage_rows),
+                    "identityCorrelations": len(identity_correlations),
+                    "socialContent": len(social_content),
+                    "socialCorrelations": len(social_correlations),
                     "candidates": len(consolidation.candidate_rows or []),
                     "relatedAccounts": len(consolidation.related_accounts or []),
                     "mentions": len(consolidation.mention_rows or []),
