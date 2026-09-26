@@ -626,10 +626,7 @@ Item {
                         anchors.fill: parent
                         enabled: root.webEngineRuntimeAvailable
                         cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                        onClicked: {
-                            root.interactiveMapFailed = false
-                            root.baseMapMode = "streets"
-                        }
+                        onClicked: root.applyMapPreset("streets")
                     }
 
                     ToolTip.visible: !root.webEngineRuntimeAvailable && streetsHover.containsMouse
@@ -662,7 +659,7 @@ Item {
                     MouseArea {
                         anchors.fill: parent
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: root.baseMapMode = "schematic"
+                        onClicked: root.applyMapPreset("schematic")
                     }
                 }
 
@@ -691,10 +688,7 @@ Item {
                         anchors.fill: parent
                         enabled: parent.available
                         cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                        onClicked: {
-                            root.interactiveMapFailed = false
-                            root.baseMapMode = "satellite"
-                        }
+                        onClicked: root.applyMapPreset("satellite")
                     }
                 }
                 Rectangle {
@@ -722,14 +716,72 @@ Item {
                         anchors.fill: parent
                         enabled: parent.available
                         cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                        onClicked: {
-                            root.interactiveMapFailed = false
-                            root.baseMapMode = "hybrid"
-                        }
+                        onClicked: root.applyMapPreset("hybrid")
                     }
                 }
             }
 
+        }
+
+        MapSourceToolbar {
+            id: mapSourceToolbar
+            Layout.fillWidth: true
+            sources: root.mapSources
+            primarySourceId: root.primaryMapSourceId
+            secondarySourceId: root.secondaryMapSourceId
+            compareEnabled: root.compareEnabled
+            compareMode: root.compareMode
+            secondaryOpacity: root.secondaryOpacity
+
+            onPrimarySourceRequested: function(sourceId) {
+                root.selectPrimaryMapSource(sourceId)
+            }
+
+            onSecondarySourceRequested: function(sourceId) {
+                root.selectSecondaryMapSource(sourceId)
+            }
+
+            onCompareEnabledRequested: function(enabled) {
+                root.compareEnabled = enabled
+                if (enabled)
+                    root.ensureSecondaryMapSource()
+                if (!enabled && root.baseMapMode === "hybrid")
+                    root.baseMapMode = (
+                        root.primaryMapSourceId === "sentinel_selected"
+                        ? "satellite"
+                        : "streets"
+                    )
+            }
+
+            onCompareModeRequested: function(mode) {
+                root.compareMode = mode
+                if (root.compareEnabled
+                        && root.primaryMapSourceId === "sentinel_selected"
+                        && root.secondaryMapSourceId === "osm_standard"
+                        && mode === "overlay") {
+                    root.baseMapMode = "hybrid"
+                }
+            }
+
+            onSecondaryOpacityRequested: function(opacity) {
+                root.secondaryOpacity = opacity
+            }
+
+            onAddSourceRequested: addMapSourceDialog.open()
+
+            onRemoveSourceRequested: function(sourceId) {
+                root.removeCurrentMapSource(sourceId)
+            }
+        }
+
+        Text {
+            visible: String(geoBridge.mapSourceMessage || "").length > 0
+            Layout.fillWidth: true
+            Layout.preferredHeight: visible ? 16 : 0
+            text: String(geoBridge.mapSourceMessage || "")
+            color: Theme.textMuted
+            font.pixelSize: 8
+            elide: Text.ElideRight
         }
 
         RowLayout {
@@ -741,15 +793,16 @@ Item {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 title: "Geographic Canvas"
-                subtitle: root.baseMapMode === "satellite"
-                    ? (root.sceneHasTrueColor(root.selectedSatelliteScene)
-                        ? "Copernicus Sentinel-2 True Color · investigation layers remain interactive"
-                        : "Copernicus Sentinel-2 quicklook preview · investigation layers remain interactive")
-                    : (root.baseMapMode === "hybrid"
-                        ? "Sentinel-2 imagery + dark street context + investigation layers"
-                        : (root.useInteractiveMap
-                        ? "Interactive streets · pan · zoom · clusters · live investigation layers"
-                        : "Offline-safe schematic fallback"))
+                subtitle: !root.useInteractiveMap
+                    ? "Offline-safe schematic fallback"
+                    : (root.compareEnabled
+                        ? (root.mapSourceName(root.primaryMapSourceId)
+                            + " ↔ "
+                            + root.mapSourceName(root.secondaryMapSourceId)
+                            + " · "
+                            + root.compareMode.replace(/_/g, " "))
+                        : (root.mapSourceName(root.primaryMapSourceId)
+                            + " · pan · zoom · clusters · investigation layers"))
                 iconSource: "../../assets/icons/pin_purple.svg"
 
                 Item {
@@ -788,6 +841,9 @@ Item {
                             item.satelliteScene = Qt.binding(function() {
                                 return root.selectedSatelliteScene
                             })
+                            item.mapState = Qt.binding(function() {
+                                return root.mapStatePayload()
+                            })
                         }
                     }
 
@@ -796,8 +852,16 @@ Item {
                         function onMarkerSelected(kind, markerId) {
                             root.selectMarkerByKey(kind, markerId)
                         }
+                        function onComparePositionRequested(position) {
+                            root.comparePosition = Math.max(
+                                0.08,
+                                Math.min(0.92, Number(position))
+                            )
+                        }
                         function onMapUnavailable(message) {
                             root.interactiveMapFailed = true
+                            root.primaryMapSourceId = "local_schematic"
+                            root.compareEnabled = false
                             root.baseMapMode = "schematic"
                         }
                     }
@@ -1688,4 +1752,17 @@ Item {
             }
         }
     }
+    AddMapSourceDialog {
+        id: addMapSourceDialog
+
+        onSourceSubmitted: function(payload) {
+            if (geoBridge.addMapSource(payload)) {
+                addMapSourceDialog.reset()
+            } else {
+                Qt.callLater(addMapSourceDialog.open)
+            }
+        }
+    }
+
+
 }
