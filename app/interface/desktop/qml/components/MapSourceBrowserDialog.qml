@@ -12,6 +12,7 @@ AppDialog {
     property bool satelliteAvailable: false
     property string query: ""
     property string categoryFilter: "all"
+    property string regionFilter: "all"
 
     signal sourceChosen(string sourceId, bool asSecondary)
     signal addSourceRequested()
@@ -47,10 +48,34 @@ AppDialog {
             var categoryMatches = root.categoryFilter === "all"
                 || String(source.category || "") === root.categoryFilter
                 || (root.categoryFilter === "custom" && Boolean(source.userDefined))
-            if (haystack.indexOf(normalized) >= 0 && categoryMatches)
+            var regionMatches = root.regionFilter === "all"
+                || String(source.region || "World") === root.regionFilter
+            if (haystack.indexOf(normalized) >= 0
+                    && categoryMatches
+                    && regionMatches)
                 result.push(source)
         }
         return result
+    }
+
+    function regionOptions() {
+        var seen = ({})
+        var rows = [{ key: "all", label: "All regions" }]
+        for (var i = 0; i < root.sources.length; ++i) {
+            var region = String(root.sources[i].region || "World")
+            if (seen[region])
+                continue
+            seen[region] = true
+            rows.push({ key: region, label: region })
+        }
+        rows.sort(function(a, b) {
+            if (a.key === "all")
+                return -1
+            if (b.key === "all")
+                return 1
+            return String(a.label).localeCompare(String(b.label))
+        })
+        return rows
     }
 
     function sourceAvailable(source) {
@@ -102,6 +127,17 @@ AppDialog {
                 }
             }
 
+            AppComboBox {
+                Layout.preferredWidth: 164
+                Layout.preferredHeight: 38
+                model: root.regionOptions()
+                textRole: "label"
+                onActivated: function(index) {
+                    var rows = root.regionOptions()
+                    root.regionFilter = String(rows[index].key || "all")
+                }
+            }
+
             AppButton {
                 text: "+ Add source"
                 onClicked: root.addSourceRequested()
@@ -120,6 +156,7 @@ AppDialog {
             Item { Layout.fillWidth: true }
 
             Text {
+                visible: false
                 text: "XYZ · WMS · WMTS · Sentinel"
                 color: Theme.textMuted
                 font.pixelSize: 8
