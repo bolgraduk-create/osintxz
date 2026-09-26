@@ -146,6 +146,8 @@ html,body,#map{width:100%;height:100%;margin:0;overflow:hidden;background:#08172
   let popup = null;
   let firstState = true;
   let renderQueued = false;
+  let zoomRenderTimer = null;
+  const ZOOM_RENDER_DEBOUNCE_MS = 80;
 
   const clamp = (v,a,b) => Math.max(a,Math.min(b,v));
   const worldSize = z => TILE_SIZE * Math.pow(2,z);
@@ -168,6 +170,16 @@ html,body,#map{width:100%;height:100%;margin:0;overflow:hidden;background:#08172
       renderQueued=false;
       render();
     });
+  }
+
+  function scheduleZoomRender(){
+    if(zoomRenderTimer!==null){
+      clearTimeout(zoomRenderTimer);
+    }
+    zoomRenderTimer=setTimeout(() => {
+      zoomRenderTimer=null;
+      scheduleRender();
+    },ZOOM_RENDER_DEBOUNCE_MS);
   }
 
   function viewportOrigin(){
@@ -203,8 +215,16 @@ html,body,#map{width:100%;height:100%;margin:0;overflow:hidden;background:#08172
     ].join("|");
   }
 
+  function disposeTile(node){
+    if(!node) return;
+    node.onload=null;
+    node.onerror=null;
+    try{node.removeAttribute("src");}catch(_){}
+    node.remove();
+  }
+
   function clearLayer(state){
-    for(const [,node] of state.tiles) node.remove();
+    for(const [,node] of state.tiles) disposeTile(node);
     state.tiles.clear();
     if(state.image){
       state.image.remove();
@@ -286,11 +306,24 @@ html,body,#map{width:100%;height:100%;margin:0;overflow:hidden;background:#08172
     return "";
   }
 
+  function sourceSupportsZoom(source,z){
+    if(!source) return false;
+    const min=Number.isFinite(Number(source.minZoom)) ? Number(source.minZoom) : MIN_ZOOM;
+    const max=Number.isFinite(Number(source.maxZoom)) ? Number(source.maxZoom) : MAX_ZOOM;
+    return z>=min && z<=max;
+  }
+
   function renderTileLayer(state,source){
     const key=sourceKey(source);
     if(state.sourceKey !== key){
       clearLayer(state);
       state.sourceKey=key;
+    }
+
+    if(!sourceSupportsZoom(source,zoom)){
+      clearLayer(state);
+      state.sourceKey=key;
+      return;
     }
 
     const origin=viewportOrigin();
@@ -318,11 +351,12 @@ html,body,#map{width:100%;height:100%;margin:0;overflow:hidden;background:#08172
           img.draggable=false;
           img.decoding="async";
           img.loading="eager";
-          img.src=url;
           img.onerror=() => {
+            if(state.tiles.get(cacheKey)!==img) return;
             statusEl.textContent=String(source.name || "MAP").toUpperCase()+" · TILE UNAVAILABLE";
           };
           state.tiles.set(cacheKey,img);
+          img.src=url;
           state.root.appendChild(img);
         }
 
@@ -333,7 +367,7 @@ html,body,#map{width:100%;height:100%;margin:0;overflow:hidden;background:#08172
 
     for(const [cacheKey,img] of state.tiles){
       if(needed.has(cacheKey)) continue;
-      img.remove();
+      disposeTile(img);
       state.tiles.delete(cacheKey);
     }
   }
@@ -704,6 +738,15 @@ html,body,#map{width:100%;height:100%;margin:0;overflow:hidden;background:#08172
   }
 
   function render(){
+    if(primarySource){
+      const primaryMin=Number.isFinite(Number(primarySource.minZoom))
+        ? Number(primarySource.minZoom)
+        : MIN_ZOOM;
+      const primaryMax=Number.isFinite(Number(primarySource.maxZoom))
+        ? Number(primarySource.maxZoom)
+        : MAX_ZOOM;
+      zoom=clamp(zoom,Math.max(MIN_ZOOM,primaryMin),Math.min(MAX_ZOOM,primaryMax));
+    }
     center.lat=clamp(center.lat,-85.05112878,85.05112878);
     while(center.lon<-180) center.lon+=360;
     while(center.lon>180) center.lon-=360;
@@ -737,7 +780,7 @@ html,body,#map{width:100%;height:100%;margin:0;overflow:hidden;background:#08172
       lon:xToLon(nextOriginX+mapEl.clientWidth/2,zoom),
       lat:yToLat(nextOriginY+mapEl.clientHeight/2,zoom)
     };
-    scheduleRender();
+    scheduleZoomRender();
   }
 
   function fitMarkers(){
