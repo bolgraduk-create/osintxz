@@ -139,6 +139,7 @@ Item {
             { key: "providers", label: "Providers" },
             { key: "pivots", label: "Pivots" },
             { key: "quality", label: "Quality" },
+            { key: "planner", label: "Planner" },
             { key: "exploration", label: "Explore" },
             { key: "schedule", label: "Schedule" },
             { key: "errors", label: "Errors" }
@@ -160,6 +161,7 @@ Item {
         if (tab === "possible") return (runData.possibleResults || []).length
         if (tab === "accounts") return (runData.relatedAccounts || []).length
         if (tab === "quality") return (runData.qualityTrace || []).length
+        if (tab === "planner") return ((((runData.queryPlanner || {}).decisions) || [])).length
         if (tab === "exploration") return (((runData.explorationGraph || {}).nodes) || []).length
         if (tab === "schedule") return retrievalScheduleRows().length
         if (tab === "mentions") return (runData.mentions || []).length
@@ -179,6 +181,7 @@ Item {
         if (activeTab === "possible") return runData.possibleResults || []
         if (activeTab === "accounts") return runData.relatedAccounts || []
         if (activeTab === "quality") return runData.qualityTrace || []
+        if (activeTab === "planner") return (((runData.queryPlanner || {}).decisions) || [])
         if (activeTab === "exploration") return ((runData.explorationGraph || {}).nodes) || []
         if (activeTab === "schedule") return retrievalScheduleRows()
         if (activeTab === "mentions") return runData.mentions || []
@@ -206,6 +209,7 @@ Item {
         if (activeTab === "possible") return String(row.title || "Possible result")
         if (activeTab === "accounts") return String(row.title || row.value || "Related account")
         if (activeTab === "quality") return String(row.title || "Quality observation")
+        if (activeTab === "planner") return String(row.kind || "pivot").toUpperCase() + ": " + String(row.value || "")
         if (activeTab === "exploration") return String(row.kind || "pivot").toUpperCase() + ": " + String(row.value || "")
         if (activeTab === "schedule") return String(row.seedKind || "seed").replace(/_/g, " ").toUpperCase() + ": " + String(row.seedValue || "")
         if (activeTab === "mentions") return String(row.title || "Corroborating mention")
@@ -224,6 +228,7 @@ Item {
         if (activeTab === "possible") return String(row.accountVerificationReason || row.visibilityReason || row.detail || "Potentially useful result; analyst review required")
         if (activeTab === "accounts") return String(row.accountVerificationReason || row.detail || "Online account linked by an exact username/account signal")
         if (activeTab === "quality") return String(row.qualitySummary || row.detail || "Shadow quality assessment")
+        if (activeTab === "planner") return String(row.reason || "Planner decision")
         if (activeTab === "exploration") return String(row.reason || "Quality-approved ephemeral pivot")
         if (activeTab === "schedule") return String(row.reason || "Retrieval scheduling decision")
         if (activeTab === "mentions") return String(row.mentionSummary || row.detail || "Multiple known-person signals occur in this source")
@@ -242,6 +247,7 @@ Item {
         if (activeTab === "possible") return "POSSIBLE"
         if (activeTab === "accounts") return String(row.accountVerificationStatus || "reported").replace(/_/g, " ").toUpperCase()
         if (activeTab === "quality") return (row.qualityDisagreement ? "DISAGREEMENT · " : "") + String(row.qualityLabel || row.qualityTier || "QUALITY").toUpperCase()
+        if (activeTab === "planner") return String(row.action || "review").replace(/_/g, " ").toUpperCase()
         if (activeTab === "exploration") return Boolean(row.executed) ? "EXECUTED · EPHEMERAL" : "EPHEMERAL"
         if (activeTab === "schedule") return Boolean(row.selected)
             ? (Boolean(row.deprioritized) ? "SELECTED · DEPRIORITIZED" : "SELECTED")
@@ -279,6 +285,12 @@ Item {
                 + " · relevance " + Number(row.qualityRelevanceScore || 0).toFixed(0)
                 + " · pivot " + Number(row.qualityPivotScore || 0).toFixed(0)
                 + " · persist " + Number(row.qualityPersistenceScore || 0).toFixed(0)
+        }
+        if (activeTab === "planner") {
+            return "Score " + Number(row.score || 0).toFixed(0)
+                + " · " + String(row.routeHint || "review")
+                + " · risk " + String(row.risk || "normal")
+                + (row.source ? " · " + String(row.source) : "")
         }
         if (activeTab === "exploration") {
             return String(row.source || "quality")
@@ -1173,7 +1185,9 @@ Item {
                                     ? Theme.danger
                                     : root.activeTab === "quality"
                                         ? root.statusColor(row.modelData.qualityTier === "noise" ? "failed" : (row.modelData.qualityTier === "possible" ? "possible" : "success"))
-                                        : root.activeTab === "exploration"
+                                        : root.activeTab === "planner"
+                                        ? root.statusColor(row.modelData.action === "auto_execute" ? "success" : (row.modelData.action === "blocked" ? "failed" : "possible"))
+                                    : root.activeTab === "exploration"
                                             ? root.statusColor(row.modelData.executed ? "success" : "possible")
                                         : root.activeTab === "schedule"
                                             ? root.statusColor(row.modelData.selected ? "success" : "possible")
@@ -1232,6 +1246,8 @@ Item {
                                 border.width: 1
                                 border.color: root.activeTab === "quality"
                                     ? root.statusColor(row.modelData.qualityTier === "noise" ? "failed" : (row.modelData.qualityTier === "possible" ? "possible" : "success"))
+                                    : root.activeTab === "planner"
+                                        ? root.statusColor(row.modelData.action === "auto_execute" ? "success" : (row.modelData.action === "blocked" ? "failed" : "possible"))
                                     : root.activeTab === "exploration"
                                         ? root.statusColor(row.modelData.executed ? "success" : "possible")
                                     : root.activeTab === "schedule"
@@ -1329,6 +1345,8 @@ Item {
                                     ? "No medium-confidence results need review. Strict identifiers remain strict; weak noise stays in Raw."
                                 : root.activeTab === "quality"
                                     ? "No shadow quality observations are available for this run."
+                                : root.activeTab === "planner"
+                                    ? "No discovered pivots required a planner decision in this run."
                                 : root.activeTab === "exploration"
                                     ? "No quality-approved ephemeral pivots were created for this run."
                                 : root.activeTab === "schedule"
