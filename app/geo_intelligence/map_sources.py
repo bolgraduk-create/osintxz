@@ -1,0 +1,380 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+import json
+from pathlib import Path
+import re
+from typing import Any
+from urllib.parse import urlparse
+
+from app.core.config import DATA_DIR
+
+
+SUPPORTED_MAP_SOURCE_KINDS = frozenset({
+    "xyz",
+    "wms",
+    "schematic",
+    "satellite_dynamic",
+})
+
+
+@dataclass(frozen=True, slots=True)
+class MapSourceDescriptor:
+    id: str
+    name: str
+    kind: str
+    category: str = "base"
+    url: str = ""
+    attribution: str = ""
+    terms_url: str = ""
+    min_zoom: int = 0
+    max_zoom: int = 19
+    opacity: float = 1.0
+    user_defined: bool = False
+    enabled: bool = True
+    compare_supported: bool = True
+    overlay_supported: bool = True
+    wms_layers: str = ""
+    wms_styles: str = ""
+    wms_format: str = "image/png"
+    wms_version: str = "1.3.0"
+    wms_transparent: bool = True
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        source_id = _normalize_source_id(self.id)
+        if not source_id:
+            raise ValueError("Map source id is required.")
+
+        name = str(self.name or "").strip()
+        if not name:
+            raise ValueError("Map source name is required.")
+
+        kind = str(self.kind or "").strip().lower()
+        if kind not in SUPPORTED_MAP_SOURCE_KINDS:
+            raise ValueError(f"Unsupported map source kind: {kind}")
+
+        min_zoom = int(self.min_zoom)
+        max_zoom = int(self.max_zoom)
+        if not 0 <= min_zoom <= 22:
+            raise ValueError("min_zoom must be 0..22.")
+        if not min_zoom <= max_zoom <= 22:
+            raise ValueError("max_zoom must be between min_zoom and 22.")
+
+        opacity = float(self.opacity)
+        if not 0.0 <= opacity <= 1.0:
+            raise ValueError("opacity must be 0..1.")
+
+        url = str(self.url or "").strip()
+        if kind in {"xyz", "wms"}:
+            _validate_remote_map_url(url)
+        if kind == "xyz":
+            for token in ("{z}", "{x}", "{y}"):
+                if token not in url:
+                    raise ValueError(
+                        "XYZ URL must contain {z}, {x}, and {y} placeholders."
+                    )
+        if kind == "wms" and not str(self.wms_layers or "").strip():
+            raise ValueError("WMS source requires at least one layer name.")
+
+        terms_url = str(self.terms_url or "").strip()
+        if terms_url:
+            _validate_remote_map_url(terms_url)
+
+        object.__setattr__(self, "id", source_id)
+        object.__setattr__(self, "name", name)
+        object.__setattr__(self, "kind", kind)
+        object.__setattr__(self, "category", str(self.category or "base").strip().lower())
+        object.__setattr__(self, "url", url)
+        object.__setattr__(self, "terms_url", terms_url)
+        object.__setattr__(self, "min_zoom", min_zoom)
+        object.__setattr__(self, "max_zoom", max_zoom)
+        object.__setattr__(self, "opacity", opacity)
+        object.__setattr__(self, "wms_layers", str(self.wms_layers or "").strip())
+        object.__setattr__(self, "wms_styles", str(self.wms_styles or "").strip())
+        object.__setattr__(self, "wms_format", str(self.wms_format or "image/png").strip())
+        object.__setattr__(self, "wms_version", str(self.wms_version or "1.3.0").strip())
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "kind": self.kind,
+            "category": self.category,
+            "url": self.url,
+            "attribution": self.attribution,
+            "termsUrl": self.terms_url,
+            "minZoom": self.min_zoom,
+            "maxZoom": self.max_zoom,
+            "opacity": self.opacity,
+            "userDefined": self.user_defined,
+            "enabled": self.enabled,
+            "compareSupported": self.compare_supported,
+            "overlaySupported": self.overlay_supported,
+            "wmsLayers": self.wms_layers,
+            "wmsStyles": self.wms_styles,
+            "wmsFormat": self.wms_format,
+            "wmsVersion": self.wms_version,
+            "wmsTransparent": self.wms_transparent,
+            "metadata": dict(self.metadata),
+        }
+
+
+BUILTIN_MAP_SOURCES: tuple[MapSourceDescriptor, ...] = (
+    MapSourceDescriptor(
+        id="osm_standard",
+        name="OpenStreetMap",
+        kind="xyz",
+        category="streets",
+        url="https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+        attribution="© OpenStreetMap contributors",
+        terms_url="https://www.openstreetmap.org/copyright",
+        min_zoom=0,
+        max_zoom=19,
+        metadata={
+            "provider": "OpenStreetMap Foundation",
+            "cachePolicy": "http_headers",
+            "prefetchAllowed": False,
+        },
+    ),
+    MapSourceDescriptor(
+        id="local_schematic",
+        name="Local Schematic",
+        kind="schematic",
+        category="offline",
+        attribution="OSINTXZ local schematic",
+        min_zoom=0,
+        max_zoom=4,
+        compare_supported=False,
+        overlay_supported=False,
+        metadata={
+            "offline": True,
+            "fallback": True,
+        },
+    ),
+    MapSourceDescriptor(
+        id="sentinel_selected",
+        name="Sentinel-2 Selected Scene",
+        kind="satellite_dynamic",
+        category="satellite",
+        attribution="Copernicus Data Space Ecosystem",
+        terms_url="https://dataspace.copernicus.eu/",
+        min_zoom=0,
+        max_zoom=18,
+        metadata={
+            "dynamic": True,
+            "requiresScene": True,
+        },
+    ),
+)
+
+
+class MapSourceRegistry:
+    """Small persistent registry for built-in and analyst-added map sources."""
+
+    def __init__(
+        self,
+        *,
+        storage_path: Path | None = None,
+    ) -> None:
+        self.storage_path = Path(
+            storage_path
+            or (DATA_DIR / "map_sources.json")
+        )
+        self._builtins = {
+            source.id: source
+            for source in BUILTIN_MAP_SOURCES
+        }
+        self._custom: dict[str, MapSourceDescriptor] = {}
+        self._load_custom_sources()
+
+    def all(self) -> tuple[MapSourceDescriptor, ...]:
+        rows = [
+            *self._builtins.values(),
+            *self._custom.values(),
+        ]
+        rows.sort(
+            key=lambda item: (
+                item.category,
+                item.name.casefold(),
+                item.id,
+            )
+        )
+        return tuple(rows)
+
+    def payload(self) -> list[dict[str, Any]]:
+        return [
+            source.to_payload()
+            for source in self.all()
+            if source.enabled
+        ]
+
+    def get(self, source_id: str) -> MapSourceDescriptor | None:
+        key = _normalize_source_id(source_id)
+        return self._custom.get(key) or self._builtins.get(key)
+
+    def add_custom(
+        self,
+        *,
+        name: str,
+        kind: str,
+        url: str,
+        attribution: str = "",
+        terms_url: str = "",
+        min_zoom: int = 0,
+        max_zoom: int = 19,
+        wms_layers: str = "",
+        wms_styles: str = "",
+        wms_format: str = "image/png",
+        wms_version: str = "1.3.0",
+        wms_transparent: bool = True,
+    ) -> MapSourceDescriptor:
+        normalized_name = str(name or "").strip()
+        source_id = self._next_custom_id(normalized_name)
+        source = MapSourceDescriptor(
+            id=source_id,
+            name=normalized_name,
+            kind=kind,
+            category="custom",
+            url=url,
+            attribution=str(attribution or "").strip(),
+            terms_url=terms_url,
+            min_zoom=min_zoom,
+            max_zoom=max_zoom,
+            user_defined=True,
+            wms_layers=wms_layers,
+            wms_styles=wms_styles,
+            wms_format=wms_format,
+            wms_version=wms_version,
+            wms_transparent=bool(wms_transparent),
+            metadata={
+                "persistedLocally": True,
+            },
+        )
+        self._custom[source.id] = source
+        self._save_custom_sources()
+        return source
+
+    def remove_custom(self, source_id: str) -> bool:
+        key = _normalize_source_id(source_id)
+        if key not in self._custom:
+            return False
+        self._custom.pop(key, None)
+        self._save_custom_sources()
+        return True
+
+    def _next_custom_id(self, name: str) -> str:
+        base = _normalize_source_id(name)
+        if not base:
+            base = "custom_map"
+        if not base.startswith("custom_"):
+            base = "custom_" + base
+
+        existing = set(self._builtins) | set(self._custom)
+        if base not in existing:
+            return base
+
+        suffix = 2
+        while f"{base}_{suffix}" in existing:
+            suffix += 1
+        return f"{base}_{suffix}"
+
+    def _load_custom_sources(self) -> None:
+        try:
+            raw = json.loads(self.storage_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, json.JSONDecodeError):
+            return
+
+        rows = raw.get("sources") if isinstance(raw, dict) else None
+        if not isinstance(rows, list):
+            return
+
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            try:
+                source = MapSourceDescriptor(
+                    id=str(row.get("id") or ""),
+                    name=str(row.get("name") or ""),
+                    kind=str(row.get("kind") or ""),
+                    category="custom",
+                    url=str(row.get("url") or ""),
+                    attribution=str(row.get("attribution") or ""),
+                    terms_url=str(row.get("termsUrl") or ""),
+                    min_zoom=int(row.get("minZoom", 0)),
+                    max_zoom=int(row.get("maxZoom", 19)),
+                    opacity=float(row.get("opacity", 1.0)),
+                    user_defined=True,
+                    enabled=bool(row.get("enabled", True)),
+                    compare_supported=bool(row.get("compareSupported", True)),
+                    overlay_supported=bool(row.get("overlaySupported", True)),
+                    wms_layers=str(row.get("wmsLayers") or ""),
+                    wms_styles=str(row.get("wmsStyles") or ""),
+                    wms_format=str(row.get("wmsFormat") or "image/png"),
+                    wms_version=str(row.get("wmsVersion") or "1.3.0"),
+                    wms_transparent=bool(row.get("wmsTransparent", True)),
+                    metadata={
+                        "persistedLocally": True,
+                    },
+                )
+            except (TypeError, ValueError):
+                continue
+            if source.id in self._builtins:
+                continue
+            self._custom[source.id] = source
+
+    def _save_custom_sources(self) -> None:
+        self.storage_path.parent.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+        payload = {
+            "version": 1,
+            "sources": [
+                source.to_payload()
+                for source in sorted(
+                    self._custom.values(),
+                    key=lambda item: item.id,
+                )
+            ],
+        }
+        temporary = self.storage_path.with_suffix(".tmp")
+        temporary.write_text(
+            json.dumps(
+                payload,
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            ),
+            encoding="utf-8",
+        )
+        temporary.replace(self.storage_path)
+
+
+def _normalize_source_id(value: str) -> str:
+    normalized = re.sub(
+        r"[^a-z0-9_]+",
+        "_",
+        str(value or "").strip().casefold(),
+    )
+    return normalized.strip("_")[:80]
+
+
+def _validate_remote_map_url(value: str) -> None:
+    url = str(value or "").strip()
+    if not url:
+        raise ValueError("Map source URL is required.")
+
+    try:
+        parsed = urlparse(url)
+    except ValueError as exc:
+        raise ValueError("Map source URL is invalid.") from exc
+
+    if parsed.scheme not in {"https", "http"}:
+        raise ValueError("Map source URL must use http or https.")
+    if not parsed.hostname:
+        raise ValueError("Map source URL must include a host.")
+    if parsed.username or parsed.password:
+        raise ValueError(
+            "Credentials must not be embedded in a map source URL."
+        )
