@@ -22,7 +22,8 @@ Item {
     property string baseMapMode: webEngineRuntimeAvailable ? "streets" : "schematic"
     property bool interactiveMapFailed: false
     property var mapSources: geoBridge.mapSources || []
-    property var mapLayers: geoBridge.mapLayers || []
+    property var allMapLayers: geoBridge.mapLayers || []
+    property var mapLayers: root.scopedMapLayers()
     property string primaryMapSourceId: webEngineRuntimeAvailable
         ? "osm_standard"
         : "local_schematic"
@@ -48,6 +49,20 @@ Item {
     property string selectedMarkerId: ""
     property string selectedMarkerKind: ""
     property var selectedMarker: root.findSelectedMarker()
+
+    function scopedMapLayers() {
+        var scope = String(desktopBridge.currentCaseId || "").trim()
+        if (scope.length === 0)
+            scope = "global"
+
+        var result = []
+        for (var i = 0; i < root.allMapLayers.length; ++i) {
+            var layer = root.allMapLayers[i]
+            if (String(layer.scopeId || "global") === scope)
+                result.push(layer)
+        }
+        return result
+    }
 
     function mapSourceById(sourceId) {
         var wanted = String(sourceId || "")
@@ -1863,7 +1878,10 @@ Item {
         ]
 
         onAccepted: {
-            geoBridge.importMapLayer(String(selectedFile))
+            geoBridge.importMapLayer(
+                String(selectedFile),
+                String(desktopBridge.currentCaseId || "global")
+            )
         }
     }
 
