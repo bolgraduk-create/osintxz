@@ -79,9 +79,12 @@ def test_ui_r4_map_workspace_uses_real_markers_and_local_projection():
 
 def test_ui_r4_map_layers_distinguish_locations_photo_gps_and_satellite():
     qml = _qml("MapWorkspace.qml")
+    layers = (QML_ROOT / "components" / "MapLayersDialog.qml").read_text(
+        encoding="utf-8"
+    )
 
-    assert 'text: "Locations"' in qml
-    assert 'text: "Photo GPS"' in qml
+    assert 'text: "Locations"' in layers
+    assert 'text: "Photo GPS"' in layers
     assert '"sentinel_selected"' in qml
     assert "geoBridge.satelliteData" in qml
     assert 'text: "SATELLITE · SENTINEL-2"' in qml
