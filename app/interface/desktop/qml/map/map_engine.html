@@ -385,6 +385,8 @@ html,body,#map{width:100%;height:100%;margin:0;overflow:hidden;background:#08172
     if(compareMode==="none" || !secondarySource){
       secondaryEl.style.display="none";
       secondaryEl.style.clipPath="none";
+      primaryLabelEl.style.left="auto";
+      primaryLabelEl.style.right="12px";
       return;
     }
 
@@ -392,6 +394,11 @@ html,body,#map{width:100%;height:100%;margin:0;overflow:hidden;background:#08172
 
     if(compareMode==="overlay"){
       secondaryEl.style.clipPath="none";
+      primaryLabelEl.style.left="12px";
+      primaryLabelEl.style.right="auto";
+      secondaryLabelEl.style.display="block";
+      secondaryLabelEl.style.left="auto";
+      secondaryLabelEl.style.right="12px";
       return;
     }
 
@@ -400,17 +407,29 @@ html,body,#map{width:100%;height:100%;margin:0;overflow:hidden;background:#08172
     secondaryEl.style.clipPath="inset(0 0 0 "+leftPct+"%)";
     dividerEl.style.display="block";
     dividerEl.style.left="calc("+leftPct+"% - 1px)";
+    primaryLabelEl.style.left="56px";
+    primaryLabelEl.style.right="auto";
     secondaryLabelEl.style.display="block";
     secondaryLabelEl.style.left="calc("+leftPct+"% + 12px)";
+    secondaryLabelEl.style.right="auto";
+  }
+
+  function escapeHtml(value){
+    return String(value || "")
+      .replace(/&/g,"&amp;")
+      .replace(/</g,"&lt;")
+      .replace(/>/g,"&gt;")
+      .replace(/"/g,"&quot;")
+      .replace(/'/g,"&#39;");
   }
 
   function buildAttributionEntry(source){
     if(!source || !source.attribution) return "";
     const text=String(source.attribution);
     const terms=String(source.termsUrl || "");
-    if(!terms) return text.replace(/</g,"&lt;").replace(/>/g,"&gt;");
+    if(!terms) return escapeHtml(text);
     const callback="osintxz://external?url="+encodeURIComponent(terms);
-    return '<a href="'+callback+'">'+text.replace(/</g,"&lt;").replace(/>/g,"&gt;")+'</a>';
+    return '<a href="'+callback+'">'+escapeHtml(text)+'</a>';
   }
 
   function renderAttribution(){
