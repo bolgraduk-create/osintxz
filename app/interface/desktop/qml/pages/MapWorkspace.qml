@@ -1675,6 +1675,10 @@ Item {
             close()
             addMapSourceDialog.open()
         }
+
+        onRemoveSourceRequested: function(sourceId) {
+            root.removeCurrentMapSource(sourceId)
+        }
     }
 
     MapLayersDialog {
