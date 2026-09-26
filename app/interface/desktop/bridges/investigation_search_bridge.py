@@ -305,6 +305,13 @@ class InvestigationSearchBridge(QObject):
         self._account_context = {}
         self.accountEnrichmentChanged.emit()
 
+    @Slot()
+    def clearSocialActivity(self) -> None:
+        if self._social_busy:
+            return
+        self._social_activity = {}
+        self.socialActivityChanged.emit()
+
     @Slot("QVariantMap", result="QVariantMap")
     def socialActivityCapability(self, account: object) -> dict[str, Any]:
         payload = dict(account) if isinstance(account, dict) else {}
@@ -506,7 +513,7 @@ class InvestigationSearchBridge(QObject):
 
     @Slot("QVariantMap", result=bool)
     def deepEnrichAccount(self, account: object) -> bool:
-        if self._busy or self._account_busy:
+        if self._busy or self._account_busy or self._social_busy:
             self._set_message("Another search or account enrichment is already running.")
             return False
 
