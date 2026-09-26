@@ -97,6 +97,38 @@ Item {
         }
     }
 
+    function mapSourceAvailable(sourceId) {
+        var source = root.mapSourceById(sourceId)
+        if (!source || String(source.id || "").length === 0)
+            return false
+        if (String(source.kind || "") === "schematic")
+            return true
+        if (String(source.id || "") === "sentinel_selected")
+            return root.sceneCanOverlay(root.selectedSatelliteScene)
+        return true
+    }
+
+    function ensureSecondaryMapSource() {
+        if (root.mapSourceAvailable(root.secondaryMapSourceId)
+                && root.secondaryMapSourceId !== root.primaryMapSourceId)
+            return
+
+        for (var i = 0; i < root.mapSources.length; ++i) {
+            var source = root.mapSources[i]
+            var sourceId = String(source.id || "")
+            if (sourceId === root.primaryMapSourceId)
+                continue
+            if (!Boolean(source.compareSupported))
+                continue
+            if (String(source.kind || "") === "schematic")
+                continue
+            if (!root.mapSourceAvailable(sourceId))
+                continue
+            root.secondaryMapSourceId = sourceId
+            return
+        }
+    }
+
     function selectPrimaryMapSource(sourceId) {
         var source = root.mapSourceById(sourceId)
         if (!source || String(source.id || "").length === 0)
@@ -125,8 +157,7 @@ Item {
             return
         if (String(source.kind || "") === "schematic")
             return
-        if (String(source.id || "") === "sentinel_selected"
-                && !root.sceneCanOverlay(root.selectedSatelliteScene))
+        if (!root.mapSourceAvailable(String(source.id || "")))
             return
         root.secondaryMapSourceId = String(source.id || "")
     }
