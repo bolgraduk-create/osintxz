@@ -15,6 +15,7 @@ Item {
     property bool showLocations: true
     property bool showPhotoGps: true
     property bool showNearbyPois: true
+    property bool toolsOpen: false
     property bool webEngineRuntimeAvailable: (
         typeof mapWebEngineAvailable !== "undefined"
         && Boolean(mapWebEngineAvailable)
@@ -506,81 +507,47 @@ Item {
         anchors.fill: parent
         anchors.leftMargin: Spacing.page
         anchors.rightMargin: Spacing.page
-        anchors.topMargin: 16
-        anchors.bottomMargin: 22
-        spacing: 10
+        anchors.topMargin: 10
+        anchors.bottomMargin: 12
+        spacing: 8
 
         Item {
             Layout.fillWidth: true
-            Layout.preferredHeight: 68
+            Layout.preferredHeight: 38
 
             Text {
-                x: 1
-                y: 0
-                text: "GEO INTELLIGENCE"
-                color: Theme.textMuted
-                font.pixelSize: 9
-                font.weight: Font.Medium
-                font.letterSpacing: 1.6
-            }
-
-            Text {
-                x: 1
-                y: 18
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
                 text: "Map"
                 color: Theme.textPrimary
-                font.pixelSize: 28
+                font.pixelSize: 20
                 font.weight: Font.DemiBold
             }
 
             Text {
-                x: 2
-                y: 52
-                width: parent.width - 410
+                anchors.left: parent.left
+                anchors.leftMargin: 54
+                anchors.right: mapSummary.right
+                anchors.rightMargin: 18
+                anchors.verticalCenter: parent.verticalCenter
                 text: root.payload.hasCase
-                    ? ("Investigation · " + String(root.payload.caseTitle || "Current investigation"))
-                    : "Global exploration workspace · select an investigation to reveal stored evidence."
-                color: Theme.textSecondary
-                font.pixelSize: 11
+                    ? String(root.payload.caseTitle || "Current investigation")
+                    : "Global workspace"
+                color: Theme.textMuted
+                font.pixelSize: 9
                 elide: Text.ElideRight
             }
 
-            Row {
+            Text {
+                id: mapSummary
                 anchors.right: parent.right
-                anchors.bottom: parent.bottom
-                spacing: 8
-
-                Rectangle {
-                    width: mappedBadge.implicitWidth + 20
-                    height: 28
-                    radius: 7
-                    color: Theme.surface
-                    border.width: 1
-                    border.color: Theme.border
-                    Text {
-                        id: mappedBadge
-                        anchors.centerIn: parent
-                        text: String(root.counts.mapped || 0) + " mapped"
-                        color: Theme.textSecondary
-                        font.pixelSize: 9
-                    }
-                }
-
-                Rectangle {
-                    width: photoBadge.implicitWidth + 20
-                    height: 28
-                    radius: 7
-                    color: Theme.surface
-                    border.width: 1
-                    border.color: Theme.border
-                    Text {
-                        id: photoBadge
-                        anchors.centerIn: parent
-                        text: String(root.counts.photoGps || 0) + " photo GPS"
-                        color: Theme.textSecondary
-                        font.pixelSize: 9
-                    }
-                }
+                anchors.verticalCenter: parent.verticalCenter
+                text: String(root.counts.mapped || 0) + " mapped"
+                    + (Number(root.counts.photoGps || 0) > 0
+                        ? " · " + String(root.counts.photoGps || 0) + " photo GPS"
+                        : "")
+                color: Theme.textMuted
+                font.pixelSize: 8
             }
         }
 
@@ -595,6 +562,7 @@ Item {
             compareMode: root.compareMode
             secondaryOpacity: root.secondaryOpacity
             satelliteAvailable: root.sceneCanOverlay(root.selectedSatelliteScene)
+            toolsOpen: root.toolsOpen
 
             onPrimarySourceRequested: function(sourceId) {
                 root.selectPrimaryMapSource(sourceId)
@@ -632,6 +600,7 @@ Item {
 
             onBrowseSourcesRequested: mapSourceBrowserDialog.open()
             onLayersRequested: mapLayersDialog.open()
+            onToolsRequested: root.toolsOpen = !root.toolsOpen
             onAddSourceRequested: addMapSourceDialog.open()
 
             onRemoveSourceRequested: function(sourceId) {
@@ -669,18 +638,14 @@ Item {
                         + "  ↔  "
                         + root.mapSourceName(root.secondaryMapSourceId))
                     : root.mapSourceName(root.primaryMapSourceId)
-                subtitle: !root.useInteractiveMap
-                    ? "Offline-safe schematic fallback"
-                    : (root.compareEnabled
-                        ? (root.compareMode.replace(/_/g, " ")
-                            + " · synchronized pan / zoom · investigation layers")
-                        : "Interactive map · pan · zoom · clusters · investigation layers")
-                iconSource: "../../assets/icons/pin_purple.svg"
+                subtitle: ""
+                headerHeight: 46
+                iconSource: ""
 
                 Item {
                     id: mapCanvas
                     anchors.fill: parent
-                    anchors.margins: 12
+                    anchors.margins: 7
                     clip: true
 
                     Rectangle {
@@ -906,8 +871,9 @@ Item {
             }
 
             Panel {
-                Layout.preferredWidth: 334
-                Layout.maximumWidth: 360
+                visible: root.toolsOpen
+                Layout.preferredWidth: visible ? 318 : 0
+                Layout.maximumWidth: visible ? 340 : 0
                 Layout.fillHeight: true
                 title: "GEO Tools"
                 subtitle: String(root.visibleMarkers().length) + " visible marker(s)"
