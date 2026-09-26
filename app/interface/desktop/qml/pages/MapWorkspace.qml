@@ -536,8 +536,8 @@ Item {
                 y: 52
                 width: parent.width - 410
                 text: root.payload.hasCase
-                    ? ("Investigation: " + String(root.payload.caseTitle || "Current investigation"))
-                    : "Select an investigation to inspect stored geographic intelligence."
+                    ? ("Investigation · " + String(root.payload.caseTitle || "Current investigation"))
+                    : "Global exploration workspace · select an investigation to reveal stored evidence."
                 color: Theme.textSecondary
                 font.pixelSize: 11
                 elide: Text.ElideRight
@@ -1068,7 +1068,7 @@ Item {
 
                         Text {
                             width: parent.width
-                            text: "Enter a coordinate, enrich the surroundings, then inspect nearby places, historical weather and Sentinel-2 scenes."
+                            text: "Enter a coordinate or reuse a selected point, then inspect nearby places, historical weather and Sentinel-2 scenes."
                             color: Theme.textSecondary
                             font.pixelSize: 9
                             wrapMode: Text.Wrap
@@ -1127,7 +1127,7 @@ Item {
 
                             AppButton {
                                 width: (parent.width - 8) * 0.62
-                                text: geoBridge.busy ? "Enriching…" : "Run GEO Enrichment"
+                                text: geoBridge.busy ? "Exploring…" : "Explore area"
                                 primary: true
                                 enabled: !geoBridge.busy
                                     && geoLatitudeInput.text.trim().length > 0
