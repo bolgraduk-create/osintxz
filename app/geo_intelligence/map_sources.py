@@ -18,6 +18,35 @@ SUPPORTED_MAP_SOURCE_KINDS = frozenset({
 })
 
 
+def _normalize_source_id(value: str) -> str:
+    normalized = re.sub(
+        r"[^a-z0-9_]+",
+        "_",
+        str(value or "").strip().casefold(),
+    )
+    return normalized.strip("_")[:80]
+
+
+def _validate_remote_map_url(value: str) -> None:
+    url = str(value or "").strip()
+    if not url:
+        raise ValueError("Map source URL is required.")
+
+    try:
+        parsed = urlparse(url)
+    except ValueError as exc:
+        raise ValueError("Map source URL is invalid.") from exc
+
+    if parsed.scheme not in {"https", "http"}:
+        raise ValueError("Map source URL must use http or https.")
+    if not parsed.hostname:
+        raise ValueError("Map source URL must include a host.")
+    if parsed.username or parsed.password:
+        raise ValueError(
+            "Credentials must not be embedded in a map source URL."
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class MapSourceDescriptor:
     id: str
@@ -352,30 +381,3 @@ class MapSourceRegistry:
         temporary.replace(self.storage_path)
 
 
-def _normalize_source_id(value: str) -> str:
-    normalized = re.sub(
-        r"[^a-z0-9_]+",
-        "_",
-        str(value or "").strip().casefold(),
-    )
-    return normalized.strip("_")[:80]
-
-
-def _validate_remote_map_url(value: str) -> None:
-    url = str(value or "").strip()
-    if not url:
-        raise ValueError("Map source URL is required.")
-
-    try:
-        parsed = urlparse(url)
-    except ValueError as exc:
-        raise ValueError("Map source URL is invalid.") from exc
-
-    if parsed.scheme not in {"https", "http"}:
-        raise ValueError("Map source URL must use http or https.")
-    if not parsed.hostname:
-        raise ValueError("Map source URL must include a host.")
-    if parsed.username or parsed.password:
-        raise ValueError(
-            "Credentials must not be embedded in a map source URL."
-        )
