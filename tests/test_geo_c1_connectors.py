@@ -319,8 +319,8 @@ def test_geo_c1_desktop_bridge_is_exposed_and_map_is_wired():
     for expected in (
         "geoBridge.runData",
         "geoBridge.runEnrichment(",
-        'text: "LIVE GEO ENRICHMENT"',
-        'text: "Nearby POI"',
+        'text: "EXPLORE COORDINATES"',
+        'property bool showNearbyPois: true',
         'placeholderText: "Latitude"',
         'placeholderText: "Longitude"',
         'placeholderText: "YYYY-MM-DD (optional)"',
