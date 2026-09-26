@@ -19,6 +19,8 @@ Rectangle {
     signal compareEnabledRequested(bool enabled)
     signal compareModeRequested(string mode)
     signal secondaryOpacityRequested(real opacity)
+    signal browseSourcesRequested()
+    signal layersRequested()
     signal addSourceRequested()
     signal removeSourceRequested(string sourceId)
 
@@ -114,6 +116,20 @@ Rectangle {
             }
 
             Item { Layout.fillWidth: true }
+
+            AppButton {
+                Layout.preferredHeight: 30
+                implicitHeight: 30
+                text: "Browse"
+                onClicked: root.browseSourcesRequested()
+            }
+
+            AppButton {
+                Layout.preferredHeight: 30
+                implicitHeight: 30
+                text: "Layers"
+                onClicked: root.layersRequested()
+            }
 
             AppButton {
                 Layout.preferredHeight: 30
