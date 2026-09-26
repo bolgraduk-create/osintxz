@@ -339,6 +339,7 @@ BUILTIN_MAP_SOURCES: tuple[MapSourceDescriptor, ...] = (
             "prefetchAllowed": False,
             "darkFilter": False,
             "catalogPack": "usa",
+            "viewBbox": [-125.0, 24.0, -66.5, 49.5],
         },
     ),
     MapSourceDescriptor(
@@ -359,6 +360,7 @@ BUILTIN_MAP_SOURCES: tuple[MapSourceDescriptor, ...] = (
             "prefetchAllowed": False,
             "darkFilter": False,
             "catalogPack": "usa",
+            "viewBbox": [-125.0, 24.0, -66.5, 49.5],
         },
     ),
     MapSourceDescriptor(
@@ -379,6 +381,7 @@ BUILTIN_MAP_SOURCES: tuple[MapSourceDescriptor, ...] = (
             "prefetchAllowed": False,
             "darkFilter": False,
             "catalogPack": "usa",
+            "viewBbox": [-125.0, 24.0, -66.5, 49.5],
         },
     ),
     MapSourceDescriptor(
@@ -401,6 +404,7 @@ BUILTIN_MAP_SOURCES: tuple[MapSourceDescriptor, ...] = (
             "cachePolicy": "http_headers",
             "prefetchAllowed": False,
             "catalogPack": "usa",
+            "viewBbox": [-125.0, 24.0, -66.5, 49.5],
         },
     ),
     MapSourceDescriptor(
@@ -422,6 +426,7 @@ BUILTIN_MAP_SOURCES: tuple[MapSourceDescriptor, ...] = (
             "darkFilter": False,
             "catalogPack": "poland",
             "coverage": "Poland",
+            "viewBbox": [14.1, 49.0, 24.2, 54.9],
         },
     ),
     MapSourceDescriptor(
@@ -443,6 +448,7 @@ BUILTIN_MAP_SOURCES: tuple[MapSourceDescriptor, ...] = (
             "darkFilter": False,
             "catalogPack": "germany",
             "coverage": "Germany",
+            "viewBbox": [5.5, 47.2, 15.5, 55.1],
         },
     ),
     MapSourceDescriptor(
@@ -464,6 +470,7 @@ BUILTIN_MAP_SOURCES: tuple[MapSourceDescriptor, ...] = (
             "darkFilter": False,
             "catalogPack": "france",
             "coverage": "France",
+            "viewBbox": [-5.5, 41.0, 9.8, 51.5],
         },
     ),
     MapSourceDescriptor(
@@ -485,6 +492,7 @@ BUILTIN_MAP_SOURCES: tuple[MapSourceDescriptor, ...] = (
             "darkFilter": False,
             "catalogPack": "france",
             "coverage": "France",
+            "viewBbox": [-5.5, 41.0, 9.8, 51.5],
         },
     ),
     MapSourceDescriptor(
@@ -505,6 +513,7 @@ BUILTIN_MAP_SOURCES: tuple[MapSourceDescriptor, ...] = (
             "credentialKey": "os_maps_api_key",
             "catalogPack": "uk",
             "coverage": "Great Britain",
+            "viewBbox": [-8.7, 49.8, 2.1, 60.9],
             "darkFilter": False,
             "prefetchAllowed": False,
         },
@@ -527,6 +536,7 @@ BUILTIN_MAP_SOURCES: tuple[MapSourceDescriptor, ...] = (
             "credentialKey": "os_maps_api_key",
             "catalogPack": "uk",
             "coverage": "Great Britain",
+            "viewBbox": [-8.7, 49.8, 2.1, 60.9],
             "darkFilter": False,
             "prefetchAllowed": False,
         },
@@ -549,6 +559,7 @@ BUILTIN_MAP_SOURCES: tuple[MapSourceDescriptor, ...] = (
             "prefetchAllowed": False,
             "darkFilter": False,
             "catalogPack": "historical_france",
+            "viewBbox": [-5.5, 41.0, 9.8, 51.5],
             "historical": True,
             "period": "1950-1965",
         },
@@ -571,6 +582,7 @@ BUILTIN_MAP_SOURCES: tuple[MapSourceDescriptor, ...] = (
             "prefetchAllowed": False,
             "darkFilter": False,
             "catalogPack": "historical_france",
+            "viewBbox": [-5.5, 41.0, 9.8, 51.5],
             "historical": True,
             "period": "1950",
         },
@@ -593,6 +605,7 @@ BUILTIN_MAP_SOURCES: tuple[MapSourceDescriptor, ...] = (
             "prefetchAllowed": False,
             "darkFilter": False,
             "catalogPack": "historical_france",
+            "viewBbox": [-5.5, 41.0, 9.8, 51.5],
             "historical": True,
             "period": "18th century",
         },
@@ -615,6 +628,7 @@ BUILTIN_MAP_SOURCES: tuple[MapSourceDescriptor, ...] = (
             "prefetchAllowed": False,
             "darkFilter": False,
             "catalogPack": "historical_france",
+            "viewBbox": [-5.5, 41.0, 9.8, 51.5],
             "historical": True,
             "period": "1820-1866",
         },
