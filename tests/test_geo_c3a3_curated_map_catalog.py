@@ -228,3 +228,38 @@ def test_geo_c3a3_uk_os_maps_require_runtime_api_key(tmp_path):
     assert with_key_payload["uk_os_outdoor"]["credentialConfigured"] is True
     assert "{api_key}" not in with_key_payload["uk_os_outdoor"]["url"]
     assert "key=test-key" in with_key_payload["uk_os_outdoor"]["url"]
+
+
+def test_geo_c3a3_france_historical_pack():
+    sources = {source.id: source for source in BUILTIN_MAP_SOURCES}
+
+    expected = {
+        "fr_ign_ortho_1950_1965",
+        "fr_ign_scan50_1950",
+        "fr_bnf_cassini",
+        "fr_ign_etat_major_40",
+    }
+    assert set(sources) >= expected
+
+    for source_id in expected:
+        source = sources[source_id]
+        assert source.category == "historical"
+        assert source.region == "France"
+        assert source.metadata["historical"] is True
+        assert 0 <= source.min_zoom <= source.max_zoom <= 22
+        assert "{z}" in source.url
+        assert "{x}" in source.url
+        assert "{y}" in source.url
+
+    assert "ORTHOIMAGERY.ORTHOPHOTOS.1950-1965" in (
+        sources["fr_ign_ortho_1950_1965"].url
+    )
+    assert "GEOGRAPHICALGRIDSYSTEMS.MAPS.SCAN50.1950" in (
+        sources["fr_ign_scan50_1950"].url
+    )
+    assert "BNF-IGNF_GEOGRAPHICALGRIDSYSTEMS.CASSINI" in (
+        sources["fr_bnf_cassini"].url
+    )
+    assert "GEOGRAPHICALGRIDSYSTEMS.ETATMAJOR40" in (
+        sources["fr_ign_etat_major_40"].url
+    )
