@@ -47,6 +47,8 @@ class SmartQueryDecision:
     route_hint: str
     risk: str
     signals: tuple[str, ...] = ()
+    auto_lanes: tuple[str, ...] = ()
+    review_lanes: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         seed = self.node.seed
@@ -65,6 +67,8 @@ class SmartQueryDecision:
             "routeHint": self.route_hint,
             "risk": self.risk,
             "signals": list(self.signals),
+            "autoLanes": list(self.auto_lanes),
+            "reviewLanes": list(self.review_lanes),
             "observationId": self.node.observation_id,
             "parentSeedKind": self.node.parent_seed_kind,
             "parentSeedValue": self.node.parent_seed_value,
@@ -149,6 +153,8 @@ def build_smart_query_plan(
                     route_hint=item.route_hint,
                     risk=item.risk,
                     signals=item.signals,
+                    auto_lanes=item.auto_lanes,
+                    review_lanes=item.review_lanes,
                 )
         bounded.append(item)
 
@@ -187,6 +193,7 @@ def _decision(node: ExplorationNode) -> SmartQueryDecision:
     seed = node.seed
     signals: list[str] = []
     risk = _risk(node)
+    auto_lanes, review_lanes = _lanes(seed.kind)
 
     if seed.kind not in _AUTO_KINDS:
         return SmartQueryDecision(
@@ -197,6 +204,8 @@ def _decision(node: ExplorationNode) -> SmartQueryDecision:
             route_hint=_route_hint(seed.kind),
             risk=risk,
             signals=("non_auto_seed_kind",),
+            auto_lanes=(),
+            review_lanes=review_lanes or ("review",),
         )
 
     if seed.depth > 2:
@@ -208,6 +217,8 @@ def _decision(node: ExplorationNode) -> SmartQueryDecision:
             route_hint=_route_hint(seed.kind),
             risk=risk,
             signals=("depth_limit",),
+            auto_lanes=(),
+            review_lanes=review_lanes or auto_lanes,
         )
 
     source = str(node.source or "").casefold()
@@ -220,6 +231,8 @@ def _decision(node: ExplorationNode) -> SmartQueryDecision:
             route_hint=_route_hint(seed.kind),
             risk="guarded",
             signals=("sensitive_source",),
+            auto_lanes=(),
+            review_lanes=tuple(dict.fromkeys((*auto_lanes, *review_lanes))),
         )
 
     score = _score(node)
@@ -236,6 +249,8 @@ def _decision(node: ExplorationNode) -> SmartQueryDecision:
             route_hint=_route_hint(seed.kind),
             risk=risk,
             signals=tuple(signals),
+            auto_lanes=auto_lanes,
+            review_lanes=review_lanes,
         )
 
     if node.pivot_score >= 55.0 and node.quality_score >= 50.0:
@@ -247,6 +262,8 @@ def _decision(node: ExplorationNode) -> SmartQueryDecision:
             route_hint=_route_hint(seed.kind),
             risk=risk,
             signals=("moderate_pivot_signal",),
+            auto_lanes=(),
+            review_lanes=tuple(dict.fromkeys((*auto_lanes, *review_lanes))),
         )
 
     return SmartQueryDecision(
@@ -257,6 +274,8 @@ def _decision(node: ExplorationNode) -> SmartQueryDecision:
         route_hint=_route_hint(seed.kind),
         risk=risk,
         signals=("weak_pivot_signal",),
+        auto_lanes=(),
+        review_lanes=tuple(dict.fromkeys((*auto_lanes, *review_lanes))),
     )
 
 
@@ -277,11 +296,41 @@ def _risk(node: ExplorationNode) -> str:
     return "normal"
 
 
+def _lanes(kind: UnifiedSeedKind) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Return automatic and analyst-review lanes for one safe exact seed.
+
+    Open Web is review-only here because the current Open-Web enrichment path
+    persists findings. Autonomous R14.8 execution is limited to lanes with a
+    read-only/ephemeral boundary.
+    """
+    if kind in {
+        UnifiedSeedKind.USERNAME,
+        UnifiedSeedKind.EMAIL,
+        UnifiedSeedKind.PHONE,
+        UnifiedSeedKind.HASH,
+    }:
+        return ("classic", "federation"), ()
+    if kind in {
+        UnifiedSeedKind.DOMAIN,
+        UnifiedSeedKind.URL,
+        UnifiedSeedKind.IP,
+    }:
+        return ("classic", "federation"), ("open_web",)
+    if kind in {
+        UnifiedSeedKind.REGISTRATION_ID,
+        UnifiedSeedKind.VAT_ID,
+        UnifiedSeedKind.LEI,
+        UnifiedSeedKind.CASE_NUMBER,
+    }:
+        return ("registry",), ()
+    return (), ("review",)
+
+
 def _route_hint(kind: UnifiedSeedKind) -> str:
     if kind in {UnifiedSeedKind.USERNAME, UnifiedSeedKind.EMAIL, UnifiedSeedKind.PHONE}:
         return "classic + federation"
     if kind in {UnifiedSeedKind.DOMAIN, UnifiedSeedKind.URL, UnifiedSeedKind.IP}:
-        return "classic + open web + federation"
+        return "classic + federation · open web review"
     if kind is UnifiedSeedKind.HASH:
         return "classic + federation"
     return "review"
