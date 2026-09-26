@@ -79,13 +79,11 @@ class OpenWebEnrichmentService:
         self.persistence_service = persistence_service
         self.content_hydrator = content_hydrator
 
-    def enrich(
+    def enrich_ephemeral(
         self,
         query: OpenWebQuery,
-        *,
-        case_id: UUID,
-        parent_entity_id: UUID | None = None,
     ) -> OpenWebEnrichmentResult:
+        """Run discovery/hydration/extraction without database persistence."""
         discovery = self.discovery_service.discover(query)
 
         hydration = None
@@ -123,8 +121,25 @@ class OpenWebEnrichmentService:
             query=query,
         )
 
+        return OpenWebEnrichmentResult(
+            query=query,
+            discovery=discovery,
+            hydration=hydration,
+            extraction=extraction,
+            persistence=[],
+        )
+
+    def enrich(
+        self,
+        query: OpenWebQuery,
+        *,
+        case_id: UUID,
+        parent_entity_id: UUID | None = None,
+    ) -> OpenWebEnrichmentResult:
+        ephemeral = self.enrich_ephemeral(query)
+
         by_provider: dict[str, list[OsintFinding]] = defaultdict(list)
-        for finding in extraction.findings:
+        for finding in ephemeral.extraction.findings:
             provider = (
                 (finding.source or "open_web").strip()
                 or "open_web"
@@ -151,8 +166,8 @@ class OpenWebEnrichmentService:
 
         return OpenWebEnrichmentResult(
             query=query,
-            discovery=discovery,
-            hydration=hydration,
-            extraction=extraction,
+            discovery=ephemeral.discovery,
+            hydration=ephemeral.hydration,
+            extraction=ephemeral.extraction,
             persistence=persistence_results,
         )
