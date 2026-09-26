@@ -23,6 +23,10 @@ _AUTO_KINDS = frozenset(
         UnifiedSeedKind.URL,
         UnifiedSeedKind.IP,
         UnifiedSeedKind.HASH,
+        UnifiedSeedKind.REGISTRATION_ID,
+        UnifiedSeedKind.VAT_ID,
+        UnifiedSeedKind.LEI,
+        UnifiedSeedKind.CASE_NUMBER,
     }
 )
 
@@ -160,6 +164,50 @@ def build_smart_query_plan(
 
     return SmartQueryPlan(tuple(bounded))
 
+
+
+
+def nodes_for_lane(
+    plan: SmartQueryPlan,
+    lane: str,
+) -> list[ExplorationNode]:
+    wanted = str(lane or "").strip().casefold()
+    if not wanted:
+        return []
+    return [
+        item.node
+        for item in plan.decisions
+        if item.action == "auto_execute"
+        and wanted in item.auto_lanes
+    ]
+
+
+def graph_for_lane_execution(
+    graph: ExplorationGraph,
+    plan: SmartQueryPlan,
+    lane: str,
+) -> ExplorationGraph:
+    wanted = {
+        node.identity_key
+        for node in nodes_for_lane(plan, lane)
+    }
+    return ExplorationGraph(
+        nodes=[
+            node
+            for node in graph.nodes
+            if node.identity_key in wanted
+        ],
+        edges=[
+            edge
+            for edge in graph.edges
+            if edge.child_key in wanted
+        ],
+        skipped_initial=graph.skipped_initial,
+        skipped_duplicate=graph.skipped_duplicate,
+        skipped_unsupported=graph.skipped_unsupported,
+        skipped_not_approved=graph.skipped_not_approved,
+        skipped_depth=graph.skipped_depth,
+    )
 
 def graph_for_auto_execution(
     graph: ExplorationGraph,
@@ -341,4 +389,6 @@ __all__ = [
     "SmartQueryPlan",
     "build_smart_query_plan",
     "graph_for_auto_execution",
+    "nodes_for_lane",
+    "graph_for_lane_execution",
 ]
