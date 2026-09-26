@@ -23,6 +23,10 @@ _AUTO_KINDS = frozenset(
         UnifiedSeedKind.URL,
         UnifiedSeedKind.IP,
         UnifiedSeedKind.HASH,
+        UnifiedSeedKind.REGISTRATION_ID,
+        UnifiedSeedKind.VAT_ID,
+        UnifiedSeedKind.LEI,
+        UnifiedSeedKind.CASE_NUMBER,
     }
 )
 
@@ -47,6 +51,8 @@ class SmartQueryDecision:
     route_hint: str
     risk: str
     signals: tuple[str, ...] = ()
+    auto_lanes: tuple[str, ...] = ()
+    review_lanes: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         seed = self.node.seed
@@ -65,6 +71,8 @@ class SmartQueryDecision:
             "routeHint": self.route_hint,
             "risk": self.risk,
             "signals": list(self.signals),
+            "autoLanes": list(self.auto_lanes),
+            "reviewLanes": list(self.review_lanes),
             "observationId": self.node.observation_id,
             "parentSeedKind": self.node.parent_seed_kind,
             "parentSeedValue": self.node.parent_seed_value,
@@ -149,11 +157,57 @@ def build_smart_query_plan(
                     route_hint=item.route_hint,
                     risk=item.risk,
                     signals=item.signals,
+                    auto_lanes=item.auto_lanes,
+                    review_lanes=item.review_lanes,
                 )
         bounded.append(item)
 
     return SmartQueryPlan(tuple(bounded))
 
+
+
+
+def nodes_for_lane(
+    plan: SmartQueryPlan,
+    lane: str,
+) -> list[ExplorationNode]:
+    wanted = str(lane or "").strip().casefold()
+    if not wanted:
+        return []
+    return [
+        item.node
+        for item in plan.decisions
+        if item.action == "auto_execute"
+        and wanted in item.auto_lanes
+    ]
+
+
+def graph_for_lane_execution(
+    graph: ExplorationGraph,
+    plan: SmartQueryPlan,
+    lane: str,
+) -> ExplorationGraph:
+    wanted = {
+        node.identity_key
+        for node in nodes_for_lane(plan, lane)
+    }
+    return ExplorationGraph(
+        nodes=[
+            node
+            for node in graph.nodes
+            if node.identity_key in wanted
+        ],
+        edges=[
+            edge
+            for edge in graph.edges
+            if edge.child_key in wanted
+        ],
+        skipped_initial=graph.skipped_initial,
+        skipped_duplicate=graph.skipped_duplicate,
+        skipped_unsupported=graph.skipped_unsupported,
+        skipped_not_approved=graph.skipped_not_approved,
+        skipped_depth=graph.skipped_depth,
+    )
 
 def graph_for_auto_execution(
     graph: ExplorationGraph,
@@ -187,6 +241,7 @@ def _decision(node: ExplorationNode) -> SmartQueryDecision:
     seed = node.seed
     signals: list[str] = []
     risk = _risk(node)
+    auto_lanes, review_lanes = _lanes(seed.kind)
 
     if seed.kind not in _AUTO_KINDS:
         return SmartQueryDecision(
@@ -197,6 +252,8 @@ def _decision(node: ExplorationNode) -> SmartQueryDecision:
             route_hint=_route_hint(seed.kind),
             risk=risk,
             signals=("non_auto_seed_kind",),
+            auto_lanes=(),
+            review_lanes=review_lanes or ("review",),
         )
 
     if seed.depth > 2:
@@ -208,6 +265,8 @@ def _decision(node: ExplorationNode) -> SmartQueryDecision:
             route_hint=_route_hint(seed.kind),
             risk=risk,
             signals=("depth_limit",),
+            auto_lanes=(),
+            review_lanes=review_lanes or auto_lanes,
         )
 
     source = str(node.source or "").casefold()
@@ -220,6 +279,8 @@ def _decision(node: ExplorationNode) -> SmartQueryDecision:
             route_hint=_route_hint(seed.kind),
             risk="guarded",
             signals=("sensitive_source",),
+            auto_lanes=(),
+            review_lanes=tuple(dict.fromkeys((*auto_lanes, *review_lanes))),
         )
 
     score = _score(node)
@@ -236,6 +297,8 @@ def _decision(node: ExplorationNode) -> SmartQueryDecision:
             route_hint=_route_hint(seed.kind),
             risk=risk,
             signals=tuple(signals),
+            auto_lanes=auto_lanes,
+            review_lanes=review_lanes,
         )
 
     if node.pivot_score >= 55.0 and node.quality_score >= 50.0:
@@ -247,6 +310,8 @@ def _decision(node: ExplorationNode) -> SmartQueryDecision:
             route_hint=_route_hint(seed.kind),
             risk=risk,
             signals=("moderate_pivot_signal",),
+            auto_lanes=(),
+            review_lanes=tuple(dict.fromkeys((*auto_lanes, *review_lanes))),
         )
 
     return SmartQueryDecision(
@@ -257,6 +322,8 @@ def _decision(node: ExplorationNode) -> SmartQueryDecision:
         route_hint=_route_hint(seed.kind),
         risk=risk,
         signals=("weak_pivot_signal",),
+        auto_lanes=(),
+        review_lanes=tuple(dict.fromkeys((*auto_lanes, *review_lanes))),
     )
 
 
@@ -277,13 +344,50 @@ def _risk(node: ExplorationNode) -> str:
     return "normal"
 
 
+def _lanes(kind: UnifiedSeedKind) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Return automatic and analyst-review lanes for one safe exact seed.
+
+    Open Web is review-only here because the current Open-Web enrichment path
+    persists findings. Autonomous R14.8 execution is limited to lanes with a
+    read-only/ephemeral boundary.
+    """
+    if kind in {
+        UnifiedSeedKind.USERNAME,
+        UnifiedSeedKind.EMAIL,
+        UnifiedSeedKind.PHONE,
+        UnifiedSeedKind.HASH,
+    }:
+        return ("classic", "federation"), ()
+    if kind in {
+        UnifiedSeedKind.DOMAIN,
+        UnifiedSeedKind.URL,
+        UnifiedSeedKind.IP,
+    }:
+        return ("classic", "federation"), ("open_web",)
+    if kind in {
+        UnifiedSeedKind.REGISTRATION_ID,
+        UnifiedSeedKind.VAT_ID,
+        UnifiedSeedKind.LEI,
+        UnifiedSeedKind.CASE_NUMBER,
+    }:
+        return ("registry",), ()
+    return (), ("review",)
+
+
 def _route_hint(kind: UnifiedSeedKind) -> str:
     if kind in {UnifiedSeedKind.USERNAME, UnifiedSeedKind.EMAIL, UnifiedSeedKind.PHONE}:
         return "classic + federation"
     if kind in {UnifiedSeedKind.DOMAIN, UnifiedSeedKind.URL, UnifiedSeedKind.IP}:
-        return "classic + open web + federation"
+        return "classic + federation · open web review"
     if kind is UnifiedSeedKind.HASH:
         return "classic + federation"
+    if kind in {
+        UnifiedSeedKind.REGISTRATION_ID,
+        UnifiedSeedKind.VAT_ID,
+        UnifiedSeedKind.LEI,
+        UnifiedSeedKind.CASE_NUMBER,
+    }:
+        return "registry"
     return "review"
 
 
@@ -292,4 +396,6 @@ __all__ = [
     "SmartQueryPlan",
     "build_smart_query_plan",
     "graph_for_auto_execution",
+    "nodes_for_lane",
+    "graph_for_lane_execution",
 ]

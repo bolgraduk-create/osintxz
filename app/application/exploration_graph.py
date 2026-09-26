@@ -5,7 +5,7 @@ search seeds.  It is deliberately separate from database persistence:
 
 - a row may be useful enough to explore without being persistence-grade;
 - exploration seeds live only for one unified-search run;
-- only exact, OSINT-compatible target kinds are executable in this first phase;
+- exact OSINT- and Registry-compatible target kinds may become planner nodes;
 - initial/user seeds and already-known exact pivots are deduplicated;
 - no Entity/Evidence is created merely because a node is explored.
 
@@ -35,6 +35,10 @@ _EXECUTABLE_KINDS = frozenset(
         UnifiedSeedKind.URL,
         UnifiedSeedKind.IP,
         UnifiedSeedKind.HASH,
+        UnifiedSeedKind.REGISTRATION_ID,
+        UnifiedSeedKind.VAT_ID,
+        UnifiedSeedKind.LEI,
+        UnifiedSeedKind.CASE_NUMBER,
     }
 )
 
@@ -53,6 +57,15 @@ _IDENTIFIER_KIND_MAP: dict[str, UnifiedSeedKind] = {
     "md5": UnifiedSeedKind.HASH,
     "sha1": UnifiedSeedKind.HASH,
     "sha256": UnifiedSeedKind.HASH,
+    "registration_id": UnifiedSeedKind.REGISTRATION_ID,
+    "registration_number": UnifiedSeedKind.REGISTRATION_ID,
+    "company_number": UnifiedSeedKind.REGISTRATION_ID,
+    "organization_number": UnifiedSeedKind.REGISTRATION_ID,
+    "vat_id": UnifiedSeedKind.VAT_ID,
+    "vat": UnifiedSeedKind.VAT_ID,
+    "lei": UnifiedSeedKind.LEI,
+    "case_number": UnifiedSeedKind.CASE_NUMBER,
+    "docket_number": UnifiedSeedKind.CASE_NUMBER,
 }
 
 _ROW_TYPE_MAP: dict[str, UnifiedSeedKind] = {
@@ -68,6 +81,10 @@ _ROW_TYPE_MAP: dict[str, UnifiedSeedKind] = {
     "ip": UnifiedSeedKind.IP,
     "ip_address": UnifiedSeedKind.IP,
     "hash": UnifiedSeedKind.HASH,
+    "registration_id": UnifiedSeedKind.REGISTRATION_ID,
+    "vat_id": UnifiedSeedKind.VAT_ID,
+    "lei": UnifiedSeedKind.LEI,
+    "case_number": UnifiedSeedKind.CASE_NUMBER,
 }
 
 
@@ -222,7 +239,15 @@ def build_exploration_graph(
             if seed.kind not in _EXECUTABLE_KINDS:
                 graph.skipped_unsupported += 1
                 continue
-            if osint_target_for_seed(seed) is None:
+            if (
+                osint_target_for_seed(seed) is None
+                and seed.kind not in {
+                    UnifiedSeedKind.REGISTRATION_ID,
+                    UnifiedSeedKind.VAT_ID,
+                    UnifiedSeedKind.LEI,
+                    UnifiedSeedKind.CASE_NUMBER,
+                }
+            ):
                 graph.skipped_unsupported += 1
                 continue
             if seed.identity_key in blocked_keys:
@@ -368,6 +393,10 @@ def _candidate_seeds_from_row(
         UnifiedSeedKind.PHONE,
         UnifiedSeedKind.IP,
         UnifiedSeedKind.HASH,
+        UnifiedSeedKind.REGISTRATION_ID,
+        UnifiedSeedKind.VAT_ID,
+        UnifiedSeedKind.LEI,
+        UnifiedSeedKind.CASE_NUMBER,
     }:
         value = str(row.get("title") or "").strip()
         seed = _make_seed(
@@ -518,6 +547,20 @@ def _normalize_candidate(kind: UnifiedSeedKind, value: str) -> str:
             r"[A-Fa-f0-9]{32,128}",
             compact,
         ) else ""
+
+    if kind is UnifiedSeedKind.LEI:
+        compact = re.sub(r"\s+", "", raw).upper()
+        return compact if re.fullmatch(r"[A-Z0-9]{20}", compact) else ""
+
+    if kind in {
+        UnifiedSeedKind.REGISTRATION_ID,
+        UnifiedSeedKind.VAT_ID,
+        UnifiedSeedKind.CASE_NUMBER,
+    }:
+        compact = " ".join(raw.split())
+        if not 2 <= len(compact) <= 128:
+            return ""
+        return compact
 
     return ""
 
