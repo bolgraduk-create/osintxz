@@ -1715,11 +1715,9 @@ Item {
                                         anchors.fill: parent
                                         hoverEnabled: true
                                         cursorShape: Qt.PointingHandCursor
-                                        onClicked: {
-                                            root.activateSatelliteScene(satelliteSceneRow.modelData)
-                                            if (root.sceneCanOverlay(satelliteSceneRow.modelData))
-                                                root.baseMapMode = "satellite"
-                                        }
+                                        onClicked: root.activateSatelliteScene(
+                                            satelliteSceneRow.modelData
+                                        )
                                     }
                                 }
                             }
