@@ -149,6 +149,7 @@ def test_geo_c3a3_poland_and_germany_country_packs():
     assert "TILEMATRIX=EPSG:3857:{z}" in poland.url
     assert "TILEROW={y}" in poland.url
     assert "TILECOL={x}" in poland.url
+    assert poland.max_zoom == 22
     assert poland.metadata["catalogPack"] == "poland"
 
     germany = sources["de_basemap_raster_color"]
@@ -179,3 +180,9 @@ def test_geo_c3a3_france_country_pack():
     assert ortho.category == "satellite"
     assert "ORTHOIMAGERY.ORTHOPHOTOS" in ortho.url
     assert "FORMAT=image/jpeg" in ortho.url
+
+
+def test_geo_c3a3_all_builtin_sources_respect_engine_zoom_contract():
+    for source in BUILTIN_MAP_SOURCES:
+        assert 0 <= source.min_zoom <= 22, source.id
+        assert source.min_zoom <= source.max_zoom <= 22, source.id
