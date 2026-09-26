@@ -11,6 +11,7 @@ AppDialog {
     property string currentPrimaryId: ""
     property bool satelliteAvailable: false
     property string query: ""
+    property string categoryFilter: "all"
 
     signal sourceChosen(string sourceId, bool asSecondary)
     signal addSourceRequested()
@@ -21,37 +22,66 @@ AppDialog {
     description: "Browse built-in and analyst-added raster map sources."
     primaryText: "Close"
     cancelText: "Close"
-    bodyHeight: 500
+    bodyHeight: 560
 
     function filteredSources() {
         var normalized = root.query.trim().toLowerCase()
-        if (normalized.length === 0)
-            return root.sources
-
         var result = []
+
         for (var i = 0; i < root.sources.length; ++i) {
             var source = root.sources[i]
+            var category = String(source.category || "other").toLowerCase()
+
+            if (root.categoryFilter !== "all"
+                    && category !== root.categoryFilter)
+                continue
+
+            var metadata = source.metadata || ({})
             var haystack = (
                 String(source.name || "")
                 + " "
                 + String(source.kind || "")
                 + " "
-                + String(source.category || "")
+                + category
                 + " "
                 + String(source.attribution || "")
+                + " "
+                + String(metadata.description || "")
+                + " "
+                + String(metadata.provider || "")
             ).toLowerCase()
-            if (haystack.indexOf(normalized) >= 0)
-                result.push(source)
+
+            if (normalized.length > 0
+                    && haystack.indexOf(normalized) < 0)
+                continue
+
+            result.push(source)
         }
+
         return result
     }
 
+    function primarySelectable(source) {
+        var metadata = (source || {}).metadata || ({})
+        return metadata.primarySelectable !== false
+    }
+
+    function roleLabel(source) {
+        var metadata = (source || {}).metadata || ({})
+        var role = String(metadata.role || "base").toUpperCase()
+        if (!Boolean((source || {}).enabled))
+            return "REFERENCE"
+        return role
+    }
+
     function sourceAvailable(source) {
+        if (!Boolean((source || {}).enabled))
+            return false
         if (String((source || {}).kind || "") === "schematic")
             return true
         if (String((source || {}).id || "") === "sentinel_selected")
             return root.satelliteAvailable
-        return Boolean((source || {}).enabled)
+        return true
     }
 
     onRejected: close()
@@ -80,6 +110,34 @@ AppDialog {
                 text: "+ Add source"
                 onClicked: root.addSourceRequested()
             }
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 6
+
+            Repeater {
+                model: [
+                    { key: "all", label: "All" },
+                    { key: "streets", label: "Streets" },
+                    { key: "topographic", label: "Topo" },
+                    { key: "earth", label: "Earth" },
+                    { key: "maritime", label: "Maritime" },
+                    { key: "infrastructure", label: "Infrastructure" },
+                    { key: "satellite", label: "Satellite" },
+                    { key: "custom", label: "Custom" }
+                ]
+
+                delegate: AppButton {
+                    required property var modelData
+                    text: String(modelData.label || "")
+                    primary: root.categoryFilter === String(modelData.key || "")
+                    quiet: !primary
+                    onClicked: root.categoryFilter = String(modelData.key || "all")
+                }
+            }
+
+            Item { Layout.fillWidth: true }
         }
 
         RowLayout {
@@ -123,7 +181,7 @@ AppDialog {
                         required property var modelData
 
                         width: parent.width
-                        height: 76
+                        height: 104
                         radius: 8
                         color: Theme.surface
                         border.width: String(modelData.id || "") === root.currentPrimaryId ? 1 : 0
@@ -171,6 +229,24 @@ AppDialog {
                                     }
 
                                     Rectangle {
+                                        width: roleText.implicitWidth + 14
+                                        height: 20
+                                        radius: 5
+                                        color: Theme.surfaceHover
+
+                                        Text {
+                                            id: roleText
+                                            anchors.centerIn: parent
+                                            text: root.roleLabel(sourceRow.modelData)
+                                            color: Boolean(sourceRow.modelData.enabled)
+                                                ? Theme.textSecondary
+                                                : Theme.warning
+                                            font.pixelSize: 7
+                                            font.weight: Font.DemiBold
+                                        }
+                                    }
+
+                                    Rectangle {
                                         visible: Boolean(sourceRow.modelData.userDefined)
                                         width: customText.implicitWidth + 14
                                         height: 20
@@ -190,13 +266,34 @@ AppDialog {
 
                                 Text {
                                     Layout.fillWidth: true
+                                    text: String((sourceRow.modelData.metadata || {}).description || "")
+                                    color: Theme.textSecondary
+                                    font.pixelSize: 8
+                                    elide: Text.ElideRight
+                                    visible: text.length > 0
+                                }
+
+                                Text {
+                                    Layout.fillWidth: true
                                     text: String(sourceRow.modelData.category || "map")
-                                        + (String(sourceRow.modelData.attribution || "").length > 0
-                                            ? " · " + String(sourceRow.modelData.attribution || "")
-                                            : "")
+                                        + " · "
+                                        + String((sourceRow.modelData.metadata || {}).provider
+                                            || sourceRow.modelData.attribution
+                                            || "source")
                                     color: Theme.textMuted
                                     font.pixelSize: 8
                                     elide: Text.ElideRight
+                                }
+
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: String((sourceRow.modelData.metadata || {}).policyNote || "")
+                                    color: Boolean((sourceRow.modelData.metadata || {}).policyRestricted)
+                                        ? Theme.warning
+                                        : Theme.textMuted
+                                    font.pixelSize: 7
+                                    elide: Text.ElideRight
+                                    visible: text.length > 0
                                 }
 
                                 Text {
@@ -215,6 +312,7 @@ AppDialog {
                                     ? "Active"
                                     : "Use"
                                 enabled: root.sourceAvailable(sourceRow.modelData)
+                                    && root.primarySelectable(sourceRow.modelData)
                                     && String(sourceRow.modelData.id || "") !== root.currentPrimaryId
                                 primary: String(sourceRow.modelData.id || "") !== root.currentPrimaryId
                                 onClicked: root.sourceChosen(
