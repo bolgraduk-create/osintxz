@@ -136,7 +136,9 @@ def test_geo_ui2_osm_attribution_is_visible_and_delegates_external_opening():
     qml = _read(WEB_QML)
 
     assert "© OpenStreetMap contributors" in html
-    assert "https%3A%2F%2Fwww.openstreetmap.org%2Fcopyright" in html
+    assert 'termsUrl:"https://www.openstreetmap.org/copyright"' in html
+    assert 'osintxz://external?url=' in html
+    assert "encodeURIComponent(terms)" in html
     assert 'target.indexOf("osintxz://external?") === 0' in qml
     assert "desktopBridge.openExternalUrl(" in qml
 
