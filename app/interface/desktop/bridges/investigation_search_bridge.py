@@ -18,6 +18,11 @@ from app.interface.desktop.workers.unified_investigation_search_worker import (
 from app.interface.desktop.workers.account_enrichment_worker import (
     AccountEnrichmentWorker,
 )
+from app.interface.desktop.workers.public_social_activity_worker import (
+    PublicSocialActivityWorker,
+)
+from app.application.public_social_activity import PublicSocialActivityCollector
+from app.application.social_content_correlation import correlate_social_content
 from app.osint.connectors.maigret_connector import MaigretConnector
 
 
@@ -30,6 +35,7 @@ class InvestigationSearchBridge(QObject):
     changed = Signal()
     messageChanged = Signal()
     accountEnrichmentChanged = Signal()
+    socialActivityChanged = Signal()
 
     def __init__(self, container: Any, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -45,6 +51,10 @@ class InvestigationSearchBridge(QObject):
         self._account_thread: QThread | None = None
         self._account_worker: AccountEnrichmentWorker | None = None
         self._account_context: dict[str, Any] = {}
+        self._social_activity: dict[str, Any] = {}
+        self._social_busy = False
+        self._social_thread: QThread | None = None
+        self._social_worker: PublicSocialActivityWorker | None = None
 
     @Property("QVariantMap", notify=changed)
     def runData(self) -> dict[str, Any]:
@@ -66,6 +76,14 @@ class InvestigationSearchBridge(QObject):
     def accountEnrichmentBusy(self) -> bool:
         return self._account_busy
 
+    @Property("QVariantMap", notify=socialActivityChanged)
+    def socialActivity(self) -> dict[str, Any]:
+        return dict(self._social_activity)
+
+    @Property(bool, notify=socialActivityChanged)
+    def socialActivityBusy(self) -> bool:
+        return self._social_busy
+
     @Slot("QVariantMap", str, "QVariantMap", str, result=bool)
     def search(
         self,
@@ -74,7 +92,7 @@ class InvestigationSearchBridge(QObject):
         options: object = None,
         person_entity_id: str = "",
     ) -> bool:
-        if self._busy or self._account_busy:
+        if self._busy or self._account_busy or self._social_busy:
             self._set_message(
                 "Another investigation or account-enrichment task is already running."
             )
@@ -168,7 +186,9 @@ class InvestigationSearchBridge(QObject):
             return False
 
         self._account_enrichment = {}
+        self._social_activity = {}
         self.accountEnrichmentChanged.emit()
+        self.socialActivityChanged.emit()
         started_at = datetime.now()
         self._context = {
             "caseId": normalized_case_id,
@@ -267,13 +287,15 @@ class InvestigationSearchBridge(QObject):
 
     @Slot()
     def clear(self) -> None:
-        if self._busy or self._account_busy:
+        if self._busy or self._account_busy or self._social_busy:
             return
         self._run = {}
         self._account_enrichment = {}
+        self._social_activity = {}
         self._set_message("")
         self.changed.emit()
         self.accountEnrichmentChanged.emit()
+        self.socialActivityChanged.emit()
 
     @Slot()
     def clearAccountEnrichment(self) -> None:
@@ -282,6 +304,161 @@ class InvestigationSearchBridge(QObject):
         self._account_enrichment = {}
         self._account_context = {}
         self.accountEnrichmentChanged.emit()
+
+    @Slot("QVariantMap", result="QVariantMap")
+    def socialActivityCapability(self, account: object) -> dict[str, Any]:
+        payload = dict(account) if isinstance(account, dict) else {}
+        return PublicSocialActivityCollector.capability(payload)
+
+    @Slot("QVariantMap", result=bool)
+    def collectPublicActivity(self, account: object) -> bool:
+        if self._busy or self._account_busy or self._social_busy:
+            self._set_message("Another investigation task is already running.")
+            return False
+
+        payload = dict(account) if isinstance(account, dict) else {}
+        capability = PublicSocialActivityCollector.capability(payload)
+        if not capability.get("available"):
+            self._set_message(str(capability.get("reason") or "Public activity collection is unavailable."))
+            return False
+
+        person_target = self._run.get("personTarget")
+        person_target = person_target if isinstance(person_target, dict) else {}
+        person_id = str(person_target.get("id") or "").strip()
+        if not person_id:
+            self._set_message("Run the search for a selected person before collecting account activity.")
+            return False
+
+        self._social_activity = {
+            "hasRun": True,
+            "status": "running",
+            "platform": str(capability.get("platform") or ""),
+            "username": str(capability.get("username") or ""),
+            "items": [],
+            "correlations": [],
+            "error": "",
+            "durationText": "Running…",
+        }
+        self._social_busy = True
+        self._set_message(
+            "Collecting public activity for @"
+            + str(capability.get("username") or "")
+            + "…"
+        )
+        self.socialActivityChanged.emit()
+
+        try:
+            thread = QThread(self)
+            worker = PublicSocialActivityWorker(
+                account=payload,
+                person_entity_id=person_id,
+                limit=50,
+            )
+            worker.moveToThread(thread)
+            thread.started.connect(worker.run)
+            worker.succeeded.connect(self._on_social_activity_succeeded)
+            worker.failed.connect(self._on_social_activity_failed)
+            worker.succeeded.connect(thread.quit)
+            worker.failed.connect(thread.quit)
+            worker.succeeded.connect(worker.deleteLater)
+            worker.failed.connect(worker.deleteLater)
+            thread.finished.connect(self._on_social_activity_thread_finished)
+            thread.finished.connect(thread.deleteLater)
+            self._social_thread = thread
+            self._social_worker = worker
+            thread.start()
+            return True
+        except Exception as exc:
+            LOGGER.exception("Unable to start public social activity worker")
+            self._social_busy = False
+            self._social_thread = None
+            self._social_worker = None
+            self._social_activity.update(
+                {
+                    "status": "failed",
+                    "error": str(exc),
+                    "durationText": "0.0s",
+                }
+            )
+            self._set_message(f"Unable to collect public activity: {exc}")
+            self.socialActivityChanged.emit()
+            return False
+
+    @Slot(object)
+    def _on_social_activity_succeeded(self, result: object) -> None:
+        payload = result if isinstance(result, dict) else {}
+        snapshot = payload.get("snapshot") if isinstance(payload.get("snapshot"), dict) else {}
+        duration = self._safe_float(payload.get("duration"))
+        data = dict(snapshot)
+        data.update(
+            {
+                "hasRun": True,
+                "durationSeconds": round(duration, 3),
+                "durationText": f"{duration:.1f}s",
+                "error": str(snapshot.get("error") or ""),
+            }
+        )
+        self._social_activity = data
+
+        new_items = list(data.get("items") or [])
+        existing = list(self._run.get("socialContent") or [])
+        combined = []
+        seen = set()
+        for item in existing + new_items:
+            if not isinstance(item, dict):
+                continue
+            key = (
+                str(item.get("platform") or "").casefold(),
+                str(item.get("author") or "").casefold(),
+                str(item.get("url") or ""),
+                str(item.get("timestamp") or ""),
+                str(item.get("text") or ""),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            combined.append(dict(item))
+        if self._run:
+            self._run["socialContent"] = combined[:500]
+            self._run["socialCorrelations"] = correlate_social_content(combined)[:200]
+            summary = dict(self._run.get("summary") or {})
+            summary["socialContent"] = len(combined)
+            summary["socialCorrelations"] = len(self._run["socialCorrelations"])
+            self._run["summary"] = summary
+            self.changed.emit()
+
+        persistence = data.get("persistence")
+        persistence = persistence if isinstance(persistence, dict) else {}
+        self._set_message(
+            "Public activity collected: "
+            f"{int(data.get('count') or 0)} item(s), "
+            f"{int(persistence.get('created') or 0)} new evidence item(s)."
+        )
+        self.socialActivityChanged.emit()
+
+    @Slot(object)
+    def _on_social_activity_failed(self, result: object) -> None:
+        payload = result if isinstance(result, dict) else {}
+        error = str(payload.get("error") or "Public activity collection failed.")
+        duration = self._safe_float(payload.get("duration"))
+        self._social_activity = {
+            "hasRun": True,
+            "status": "failed",
+            "items": [],
+            "correlations": [],
+            "error": error,
+            "durationSeconds": round(duration, 3),
+            "durationText": f"{duration:.1f}s",
+        }
+        self._set_message(f"Public activity collection failed: {error}")
+        self.socialActivityChanged.emit()
+
+    @Slot()
+    def _on_social_activity_thread_finished(self) -> None:
+        self._social_busy = False
+        self._social_worker = None
+        self._social_thread = None
+        self.socialActivityChanged.emit()
 
     @Slot("QVariantMap", result="QVariantMap")
     def accountEnrichmentCapability(self, account: object) -> dict[str, Any]:
