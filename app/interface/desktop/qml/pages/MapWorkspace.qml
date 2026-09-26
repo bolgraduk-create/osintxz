@@ -582,188 +582,6 @@ Item {
             }
         }
 
-        Rectangle {
-            Layout.fillWidth: true
-            Layout.preferredHeight: 42
-            radius: 8
-            color: Theme.surface
-            border.width: 1
-            border.color: Theme.border
-
-            Row {
-                anchors.left: parent.left
-                anchors.leftMargin: 12
-                anchors.verticalCenter: parent.verticalCenter
-                spacing: 18
-
-                Text {
-                    text: "LAYERS"
-                    color: Theme.textMuted
-                    font.pixelSize: 8
-                    font.weight: Font.DemiBold
-                    font.letterSpacing: 1.0
-                    anchors.verticalCenter: parent.verticalCenter
-                }
-
-                CheckBox {
-                    text: "Locations"
-                    checked: root.showLocations
-                    onToggled: {
-                        root.showLocations = checked
-                        root.ensureMarkerSelection()
-                    }
-                }
-
-                CheckBox {
-                    text: "Photo GPS"
-                    checked: root.showPhotoGps
-                    onToggled: {
-                        root.showPhotoGps = checked
-                        root.ensureMarkerSelection()
-                    }
-                }
-
-                CheckBox {
-                    text: "Nearby POI"
-                    checked: root.showNearbyPois
-                    enabled: root.nearbyPlaces.length > 0
-                    onToggled: {
-                        root.showNearbyPois = checked
-                        root.ensureMarkerSelection()
-                    }
-                }
-            }
-
-            Row {
-                anchors.right: parent.right
-                anchors.rightMargin: 12
-                anchors.verticalCenter: parent.verticalCenter
-                spacing: 6
-
-                Text {
-                    text: "BASE MAP"
-                    color: Theme.textMuted
-                    font.pixelSize: 8
-                    font.weight: Font.DemiBold
-                    anchors.verticalCenter: parent.verticalCenter
-                }
-
-                Rectangle {
-                    width: 82
-                    height: 26
-                    radius: 6
-                    color: root.baseMapMode === "streets" ? Theme.accentSoft : Theme.surface
-                    border.width: 1
-                    border.color: root.baseMapMode === "streets" ? Theme.accent : Theme.border
-
-                    Text {
-                        anchors.centerIn: parent
-                        text: "Streets"
-                        color: root.baseMapMode === "streets" ? Theme.textPrimary : Theme.textSecondary
-                        font.pixelSize: 8
-                        font.weight: Font.DemiBold
-                    }
-
-                    MouseArea {
-                        anchors.fill: parent
-                        enabled: root.webEngineRuntimeAvailable
-                        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                        onClicked: root.applyMapPreset("streets")
-                    }
-
-                    ToolTip.visible: !root.webEngineRuntimeAvailable && streetsHover.containsMouse
-                    ToolTip.text: "Qt WebEngine is unavailable; using the local schematic."
-                    MouseArea {
-                        id: streetsHover
-                        anchors.fill: parent
-                        enabled: !root.webEngineRuntimeAvailable
-                        hoverEnabled: true
-                        acceptedButtons: Qt.NoButton
-                    }
-                }
-
-                Rectangle {
-                    width: 92
-                    height: 26
-                    radius: 6
-                    color: root.baseMapMode === "schematic" ? Theme.accentSoft : Theme.surface
-                    border.width: 1
-                    border.color: root.baseMapMode === "schematic" ? Theme.accent : Theme.border
-
-                    Text {
-                        anchors.centerIn: parent
-                        text: "Schematic"
-                        color: root.baseMapMode === "schematic" ? Theme.textPrimary : Theme.textSecondary
-                        font.pixelSize: 8
-                        font.weight: Font.DemiBold
-                    }
-
-                    MouseArea {
-                        anchors.fill: parent
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: root.applyMapPreset("schematic")
-                    }
-                }
-
-                Rectangle {
-                    width: 92
-                    height: 26
-                    radius: 6
-                    property bool available: root.webEngineRuntimeAvailable
-                        && root.sceneCanOverlay(root.selectedSatelliteScene)
-                    color: root.baseMapMode === "satellite" ? Theme.accentSoft : Theme.surface
-                    border.width: 1
-                    border.color: root.baseMapMode === "satellite" ? Theme.accent : Theme.border
-                    opacity: available ? 1.0 : 0.58
-
-                    Text {
-                        anchors.centerIn: parent
-                        text: "Satellite"
-                        color: root.baseMapMode === "satellite"
-                            ? Theme.textPrimary
-                            : (parent.available ? Theme.textSecondary : Theme.textMuted)
-                        font.pixelSize: 8
-                        font.weight: Font.DemiBold
-                    }
-
-                    MouseArea {
-                        anchors.fill: parent
-                        enabled: parent.available
-                        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                        onClicked: root.applyMapPreset("satellite")
-                    }
-                }
-                Rectangle {
-                    width: 82
-                    height: 26
-                    radius: 6
-                    property bool available: root.webEngineRuntimeAvailable
-                        && root.sceneCanOverlay(root.selectedSatelliteScene)
-                    color: root.baseMapMode === "hybrid" ? Theme.accentSoft : Theme.surface
-                    border.width: 1
-                    border.color: root.baseMapMode === "hybrid" ? Theme.accent : Theme.border
-                    opacity: available ? 1.0 : 0.58
-
-                    Text {
-                        anchors.centerIn: parent
-                        text: "Hybrid"
-                        color: root.baseMapMode === "hybrid"
-                            ? Theme.textPrimary
-                            : (parent.available ? Theme.textSecondary : Theme.textMuted)
-                        font.pixelSize: 8
-                        font.weight: Font.DemiBold
-                    }
-
-                    MouseArea {
-                        anchors.fill: parent
-                        enabled: parent.available
-                        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                        onClicked: root.applyMapPreset("hybrid")
-                    }
-                }
-            }
-
-        }
 
         MapSourceToolbar {
             id: mapSourceToolbar
@@ -774,6 +592,7 @@ Item {
             compareEnabled: root.compareEnabled
             compareMode: root.compareMode
             secondaryOpacity: root.secondaryOpacity
+            satelliteAvailable: root.sceneCanOverlay(root.selectedSatelliteScene)
 
             onPrimarySourceRequested: function(sourceId) {
                 root.selectPrimaryMapSource(sourceId)
@@ -843,17 +662,17 @@ Item {
             Panel {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                title: "Geographic Canvas"
+                title: root.compareEnabled
+                    ? (root.mapSourceName(root.primaryMapSourceId)
+                        + "  ↔  "
+                        + root.mapSourceName(root.secondaryMapSourceId))
+                    : root.mapSourceName(root.primaryMapSourceId)
                 subtitle: !root.useInteractiveMap
                     ? "Offline-safe schematic fallback"
                     : (root.compareEnabled
-                        ? (root.mapSourceName(root.primaryMapSourceId)
-                            + " ↔ "
-                            + root.mapSourceName(root.secondaryMapSourceId)
-                            + " · "
-                            + root.compareMode.replace(/_/g, " "))
-                        : (root.mapSourceName(root.primaryMapSourceId)
-                            + " · pan · zoom · clusters · investigation layers"))
+                        ? (root.compareMode.replace(/_/g, " ")
+                            + " · synchronized pan / zoom · investigation layers")
+                        : "Interactive map · pan · zoom · clusters · investigation layers")
                 iconSource: "../../assets/icons/pin_purple.svg"
 
                 Item {
@@ -1085,10 +904,10 @@ Item {
             }
 
             Panel {
-                Layout.preferredWidth: 360
-                Layout.maximumWidth: 400
+                Layout.preferredWidth: 334
+                Layout.maximumWidth: 360
                 Layout.fillHeight: true
-                title: "Location Inspector"
+                title: "GEO Tools"
                 subtitle: String(root.visibleMarkers().length) + " visible marker(s)"
                 iconSource: "../../assets/icons/search.svg"
 
@@ -1109,7 +928,8 @@ Item {
 
                         Rectangle {
                             width: parent.width
-                            height: 122
+                            height: visible ? 122 : 0
+                            visible: String(root.selectedMarker.previewUrl || "").length > 0
                             radius: 9
                             color: "#0b1a25"
                             border.width: 1
@@ -1122,30 +942,57 @@ Item {
                                 fillMode: Image.PreserveAspectCrop
                                 asynchronous: true
                                 cache: false
-                                visible: String(root.selectedMarker.previewUrl || "").length > 0
                             }
+                        }
 
-                            Image {
-                                anchors.centerIn: parent
-                                width: 38
-                                height: 38
-                                source: "../../assets/icons/pin_purple.svg"
-                                opacity: 0.72
-                                visible: String(root.selectedMarker.previewUrl || "").length === 0
+                        Rectangle {
+                            width: parent.width
+                            height: 64
+                            visible: String(root.selectedMarker.id || "").length === 0
+                            radius: 8
+                            color: Theme.surface
+                            border.width: 1
+                            border.color: Theme.border
+
+                            Column {
+                                anchors.left: parent.left
+                                anchors.leftMargin: 11
+                                anchors.right: parent.right
+                                anchors.rightMargin: 11
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: 3
+
+                                Text {
+                                    width: parent.width
+                                    text: "No map point selected"
+                                    color: Theme.textPrimary
+                                    font.pixelSize: 10
+                                    font.weight: Font.DemiBold
+                                }
+
+                                Text {
+                                    width: parent.width
+                                    text: "Select a marker, or enter coordinates below."
+                                    color: Theme.textMuted
+                                    font.pixelSize: 8
+                                    wrapMode: Text.Wrap
+                                }
                             }
                         }
 
                         Text {
                             width: parent.width
-                            text: String(root.selectedMarker.title || "No marker selected")
+                            visible: String(root.selectedMarker.id || "").length > 0
+                            text: String(root.selectedMarker.title || "Selected location")
                             color: Theme.textPrimary
-                            font.pixelSize: 15
+                            font.pixelSize: 14
                             font.weight: Font.DemiBold
                             wrapMode: Text.Wrap
                         }
 
                         Text {
                             width: parent.width
+                            visible: String(root.selectedMarker.id || "").length > 0
                             text: root.coordinateText(root.selectedMarker)
                             color: Theme.accent
                             font.pixelSize: 10
@@ -1160,9 +1007,15 @@ Item {
                             visible: String(root.selectedMarker.detail || "").length > 0
                         }
 
-                        Rectangle { width: parent.width; height: 1; color: Theme.divider }
+                        Rectangle {
+                            width: parent.width
+                            height: visible ? 1 : 0
+                            visible: String(root.selectedMarker.id || "").length > 0
+                            color: Theme.divider
+                        }
 
                         GridLayout {
+                            visible: String(root.selectedMarker.id || "").length > 0
                             width: parent.width
                             columns: 2
                             columnSpacing: 8
@@ -1206,7 +1059,7 @@ Item {
                         Rectangle { width: parent.width; height: 1; color: Theme.divider }
 
                         Text {
-                            text: "LIVE GEO ENRICHMENT"
+                            text: "EXPLORE COORDINATES"
                             color: Theme.textMuted
                             font.pixelSize: 8
                             font.weight: Font.DemiBold
@@ -1215,7 +1068,7 @@ Item {
 
                         Text {
                             width: parent.width
-                            text: "Overpass / OpenStreetMap nearby objects + Open-Meteo historical weather. Live results are transient and are not persisted."
+                            text: "Enter a coordinate, enrich the surroundings, then inspect nearby places, historical weather and Sentinel-2 scenes."
                             color: Theme.textSecondary
                             font.pixelSize: 9
                             wrapMode: Text.Wrap
