@@ -45,6 +45,8 @@ from app.application.exploration_graph import (
 from app.application.smart_query_planner import (
     build_smart_query_plan,
     graph_for_auto_execution,
+    graph_for_lane_execution,
+    nodes_for_lane,
 )
 from app.application.search_retrieval_scheduler import (
     AdaptiveRetrievalFeedback,
@@ -671,6 +673,12 @@ class UnifiedInvestigationSearchWorker(QObject):
 
             exploration_graph = ExplorationGraph()
             smart_query_plan = build_smart_query_plan(exploration_graph)
+            planner_lane_execution = {
+                "classic": 0,
+                "federation": 0,
+                "registry": 0,
+                "openWebReview": 0,
+            }
             exploration_executed_keys: set[tuple[str, str, str]] = set()
             exploration_rows: list[dict[str, Any]] = []
             exploration_validation_summary: dict[str, Any] = {}
@@ -695,16 +703,22 @@ class UnifiedInvestigationSearchWorker(QObject):
                     exploration_graph,
                     smart_query_plan,
                 )
+                classic_graph = graph_for_lane_execution(
+                    exploration_graph,
+                    smart_query_plan,
+                    "classic",
+                )
                 if auto_graph.nodes:
                     self._emit(
                         "exploration",
-                        f"Planner auto-executing {len(auto_graph.nodes)} strong ephemeral pivot(s); "
+                        f"Planner selected {len(auto_graph.nodes)} strong pivot(s) across safe lanes; "
                         f"{len(smart_query_plan.review_nodes)} retained for review.",
                         pivots=len(auto_graph.nodes),
                     )
+                if classic_graph.nodes:
                     exploration_executed_keys = self._run_ephemeral_exploration(
                         container=container,
-                        graph=auto_graph,
+                        graph=classic_graph,
                         results=exploration_rows,
                         providers=providers,
                         errors=errors,
@@ -734,6 +748,109 @@ class UnifiedInvestigationSearchWorker(QObject):
                             exploration_browser.to_dict()
                         )
                         results.extend(exploration_rows)
+
+
+                # R14.8 — execute additional planner-approved lanes through
+                # their existing read-only boundaries. Open Web remains review
+                # only because its current enrichment path persists findings.
+                planner_lane_execution = {
+                    "classic": len(exploration_executed_keys),
+                    "federation": 0,
+                    "registry": 0,
+                    "openWebReview": len(
+                        [
+                            item
+                            for item in smart_query_plan.decisions
+                            if "open_web" in item.review_lanes
+                        ]
+                    ),
+                }
+
+                federation_nodes = nodes_for_lane(
+                    smart_query_plan,
+                    "federation",
+                )
+                if use_federation and federation_nodes:
+                    federation_seed_plan = build_search_plan(
+                        adapter_registry=container.remote_source_adapter_registry,
+                        seeds=[node.seed for node in federation_nodes],
+                        include_sensitive_name_routes=False,
+                    )
+                    federation_routes, planner_federation_schedule = (
+                        schedule_seed_routes(
+                            federation_seed_plan.federation_routes,
+                            limit=12,
+                            lane="planner_federation",
+                            feedback=retrieval_feedback,
+                            time_budget_seconds=48.0,
+                        )
+                    )
+                    retrieval_schedule.add(planner_federation_schedule)
+                    if federation_routes:
+                        planner_federation_records = self._run_federation_routes(
+                            container=container,
+                            routes=federation_routes,
+                            results=results,
+                            providers=providers,
+                            errors=errors,
+                            feedback=retrieval_feedback,
+                        )
+                        all_federation_records.extend(
+                            planner_federation_records
+                        )
+                        executed_federation_keys = {
+                            seed.identity_key
+                            for seed, _route in federation_routes
+                        }
+                        exploration_executed_keys.update(
+                            executed_federation_keys
+                        )
+                        planner_lane_execution["federation"] = len(
+                            executed_federation_keys
+                        )
+
+                registry_nodes = nodes_for_lane(
+                    smart_query_plan,
+                    "registry",
+                )
+                if use_registry and registry_nodes:
+                    registry_seed_plan = build_search_plan(
+                        adapter_registry=container.remote_source_adapter_registry,
+                        seeds=[node.seed for node in registry_nodes],
+                        include_sensitive_name_routes=False,
+                    )
+                    registry_items, planner_registry_schedule = (
+                        schedule_seed_routes(
+                            registry_seed_plan.registry_queries,
+                            limit=8,
+                            lane="planner_registry",
+                            feedback=retrieval_feedback,
+                            time_budget_seconds=40.0,
+                        )
+                    )
+                    retrieval_schedule.add(planner_registry_schedule)
+                    if registry_items:
+                        planner_registry_records = self._run_registry_queries(
+                            container=container,
+                            items=registry_items,
+                            results=results,
+                            providers=providers,
+                            errors=errors,
+                            feedback=retrieval_feedback,
+                        )
+                        all_registry_records.extend(
+                            planner_registry_records
+                        )
+                        executed_registry_keys = {
+                            seed.identity_key
+                            for seed, _query in registry_items
+                        }
+                        exploration_executed_keys.update(
+                            executed_registry_keys
+                        )
+                        planner_lane_execution["registry"] = len(
+                            executed_registry_keys
+                        )
 
             # Re-score after the ephemeral wave so exploration observations are
             # ranked by the same quality engine as first-wave results.
@@ -819,7 +936,10 @@ class UnifiedInvestigationSearchWorker(QObject):
                 "explorationGraph": exploration_graph.to_dict(
                     executed_keys=exploration_executed_keys
                 ),
-                "queryPlanner": smart_query_plan.to_dict(),
+                "queryPlanner": {
+                    **smart_query_plan.to_dict(),
+                    "laneExecution": planner_lane_execution,
+                },
                 "explorationValidationSummary": exploration_validation_summary,
                 "explorationBrowserSummary": exploration_browser_summary,
                 "retrievalSchedule": retrieval_schedule.to_dict(),
@@ -874,6 +994,18 @@ class UnifiedInvestigationSearchWorker(QObject):
                     "plannerCandidates": len(smart_query_plan.decisions),
                     "plannerAutoExecute": len(smart_query_plan.auto_nodes),
                     "plannerReview": len(smart_query_plan.review_nodes),
+                    "plannerClassicExecuted": int(
+                        planner_lane_execution.get("classic") or 0
+                    ),
+                    "plannerFederationExecuted": int(
+                        planner_lane_execution.get("federation") or 0
+                    ),
+                    "plannerRegistryExecuted": int(
+                        planner_lane_execution.get("registry") or 0
+                    ),
+                    "plannerOpenWebReview": int(
+                        planner_lane_execution.get("openWebReview") or 0
+                    ),
                     "explorationResults": len(exploration_rows),
                     "retrievalCandidates": retrieval_schedule.candidates,
                     "retrievalSelected": retrieval_schedule.selected,
