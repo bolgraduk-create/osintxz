@@ -14,6 +14,7 @@ Rectangle {
     property string compareMode: "overlay"
     property real secondaryOpacity: 0.75
     property bool satelliteAvailable: false
+    property bool toolsOpen: false
 
     signal primarySourceRequested(string sourceId)
     signal secondarySourceRequested(string sourceId)
@@ -22,6 +23,7 @@ Rectangle {
     signal secondaryOpacityRequested(real opacity)
     signal browseSourcesRequested()
     signal layersRequested()
+    signal toolsRequested()
     signal addSourceRequested()
     signal removeSourceRequested(string sourceId)
 
@@ -54,9 +56,8 @@ Rectangle {
 
     function compareSources() {
         var result = []
-        var rows = root.sources
-        for (var i = 0; i < rows.length; ++i) {
-            var source = rows[i]
+        for (var i = 0; i < root.sources.length; ++i) {
+            var source = root.sources[i]
             if (!root.sourceAvailable(source))
                 continue
             if (!Boolean(source.compareSupported))
@@ -78,37 +79,26 @@ Rectangle {
         return rows.length > 0 ? 0 : -1
     }
 
-    implicitHeight: root.compareEnabled ? 104 : 58
-    radius: 10
+    implicitHeight: root.compareEnabled ? 94 : 52
+    radius: 9
     color: Theme.surface
     border.width: 1
     border.color: Theme.border
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.leftMargin: 12
-        anchors.rightMargin: 12
-        anchors.topMargin: 8
-        anchors.bottomMargin: 8
-        spacing: 8
+        anchors.margins: 8
+        spacing: 6
 
         RowLayout {
             Layout.fillWidth: true
-            Layout.preferredHeight: 36
-            spacing: 8
-
-            Text {
-                text: "MAP SOURCE"
-                color: Theme.textMuted
-                font.pixelSize: 8
-                font.weight: Font.DemiBold
-                font.letterSpacing: 1.0
-                Layout.preferredWidth: 76
-            }
+            Layout.preferredHeight: 34
+            spacing: 7
 
             AppComboBox {
                 id: primaryBox
-                Layout.preferredWidth: 250
+                Layout.preferredWidth: 330
+                Layout.maximumWidth: 420
                 Layout.preferredHeight: 34
                 model: root.selectableSources()
                 textRole: "name"
@@ -124,14 +114,14 @@ Rectangle {
             }
 
             Rectangle {
-                Layout.preferredWidth: primaryType.implicitWidth + 16
-                Layout.preferredHeight: 24
-                radius: 6
+                Layout.preferredWidth: sourceType.implicitWidth + 14
+                Layout.preferredHeight: 22
+                radius: 5
                 color: Theme.accentSoft
                 visible: String(root.sourceForId(root.primarySourceId).kind || "").length > 0
 
                 Text {
-                    id: primaryType
+                    id: sourceType
                     anchors.centerIn: parent
                     text: String(root.sourceForId(root.primarySourceId).kind || "").toUpperCase()
                     color: Theme.accent
@@ -144,6 +134,7 @@ Rectangle {
 
             AppButton {
                 Layout.preferredHeight: 34
+                implicitWidth: 76
                 text: "Browse"
                 quiet: true
                 onClicked: root.browseSourcesRequested()
@@ -151,6 +142,7 @@ Rectangle {
 
             AppButton {
                 Layout.preferredHeight: 34
+                implicitWidth: 72
                 text: "Layers"
                 quiet: true
                 onClicked: root.layersRequested()
@@ -158,39 +150,39 @@ Rectangle {
 
             AppButton {
                 Layout.preferredHeight: 34
+                implicitWidth: 70
+                text: "Tools"
+                quiet: !root.toolsOpen
+                primary: root.toolsOpen
+                onClicked: root.toolsRequested()
+            }
+
+            AppButton {
+                Layout.preferredHeight: 34
+                implicitWidth: root.compareEnabled ? 104 : 84
                 text: root.compareEnabled ? "Exit compare" : "Compare"
                 primary: root.compareEnabled
                 onClicked: root.compareEnabledRequested(!root.compareEnabled)
             }
-
-        }
-
-        Rectangle {
-            visible: root.compareEnabled
-            Layout.fillWidth: true
-            Layout.preferredHeight: visible ? 1 : 0
-            color: Theme.divider
         }
 
         RowLayout {
             visible: root.compareEnabled
             Layout.fillWidth: true
-            Layout.preferredHeight: visible ? 36 : 0
-            spacing: 8
+            Layout.preferredHeight: visible ? 32 : 0
+            spacing: 7
 
             Text {
-                text: "SECONDARY"
+                text: "Compare with"
                 color: Theme.textMuted
                 font.pixelSize: 8
-                font.weight: Font.DemiBold
-                font.letterSpacing: 1.0
                 Layout.preferredWidth: 76
             }
 
             AppComboBox {
                 id: secondaryBox
-                Layout.preferredWidth: 250
-                Layout.preferredHeight: 34
+                Layout.preferredWidth: 280
+                Layout.preferredHeight: 32
                 model: root.compareSources()
                 textRole: "name"
                 currentIndex: root.indexInRows(
@@ -206,11 +198,11 @@ Rectangle {
 
             AppComboBox {
                 id: compareModeBox
-                Layout.preferredWidth: 150
-                Layout.preferredHeight: 34
+                Layout.preferredWidth: 132
+                Layout.preferredHeight: 32
                 model: [
                     { key: "overlay", label: "Overlay" },
-                    { key: "side_by_side", label: "Side by side" },
+                    { key: "side_by_side", label: "Split" },
                     { key: "swipe", label: "Swipe" }
                 ]
                 textRole: "label"
@@ -224,13 +216,15 @@ Rectangle {
             }
 
             Text {
+                visible: root.compareMode === "overlay"
                 text: "Opacity"
                 color: Theme.textMuted
                 font.pixelSize: 8
             }
 
             Slider {
-                Layout.preferredWidth: 130
+                visible: root.compareMode === "overlay"
+                Layout.preferredWidth: 120
                 from: 0.1
                 to: 1.0
                 stepSize: 0.05
@@ -239,21 +233,14 @@ Rectangle {
             }
 
             Text {
+                visible: root.compareMode === "overlay"
                 text: Math.round(root.secondaryOpacity * 100) + "%"
                 color: Theme.textSecondary
-                font.pixelSize: 9
+                font.pixelSize: 8
                 Layout.preferredWidth: 34
             }
 
             Item { Layout.fillWidth: true }
-
-            Text {
-                text: root.compareMode === "swipe"
-                    ? "Drag divider on the map"
-                    : "Pan and zoom stay synchronized"
-                color: Theme.textMuted
-                font.pixelSize: 8
-            }
         }
     }
 }
