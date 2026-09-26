@@ -202,8 +202,12 @@ def test_geo_c3a2_vector_layer_state_persists_without_original_file(tmp_path):
     )
     storage = tmp_path / "layers"
     registry = MapLayerRegistry(storage_dir=storage)
-    layer = registry.import_file(source)
+    layer = registry.import_file(
+        source,
+        scope_id="case-123",
+    )
 
+    assert layer.scope_id == "case-123"
     assert registry.set_visibility(layer.id, False) is True
     assert registry.set_opacity(layer.id, 0.35) is True
 
@@ -213,6 +217,7 @@ def test_geo_c3a2_vector_layer_state_persists_without_original_file(tmp_path):
     loaded = restored.get(layer.id)
 
     assert loaded is not None
+    assert loaded.scope_id == "case-123"
     assert loaded.visible is False
     assert loaded.opacity == pytest.approx(0.35)
     assert len(loaded.features) == 1
@@ -343,13 +348,16 @@ def test_geo_c3a2_map_workspace_wires_file_dialog_browser_and_layers():
     for expected in (
         "import QtQuick.Dialogs",
         "geoBridge.mapLayers",
+        "function scopedMapLayers()",
+        "layer.scopeId",
         "vectorLayers: root.mapLayers",
         "MapSourceBrowserDialog {",
         "MapLayersDialog {",
         "FileDialog {",
         'title: "Import geographic layer"',
         '"Geographic layers (*.geojson *.json *.kml *.gpx)"',
-        "geoBridge.importMapLayer(String(selectedFile))",
+        "geoBridge.importMapLayer(",
+        "String(desktopBridge.currentCaseId || \"global\")",
         "geoBridge.setMapLayerVisibility(layerId, visible)",
         "geoBridge.setMapLayerOpacity(layerId, opacity)",
         "geoBridge.removeMapLayer(layerId)",
