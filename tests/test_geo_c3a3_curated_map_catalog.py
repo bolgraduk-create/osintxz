@@ -106,8 +106,8 @@ def test_geo_c3a3_browser_has_categories_descriptions_roles_and_policy_notes():
         '{ key: "custom", label: "Custom" }',
         "metadata.description",
         "metadata.provider",
-        "metadata.policyNote",
-        "metadata.policyRestricted",
+        "policyNote",
+        "policyRestricted",
         'return "REFERENCE"',
     ):
         assert expected in qml
