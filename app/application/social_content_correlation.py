@@ -81,14 +81,8 @@ def normalize_social_content(rows: Iterable[dict[str, Any]]) -> list[dict[str, A
             context_signals=context,
         )
         output.append(item.to_dict())
-    output.sort(
-        key=lambda item: (
-            _time_sort_key(item.get("timestamp")),
-            str(item.get("platform") or "").casefold(),
-            str(item.get("author") or "").casefold(),
-        ),
-        reverse=True,
-    )
+    # Preserve source order. Normalization is a lossless/stable transformation;
+    # consumers that need chronological ordering must sort their own view.
     return output
 
 
@@ -230,7 +224,15 @@ def build_social_intelligence(items: Iterable[dict[str, Any]]) -> dict[str, Any]
                 "url": str(item.get("url") or ""),
                 "contextSignals": list(item.get("contextSignals") or []),
             }
-            for item in normalized
+            for item in sorted(
+                normalized,
+                key=lambda item: (
+                    _time_sort_key(item.get("timestamp")),
+                    str(item.get("platform") or "").casefold(),
+                    str(item.get("author") or "").casefold(),
+                ),
+                reverse=True,
+            )
         ],
         "summary": {
             "items": len(normalized),
