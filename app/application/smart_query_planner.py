@@ -381,6 +381,13 @@ def _route_hint(kind: UnifiedSeedKind) -> str:
         return "classic + federation · open web review"
     if kind is UnifiedSeedKind.HASH:
         return "classic + federation"
+    if kind in {
+        UnifiedSeedKind.REGISTRATION_ID,
+        UnifiedSeedKind.VAT_ID,
+        UnifiedSeedKind.LEI,
+        UnifiedSeedKind.CASE_NUMBER,
+    }:
+        return "registry"
     return "review"
 
 
