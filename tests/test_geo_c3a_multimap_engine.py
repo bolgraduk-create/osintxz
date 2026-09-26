@@ -174,13 +174,13 @@ def test_geo_c3a_toolbar_exposes_primary_secondary_and_compare_modes():
 
     for expected in (
         'text: "MAP SOURCE"',
-        'text: "Compare"',
+        'text: root.compareEnabled ? "Exit compare" : "Compare"',
         'text: "SECONDARY"',
         '{ key: "overlay", label: "Overlay" }',
         '{ key: "side_by_side", label: "Side by side" }',
         '{ key: "swipe", label: "Swipe" }',
-        'text: "+ Source"',
-        'text: "Remove"',
+        'text: "Browse"',
+        'text: "Layers"',
         'text: "Opacity"',
     ):
         assert expected in qml
