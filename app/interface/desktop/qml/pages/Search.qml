@@ -1456,7 +1456,7 @@ Item {
                 Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; height: 1; color: Theme.divider }
                 Text {
                     x: 20; y: 13
-                    width: parent.width - 180
+                    width: Math.max(150, parent.width - 510)
                     text: String(root.selectedAccount.title || root.selectedAccount.value || "Account details")
                     color: Theme.textPrimary
                     font.pixelSize: 18
@@ -1465,7 +1465,7 @@ Item {
                 }
                 Text {
                     x: 20; y: 43
-                    width: parent.width - 180
+                    width: Math.max(150, parent.width - 510)
                     text: String(root.selectedAccount.url || root.selectedAccount.meta || "")
                     color: Theme.textMuted
                     font.pixelSize: 9
