@@ -250,11 +250,35 @@ html,body,#map{width:100%;height:100%;margin:0;overflow:hidden;background:#08172
     return url.toString();
   }
 
+  function wmtsTileUrl(source,z,x,y){
+    const raw=String(source.url || "");
+    if(!raw) return "";
+    let url;
+    try { url=new URL(raw); } catch (_) { return ""; }
+
+    const p=url.searchParams;
+    p.set("SERVICE","WMTS");
+    p.set("REQUEST","GetTile");
+    p.set("VERSION","1.0.0");
+    p.set("LAYER",String(source.wmtsLayer || ""));
+    p.set("STYLE",String(source.wmtsStyle || "default"));
+    p.set("FORMAT",String(source.wmtsFormat || "image/png"));
+    p.set("TILEMATRIXSET",String(source.wmtsMatrixSet || ""));
+    p.set(
+      "TILEMATRIX",
+      String(source.wmtsMatrixPrefix || "") + String(z)
+    );
+    p.set("TILEROW",String(y));
+    p.set("TILECOL",String(x));
+    return url.toString();
+  }
+
   function tileUrlForSource(source,z,x,y){
     if(!source) return "";
     const kind=String(source.kind || "");
     if(kind === "xyz") return xyzTileUrl(source,z,x,y);
     if(kind === "wms") return wmsTileUrl(source,z,x,y);
+    if(kind === "wmts") return wmtsTileUrl(source,z,x,y);
     return "";
   }
 
@@ -368,7 +392,7 @@ html,body,#map{width:100%;height:100%;margin:0;overflow:hidden;background:#08172
 
     state.root.style.display="block";
     const kind=String(source.kind || "");
-    if(kind==="xyz" || kind==="wms") renderTileLayer(state,source);
+    if(kind==="xyz" || kind==="wms" || kind==="wmts") renderTileLayer(state,source);
     else if(kind==="satellite_dynamic" || kind==="image") renderImageLayer(state,source);
     else clearLayer(state);
   }
