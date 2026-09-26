@@ -11,23 +11,21 @@ AppDialog {
     property string currentPrimaryId: ""
     property bool satelliteAvailable: false
     property string query: ""
+    property string categoryFilter: "all"
 
     signal sourceChosen(string sourceId, bool asSecondary)
     signal addSourceRequested()
     signal removeSourceRequested(string sourceId)
 
-    width: 720
+    width: 820
     title: "Map Source Browser"
-    description: "Browse curated world maps, overlays, and analyst-added sources."
+    description: "Choose a basemap or comparison layer."
     primaryText: "Close"
     cancelText: "Close"
-    bodyHeight: 500
+    bodyHeight: 520
 
     function filteredSources() {
         var normalized = root.query.trim().toLowerCase()
-        if (normalized.length === 0)
-            return root.sources
-
         var result = []
         for (var i = 0; i < root.sources.length; ++i) {
             var source = root.sources[i]
@@ -46,7 +44,10 @@ AppDialog {
                 + " "
                 + String(source.attribution || "")
             ).toLowerCase()
-            if (haystack.indexOf(normalized) >= 0)
+            var categoryMatches = root.categoryFilter === "all"
+                || String(source.category || "") === root.categoryFilter
+                || (root.categoryFilter === "custom" && Boolean(source.userDefined))
+            if (haystack.indexOf(normalized) >= 0 && categoryMatches)
                 result.push(source)
         }
         return result
@@ -80,6 +81,25 @@ AppDialog {
                 placeholderText: "Search maps by name, type, category..."
                 text: root.query
                 onTextChanged: root.query = text
+            }
+
+            AppComboBox {
+                Layout.preferredWidth: 164
+                Layout.preferredHeight: 38
+                model: [
+                    { key: "all", label: "All maps" },
+                    { key: "streets", label: "Street" },
+                    { key: "satellite", label: "Satellite" },
+                    { key: "terrain", label: "Terrain" },
+                    { key: "historical", label: "Historical" },
+                    { key: "transport", label: "Transport" },
+                    { key: "marine", label: "Marine" },
+                    { key: "custom", label: "Custom" }
+                ]
+                textRole: "label"
+                onActivated: function(index) {
+                    root.categoryFilter = String(model[index].key || "all")
+                }
             }
 
             AppButton {
@@ -129,7 +149,7 @@ AppDialog {
                         required property var modelData
 
                         width: parent.width
-                        height: 76
+                        height: 64
                         radius: 8
                         color: Theme.surface
                         border.width: String(modelData.id || "") === root.currentPrimaryId ? 1 : 0
@@ -161,15 +181,15 @@ AppDialog {
                                     }
 
                                     Rectangle {
-                                        width: typeText.implicitWidth + 14
-                                        height: 20
+                                        width: typeText.implicitWidth + 12
+                                        height: 18
                                         radius: 5
                                         color: Theme.accentSoft
 
                                         Text {
                                             id: typeText
                                             anchors.centerIn: parent
-                                            text: String(sourceRow.modelData.kind || "").toUpperCase()
+                                            text: String(sourceRow.modelData.category || "map").toUpperCase()
                                             color: Theme.accent
                                             font.pixelSize: 7
                                             font.weight: Font.DemiBold
@@ -196,10 +216,7 @@ AppDialog {
 
                                 Text {
                                     Layout.fillWidth: true
-                                    text: String(sourceRow.modelData.category || "map").toUpperCase()
-                                        + (String(sourceRow.modelData.region || "").length > 0
-                                            ? " · " + String(sourceRow.modelData.region || "")
-                                            : "")
+                                    text: String(sourceRow.modelData.region || "World")
                                         + (String(sourceRow.modelData.provider || "").length > 0
                                             ? " · " + String(sourceRow.modelData.provider || "")
                                             : "")
