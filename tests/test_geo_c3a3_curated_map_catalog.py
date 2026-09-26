@@ -157,3 +157,25 @@ def test_geo_c3a3_poland_and_germany_country_packs():
     assert germany.category == "streets"
     assert "GLOBAL_WEBMERCATOR/{z}/{y}/{x}.png" in germany.url
     assert germany.metadata["catalogPack"] == "germany"
+
+
+def test_geo_c3a3_france_country_pack():
+    sources = {source.id: source for source in BUILTIN_MAP_SOURCES}
+
+    assert set(sources) >= {
+        "fr_ign_plan_v2",
+        "fr_ign_ortho",
+    }
+
+    plan = sources["fr_ign_plan_v2"]
+    assert plan.region == "France"
+    assert plan.provider == "IGN France / Géoplateforme"
+    assert plan.category == "streets"
+    assert "GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2" in plan.url
+    assert "TILEMATRIXSET=PM" in plan.url
+
+    ortho = sources["fr_ign_ortho"]
+    assert ortho.region == "France"
+    assert ortho.category == "satellite"
+    assert "ORTHOIMAGERY.ORTHOPHOTOS" in ortho.url
+    assert "FORMAT=image/jpeg" in ortho.url
