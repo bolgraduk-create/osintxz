@@ -96,6 +96,7 @@ def test_geo_c3a3_nasa_and_usgs_catalog_pack():
         "usgs_topo",
         "usgs_imagery",
         "usgs_shaded_relief",
+        "usgs_hydro",
     }
 
     blue = sources["nasa_blue_marble"]
@@ -121,4 +122,11 @@ def test_geo_c3a3_nasa_and_usgs_catalog_pack():
 
     shaded = sources["usgs_shaded_relief"]
     assert shaded.category == "terrain"
+    assert shaded.max_zoom == 7
     assert "USGSShadedReliefOnly/MapServer/tile/{z}/{y}/{x}" in shaded.url
+
+    hydro = sources["usgs_hydro"]
+    assert hydro.category == "hydrography"
+    assert hydro.primary_supported is False
+    assert hydro.metadata["overlayOnly"] is True
+    assert "USGSHydroCached/MapServer/tile/{z}/{y}/{x}" in hydro.url
