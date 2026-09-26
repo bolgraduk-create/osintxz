@@ -113,23 +113,6 @@ Rectangle {
                 }
             }
 
-            Rectangle {
-                Layout.preferredWidth: sourceType.implicitWidth + 14
-                Layout.preferredHeight: 22
-                radius: 5
-                color: Theme.accentSoft
-                visible: String(root.sourceForId(root.primarySourceId).kind || "").length > 0
-
-                Text {
-                    id: sourceType
-                    anchors.centerIn: parent
-                    text: String(root.sourceForId(root.primarySourceId).kind || "").toUpperCase()
-                    color: Theme.accent
-                    font.pixelSize: 7
-                    font.weight: Font.DemiBold
-                }
-            }
-
             Item { Layout.fillWidth: true }
 
             AppButton {
